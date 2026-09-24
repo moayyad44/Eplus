@@ -24,7 +24,11 @@ export default function StockCountDetail() {
   const q = useQuery({ queryKey: ['stock-counts', id], queryFn: () => api.get<Detail>(`/inventory/stock-counts/${id}`) });
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
-  useEffect(() => { if (q.data) setCounts(Object.fromEntries(q.data.items.map((i) => [i.id, i.countedQuantity == null ? '' : String(num(i.countedQuantity))]))); }, [q.data]);
+  // Initialise from the server once per session (and when its status changes) — never overwrite typed counts on background refetch.
+  const initKey = q.data ? `${q.data.id}:${q.data.status}` : '';
+  useEffect(() => {
+    if (q.data) setCounts(Object.fromEntries(q.data.items.map((i) => [i.id, i.countedQuantity == null ? '' : String(num(i.countedQuantity))])));
+  }, [initKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = useApiMutation(() => api.put(`/inventory/stock-counts/${id}/items`, { items: Object.entries(counts).map(([rid, v]) => ({ id: rid, countedQuantity: v === '' ? null : Number(v) })) }), { invalidate: [['stock-counts', id]] });
   const approve = useApiMutation(async () => { await api.put(`/inventory/stock-counts/${id}/items`, { items: Object.entries(counts).map(([rid, v]) => ({ id: rid, countedQuantity: v === '' ? null : Number(v) })) }); return api.post<{ adjusted: number }>(`/inventory/stock-counts/${id}/approve`); }, {
     invalidate: [['stock-counts'], ['inventory']], success: false, onSuccess: (r) => toast.success(t('inventory.approved', { count: r.adjusted })),

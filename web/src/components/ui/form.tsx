@@ -2,8 +2,11 @@ import { forwardRef, useEffect, useState, type InputHTMLAttributes, type ReactNo
 import clsx from 'clsx';
 import { Search, X } from 'lucide-react';
 
+/** Callers may pass their own width (w-40, w-auto…); only default to full width otherwise. */
+const width = (className?: string) => (/(^|\s)!?(w-|min-w-)/.test(className ?? '') ? '' : 'w-full');
+
 const control =
-  'w-full rounded-xl border bg-white px-3 text-sm text-ink placeholder:text-ink-muted/70 transition focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400 disabled:bg-surface-sunken disabled:text-ink-muted';
+  'rounded-xl border bg-white px-3 text-sm text-ink placeholder:text-ink-muted/70 transition focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400 disabled:bg-surface-sunken disabled:text-ink-muted';
 
 /** Form field. Use `group` for button groups / multiple controls so the label doesn't activate the first one. */
 export function Field({ label, error, hint, required, children, className, group }: { label?: ReactNode; error?: string; hint?: ReactNode; required?: boolean; children: ReactNode; className?: string; group?: boolean }) {
@@ -23,11 +26,11 @@ export function Field({ label, error, hint, required, children, className, group
 }
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(function Input({ className, invalid, ...rest }, ref) {
-  return <input ref={ref} className={clsx(control, 'h-10', invalid ? 'border-danger-600' : 'border-line-strong', className)} {...rest} />;
+  return <input ref={ref} className={clsx(control, width(className), 'h-10', invalid ? 'border-danger-600' : 'border-line-strong', className)} {...rest} />;
 });
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }>(function Textarea({ className, invalid, rows = 3, ...rest }, ref) {
-  return <textarea ref={ref} rows={rows} className={clsx(control, 'py-2 leading-relaxed', invalid ? 'border-danger-600' : 'border-line-strong', className)} {...rest} />;
+  return <textarea ref={ref} rows={rows} className={clsx(control, width(className), 'py-2 leading-relaxed', invalid ? 'border-danger-600' : 'border-line-strong', className)} {...rest} />;
 });
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean; placeholder?: string }>(function Select(
@@ -35,7 +38,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   ref,
 ) {
   return (
-    <select ref={ref} className={clsx(control, 'h-10 pe-8', invalid ? 'border-danger-600' : 'border-line-strong', className)} {...rest}>
+    <select ref={ref} className={clsx(control, width(className), 'h-10 pe-8', invalid ? 'border-danger-600' : 'border-line-strong', className)} {...rest}>
       {placeholder !== undefined && <option value="">{placeholder}</option>}
       {children}
     </select>
@@ -63,7 +66,7 @@ export function SearchInput({ value, onChange, placeholder, delay = 300, classNa
   return (
     <div className={clsx('relative', className)}>
       <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
-      <input value={v} autoFocus={autoFocus} onChange={(e) => setV(e.target.value)} placeholder={placeholder} className={clsx(control, 'h-10 border-line-strong ps-9 pe-8')} />
+      <input value={v} autoFocus={autoFocus} onChange={(e) => setV(e.target.value)} placeholder={placeholder} className={clsx(control, 'w-full h-10 border-line-strong ps-9 pe-8')} />
       {v && (
         <button type="button" onClick={() => { setV(''); onChange(''); }} className="absolute end-2 top-1/2 -translate-y-1/2 rounded p-1 text-ink-muted hover:text-ink" aria-label="clear">
           <X className="h-3.5 w-3.5" />

@@ -15,7 +15,7 @@ import { AttachmentsPanel } from '@/components/shared/Attachments';
 
 interface Detail extends LabOrder {
   patient: { id: string; fullName: string; fileNumber: string; phone: string; gender: string; age: number | null };
-  doctor: { id: string; fullName: string }; visit: { id: string; visitNumber: string } | null; collectedAt: string | null; cancelReason: string | null;
+  doctor: { id: string; fullName: string }; visit: { id: string; visitNumber: string } | null; collectedAt: string | null; cancelReason: string | null; updatedAt: string;
 }
 type ResultRow = { parameterName: string; value: string; unit: string; referenceRange: string; flag: string; notes: string };
 
@@ -40,6 +40,7 @@ export default function LabOrderDetail() {
   const q = useQuery({ queryKey: ['lab', id], queryFn: () => api.get<Detail>(`/lab/orders/${id}`) });
   const [rows, setRows] = useState<Record<string, ResultRow[]>>({});
 
+  const initKey = q.data ? `${q.data.id}:${q.data.updatedAt}` : '';
   useEffect(() => {
     if (!q.data) return;
     const init: Record<string, ResultRow[]> = {};
@@ -52,7 +53,7 @@ export default function LabOrderDetail() {
       }
     }
     setRows(init);
-  }, [q.data]);
+  }, [initKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const status = useApiMutation((v: { status: string; reason?: string }) => api.post(`/lab/orders/${id}/status`, v), { invalidate: [['lab']] });
   const save = useApiMutation(
@@ -103,11 +104,11 @@ export default function LabOrderDetail() {
                     {(rows[it.id] ?? []).map((r, idx) => (
                       <tr key={idx}>
                         <td className="p-1"><Input value={r.parameterName} disabled={!editable} onChange={(e) => setRow(it.id, idx, { parameterName: e.target.value })} dir="ltr" /></td>
-                        <td className="p-1"><Input value={r.value} disabled={!editable} onChange={(e) => setRow(it.id, idx, { value: e.target.value })} dir="ltr" className={r.flag && r.flag !== 'NORMAL' ? 'border-danger-600 font-bold text-danger-700' : 'font-semibold'} /></td>
+                        <td className="p-1"><Input value={r.value} disabled={!editable} onChange={(e) => setRow(it.id, idx, { value: e.target.value })} dir="ltr" invalid={!!r.flag && r.flag !== 'NORMAL'} className={r.flag && r.flag !== 'NORMAL' ? 'bg-danger-50 font-bold text-danger-700' : 'font-semibold'} /></td>
                         <td className="p-1"><Input value={r.unit} disabled={!editable} onChange={(e) => setRow(it.id, idx, { unit: e.target.value })} dir="ltr" className="w-24" /></td>
                         <td className="p-1"><Input value={r.referenceRange} disabled={!editable} onChange={(e) => setRow(it.id, idx, { referenceRange: e.target.value })} dir="ltr" className="w-28" /></td>
                         <td className="p-1">
-                          <Select value={r.flag} disabled={!editable} onChange={(e) => setRow(it.id, idx, { flag: e.target.value })} className="w-32">
+                          <Select value={r.flag} disabled={!editable} onChange={(e) => setRow(it.id, idx, { flag: e.target.value })} className="min-w-[8.5rem]">
                             <option value="">—</option>
                             {['NORMAL', 'LOW', 'HIGH', 'ABNORMAL', 'CRITICAL'].map((f) => <option key={f} value={f}>{t(`enum.ResultFlag.${f}`)}</option>)}
                           </Select>

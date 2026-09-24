@@ -14,7 +14,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Autocomplete } from '@/components/shared/Autocomplete';
 
 interface Line { itemId: string; name: string; quantity: string; unitCost: string; batchNumber: string; expiryDate: string }
-interface PO { id: string; poNumber: string; status: string; orderDate: string; receivedAt: string | null; total: number; notes: string | null; supplier: { id: string; name: string; phone: string | null }; items: { itemId: string; quantity: number; unitCost: number; lineTotal: number; batchNumber: string | null; expiryDate: string | null; item: { name: string; sku: string } }[] }
+interface PO { id: string; updatedAt: string; poNumber: string; status: string; orderDate: string; receivedAt: string | null; total: number; notes: string | null; supplier: { id: string; name: string; phone: string | null }; items: { itemId: string; quantity: number; unitCost: number; lineTotal: number; batchNumber: string | null; expiryDate: string | null; item: { name: string; sku: string } }[] }
 
 export default function PurchaseOrderPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,13 +30,14 @@ export default function PurchaseOrderPage() {
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<Line[]>([]);
   const [search, setSearch] = useState('');
+  const initKey = q.data ? `${q.data.id}:${q.data.updatedAt}` : '';
   useEffect(() => {
     if (q.data) {
       setSupplierId(q.data.supplier.id);
       setNotes(q.data.notes ?? '');
       setLines(q.data.items.map((i) => ({ itemId: i.itemId, name: i.item.name, quantity: String(num(i.quantity)), unitCost: String(num(i.unitCost)), batchNumber: i.batchNumber ?? '', expiryDate: i.expiryDate?.slice(0, 10) ?? '' })));
     }
-  }, [q.data]);
+  }, [initKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const editable = can('suppliers.manage') && (isNew || ['DRAFT', 'ORDERED'].includes(q.data?.status ?? ''));
   const save = useApiMutation(() => {
     const body = { supplierId, notes: notes || null, items: lines.map((l) => ({ itemId: l.itemId, quantity: Number(l.quantity), unitCost: Number(l.unitCost), batchNumber: l.batchNumber || null, expiryDate: l.expiryDate || null })) };

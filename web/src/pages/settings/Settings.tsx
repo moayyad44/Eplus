@@ -64,7 +64,8 @@ function KeyValueForm({ settingKey, fields, ns }: { settingKey: string; fields: 
   const { can, refresh } = useAuth();
   const s = useSettings();
   const [v, setV] = useState<Record<string, unknown>>({});
-  useEffect(() => { if (s.data) setV(s.data[settingKey] ?? {}); }, [s.data, settingKey]);
+  const stored = JSON.stringify(s.data?.[settingKey] ?? null);
+  useEffect(() => { if (s.data) setV(s.data[settingKey] ?? {}); }, [stored, settingKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = useApiMutation(() => api.put(`/settings/${settingKey}`, Object.fromEntries(fields.map(([k, type]) => [k, type === 'number' ? Number(v[k]) : v[k]]))), { invalidate: [['settings']], onSuccess: () => refresh() });
   if (!s.data) return <PageLoader />;
   const editable = can('settings.manage');
