@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+server/uploads/
+server/tests/.uploads/
+*.log
+.DS_Store
+coverage/
+web/test-results/

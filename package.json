@@ -1,0 +1,21 @@
+{
+  "name": "emergencyplus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "EmergencyPlus Clinic Management System",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,cyan \"npm:dev -w server\" \"npm:dev -w web\"",
+    "build": "npm run build -w server && npm run build -w web",
+    "start": "npm run start -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:deploy": "npm run db:deploy -w server",
+    "db:bootstrap": "npm run db:bootstrap -w server",
+    "db:seed:dev": "npm run db:seed:dev -w server",
+    "test": "npm run test -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
