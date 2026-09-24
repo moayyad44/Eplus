@@ -1,0 +1,35 @@
+export default {
+  enum: {
+    VisitStatus: {
+      WAITING: 'بالانتظار', CALLED: 'تم الاستدعاء', WITH_NURSE: 'عند الممرض', WITH_DOCTOR: 'عند الطبيب', IN_LAB: 'في المختبر',
+      WAITING_PAYMENT: 'بانتظار الدفع', COMPLETED: 'مكتملة', CANCELLED: 'ملغاة', NO_SHOW: 'لم يحضر',
+    },
+    Priority: { NORMAL: 'عادي', URGENT: 'مستعجل', EMERGENCY: 'طارئ' },
+    Gender: { MALE: 'ذكر', FEMALE: 'أنثى' },
+    InvoiceStatus: { DRAFT: 'مسودة', ISSUED: 'صادرة', PARTIALLY_PAID: 'مدفوعة جزئياً', PAID: 'مدفوعة', OVERDUE: 'متأخرة', CANCELLED: 'ملغاة', REFUNDED: 'مستردة' },
+    LabOrderStatus: { REQUESTED: 'مطلوب', SAMPLE_COLLECTED: 'تم سحب العينة', PROCESSING: 'قيد التحليل', COMPLETED: 'مكتمل', CANCELLED: 'ملغى' },
+    AppointmentStatus: { SCHEDULED: 'مجدول', CONFIRMED: 'مؤكد', ARRIVED: 'حضر', COMPLETED: 'مكتمل', CANCELLED: 'ملغى', NO_SHOW: 'لم يحضر' },
+    StaffType: { ADMIN: 'إداري', DOCTOR: 'طبيب', NURSE: 'ممرض', RECEPTIONIST: 'استقبال', LAB_TECHNICIAN: 'فني مختبر', ACCOUNTANT: 'محاسب', OTHER: 'أخرى' },
+    ServiceCategory: { EXAMINATION: 'كشف طبي', CONSULTATION: 'استشارة', PROCEDURE: 'إجراء طبي', LAB: 'تحليل مخبري', NURSING: 'خدمة تمريضية', MEDICATION: 'أدوية', OTHER: 'خدمات أخرى' },
+    AllergySeverity: { MILD: 'خفيفة', MODERATE: 'متوسطة', SEVERE: 'شديدة' },
+    HistoryType: { CHRONIC: 'مرض مزمن', PAST_ILLNESS: 'مرض سابق', SURGERY: 'عملية جراحية', FAMILY: 'تاريخ عائلي', OTHER: 'أخرى' },
+    DiagnosisType: { PRIMARY: 'رئيسي', SECONDARY: 'ثانوي', DIFFERENTIAL: 'تفريقي' },
+    ResultFlag: { NORMAL: 'طبيعي', LOW: 'منخفض', HIGH: 'مرتفع', ABNORMAL: 'غير طبيعي', CRITICAL: 'حرج' },
+    PaymentType: { PAYMENT: 'دفعة', REFUND: 'إرجاع' },
+    InventoryTxnType: {
+      PURCHASE: 'شراء', RECEIPT: 'إدخال', ISSUE: 'صرف', CONSUMPTION: 'استهلاك', RETURN: 'إرجاع', ADJUSTMENT: 'تعديل', STOCK_COUNT: 'جرد',
+      SALE: 'بيع', SALE_REVERSAL: 'إلغاء بيع',
+    },
+    StockCountStatus: { IN_PROGRESS: 'قيد التنفيذ', APPROVED: 'معتمد', CANCELLED: 'ملغى' },
+    PurchaseOrderStatus: { DRAFT: 'مسودة', ORDERED: 'تم الطلب', RECEIVED: 'تم الاستلام', CANCELLED: 'ملغى' },
+    ShiftType: { MORNING: 'صباحي', EVENING: 'مسائي', NIGHT: 'ليلي', CUSTOM: 'مخصص' },
+    LeaveType: { ANNUAL: 'سنوية', SICK: 'مرضية', UNPAID: 'بدون راتب', EMERGENCY: 'طارئة', OTHER: 'أخرى' },
+    LeaveStatus: { PENDING: 'بانتظار الموافقة', APPROVED: 'موافق عليها', REJECTED: 'مرفوضة', CANCELLED: 'ملغاة' },
+    AttendanceStatus: { PRESENT: 'حاضر', LATE: 'متأخر', EARLY_LEAVE: 'مغادرة مبكرة', LATE_AND_EARLY: 'تأخير ومغادرة مبكرة', ABSENT: 'غائب', LEAVE: 'إجازة' },
+    AttachmentCategory: { REPORT: 'تقرير', IMAGE: 'صورة', LAB_RESULT: 'نتيجة تحليل', DOCUMENT: 'مستند', INVOICE: 'فاتورة', OTHER: 'أخرى' },
+    NotificationType: {
+      LOW_STOCK: 'مخزون منخفض', EXPIRY: 'انتهاء صلاحية', UNPAID_INVOICE: 'فاتورة غير مدفوعة', UPCOMING_APPOINTMENT: 'موعد قادم',
+      LAB_REQUESTED: 'طلب تحليل', LAB_RESULT_READY: 'نتيجة تحليل', STAFF_LATE: 'تأخر موظف', SHIFT_ENDING: 'انتهاء شفت', QUEUE: 'قائمة الانتظار', SYSTEM: 'النظام',
+    },
+  },
+};

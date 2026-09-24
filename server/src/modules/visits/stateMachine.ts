@@ -32,7 +32,9 @@ export function checkTransition(from: VisitStatus, to: VisitStatus, perms: Set<s
   }
   const fi = FLOW.indexOf(from);
   const ti = FLOW.indexOf(to);
-  const revert = TERMINAL.includes(from) || ti < fi;
+  // Returning from the lab to the doctor is part of the normal flow, not a revert.
+  const normalReturn = from === 'IN_LAB' && to === 'WITH_DOCTOR';
+  const revert = !normalReturn && (TERMINAL.includes(from) || ti < fi);
   if (revert && !perms.has('queue.revert')) return { ok: false, reason: 'إرجاع الزيارة إلى حالة سابقة يتطلب صلاحية خاصة' };
   return { ok: true, revert };
 }

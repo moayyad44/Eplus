@@ -1,0 +1,33 @@
+@import '@fontsource/ibm-plex-sans-arabic/400.css';
+@import '@fontsource/ibm-plex-sans-arabic/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/600.css';
+@import '@fontsource/ibm-plex-sans-arabic/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-surface-subtle font-sans text-ink antialiased; }
+  input[type='date'], input[type='datetime-local'], input[type='time'] { @apply text-start; }
+  ::selection { @apply bg-primary-200; }
+}
+
+@layer utilities {
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+}
+
+/* ── Print ── */
+@page { size: A4; margin: 12mm; }
+@media print {
+  body { background: #fff !important; }
+  .print-page { box-shadow: none !important; border: 0 !important; margin: 0 !important; padding: 0 !important; max-width: none !important; }
+  .no-print { display: none !important; }
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+}
+.print-thermal { width: 80mm; }
+@media print { .print-thermal { width: 72mm; } }

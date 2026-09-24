@@ -1,0 +1,21 @@
+export default {
+  billing: {
+    invoices: 'الفواتير', invoicesSubtitle: 'جميع الفواتير وحالات الدفع', invoiceNumber: 'رقم الفاتورة', newInvoice: 'فاتورة جديدة', editDraft: 'تعديل المسودة',
+    template: 'نموذج الفاتورة', templateHint: 'جميع النماذج تستخدم نفس الترقيم التسلسلي', visit: 'الزيارة', service: 'المادة / الخدمة', addItem: 'إضافة مادة',
+    itemSearch: 'ابحث عن مادة بالاسم أو الرمز', mandatory: 'إجبارية', unitPrice: 'سعر الوحدة', lineTotal: 'المجموع', invoiceDiscount: 'خصم على الفاتورة',
+    itemsDiscount: 'خصم البنود', total: 'الإجمالي', saveDraft: 'حفظ كمسودة', issue: 'إصدار الفاتورة', issueAndPay: 'إصدار وتسجيل الدفع', payNow: 'الدفع الآن',
+    leaveUnpaid: 'ترحيل كذمة (غير مدفوعة)', noItems: 'لم تتم إضافة مواد بعد', issued: 'تم إصدار الفاتورة {{number}}', suggestedLoaded: 'تمت إضافة التحاليل المطلوبة في الزيارة',
+    alreadyInvoiced: 'لهذه الزيارة فاتورة سابقة', dueDate: 'تاريخ الاستحقاق', issuedAt: 'تاريخ الإصدار', payments: 'المدفوعات', addPayment: 'تسجيل دفعة',
+    refund: 'إرجاع مبلغ', cancelInvoice: 'إلغاء الفاتورة', cancelReason: 'سبب الإلغاء', cancelled: 'ملغاة', cancelledBy: 'ألغيت بواسطة', voidPayment: 'إلغاء الدفعة',
+    voidReason: 'سبب إلغاء الدفعة', receipt: 'إيصال', printReceipt: 'طباعة الإيصال', printInvoice: 'طباعة الفاتورة', printThermal: 'طباعة حرارية',
+    receiptNumber: 'رقم الإيصال', receivedBy: 'استلمها', method: 'طريقة الدفع', reference: 'رقم العملية / المرجع', referenceRequired: 'رقم العملية مطلوب لهذه الطريقة',
+    paymentSaved: 'تم تسجيل الدفعة — إيصال {{number}}', refundSaved: 'تم تسجيل الإرجاع', refundReason: 'سبب الإرجاع', refunded: 'المسترد', voided: 'ملغاة',
+    fullAmount: 'كامل المبلغ', outstanding: 'الفواتير غير المدفوعة', outstandingSubtitle: 'الذمم المستحقة على المرضى', debtAge: 'عمر الدين', lastPayment: 'آخر دفعة',
+    days: '{{count}} يوم', totalOutstanding: 'إجمالي الذمم', minAge: 'عمر الدين أكثر من', cashier: 'الصندوق والحسابات اليومية', cashierSubtitle: 'ملخص المبيعات والمقبوضات حسب الفترة',
+    grossSales: 'إجمالي المبيعات', netSales: 'صافي المبيعات', discounts: 'الخصومات', collected: 'المقبوضات', refunds: 'المرتجعات', netReceipts: 'صافي المقبوضات',
+    unpaid: 'غير مدفوع من الفترة', expenses: 'المصروفات', netIncome: 'صافي الدخل', byMethod: 'المقبوضات حسب طريقة الدفع', daily: 'المقبوضات اليومية',
+    invoiceCount: 'عدد الفواتير', paymentsTitle: 'سجل المدفوعات', paymentsSubtitle: 'جميع الإيصالات والمرتجعات', mine: 'مدفوعاتي فقط', noVisit: 'بدون زيارة',
+    patientInfo: 'بيانات المريض', summary: 'الملخص', priceLocked: 'السعر محدد من قائمة الخدمات', editDraftOnly: 'لا يمكن تعديل فاتورة صادرة',
+    cancelHasPayments: 'لإلغاء فاتورة عليها مدفوعات يجب إرجاع المبلغ أولاً', status: 'حالة الدفع', thermal: 'حراري 80mm',
+  },
+};
