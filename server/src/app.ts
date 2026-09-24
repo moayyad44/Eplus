@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import { env, isProd } from './config/env';
+import { env, secureTransport } from './config/env';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './middleware/error';
 import { prisma } from './lib/prisma';
@@ -48,9 +48,14 @@ export function createApp() {
           connectSrc: ["'self'"],
           frameSrc: ["'self'", 'blob:'],
           objectSrc: ["'self'", 'blob:'],
+          // Only force https when the deployment actually serves https.
+          upgradeInsecureRequests: secureTransport ? [] : null,
         },
       },
-      hsts: isProd,
+      hsts: secureTransport,
+      // Browsers ignore (and warn about) these on plain-http origins such as a clinic LAN.
+      crossOriginOpenerPolicy: secureTransport ? undefined : false,
+      originAgentCluster: secureTransport,
     }),
   );
   if (env.CORS_ORIGIN) app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));

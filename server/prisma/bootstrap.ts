@@ -99,7 +99,7 @@ async function main() {
     await prisma.user.create({
       data: {
         username, fullName: process.env.ADMIN_FULLNAME || 'مدير النظام', passwordHash: await bcrypt.hash(password, 12), roleId: adminRole.id,
-        staffType: 'ADMIN', branchId: branch.id, mustChangePassword: generated,
+        staffType: 'ADMIN', branchId: branch.id, mustChangePassword: generated || process.env.ADMIN_FORCE_CHANGE === 'true',
       },
     });
     console.log(`\n  Admin account created → username: ${username}${generated ? `  password: ${password}  (change it after first login)` : ''}\n`);

@@ -14,6 +14,8 @@ const schema = z.object({
   TZ: z.string().default('Asia/Amman'),
   WEB_DIST: z.string().optional(),
   TRUST_PROXY: z.coerce.number().default(0),
+  /** HTTPS-only cookies + HSTS. Default: on in production. Set to false for a clinic LAN served over plain http. */
+  SECURE_COOKIES: z.enum(['true', 'false']).optional(),
   DISABLE_JOBS: z.enum(['true', 'false', '1', '0']).default('false').transform((v) => v === 'true' || v === '1'),
 });
 
@@ -31,3 +33,4 @@ process.env.TZ = parsed.data.TZ;
 
 export const env = parsed.data;
 export const isProd = env.NODE_ENV === 'production';
+export const secureTransport = env.SECURE_COOKIES ? env.SECURE_COOKIES === 'true' : isProd;

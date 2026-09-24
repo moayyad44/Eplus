@@ -1,3 +1,8 @@
+# EmergencyPlus — run with:  docker compose up -d --build
+# Works out of the box on one computer / clinic network (http). Every value below can be
+# overridden from a .env file next to this file (see .env.production.example).
+name: emergencyplus
+
 services:
   db:
     image: postgres:16
@@ -5,13 +10,13 @@ services:
     environment:
       POSTGRES_DB: eplus
       POSTGRES_USER: eplus
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-eplus-local-db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eplus"]
+      test: ["CMD-SHELL", "pg_isready -U eplus -d eplus"]
       interval: 5s
-      retries: 10
+      retries: 20
 
   app:
     build: .
@@ -20,18 +25,26 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://eplus:${DB_PASSWORD}@db:5432/eplus?schema=public
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (>=32 chars) in .env}
+      DATABASE_URL: postgresql://eplus:${DB_PASSWORD:-eplus-local-db}@db:5432/eplus?schema=public
+      # Leave empty to auto-generate one (stored in the data volume).
+      JWT_SECRET: ${JWT_SECRET:-}
+      PORT: 4000
+      APP_PORT: ${APP_PORT:-4080}
       TZ: ${TZ:-Asia/Amman}
       UPLOAD_DIR: /data/uploads
-      TRUST_PROXY: ${TRUST_PROXY:-1}
+      # Set to true only when the app is served over HTTPS (reverse proxy with a certificate).
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@12345}
+      # The first admin must replace the initial password at first sign-in.
+      ADMIN_FORCE_CHANGE: ${ADMIN_FORCE_CHANGE:-true}
+      DEMO_DATA: ${DEMO_DATA:-false}
     volumes:
-      - uploads:/data/uploads
+      - appdata:/data
     ports:
-      - "4000:4000"
+      - "${APP_PORT:-4080}:4000"
 
 volumes:
   pgdata:
-  uploads:
+  appdata:

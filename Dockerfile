@@ -21,7 +21,9 @@ COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/server/prisma server/prisma
 COPY --from=build /app/server/src server/src
 COPY --from=build /app/web/dist web/dist
+COPY docker/entrypoint.sh /app/docker/entrypoint.sh
+RUN mkdir -p /data/uploads
 WORKDIR /app/server
 EXPOSE 4000
-# Apply pending migrations, sync permissions/base configuration, then start.
-CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx prisma/bootstrap.ts && node dist/index.js"]
+# Applies pending migrations, syncs permissions/base configuration, then starts (see docker/entrypoint.sh).
+CMD ["sh", "/app/docker/entrypoint.sh"]

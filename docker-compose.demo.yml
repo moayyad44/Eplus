@@ -1,0 +1,8 @@
+# Demo overlay — adds demo staff, prices, lab tests, drugs, stock and a few patients.
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+# Demo logins: admin / Admin@12345 · dr.ahmad, nurse.sara, reception / Test@12345
+services:
+  app:
+    environment:
+      DEMO_DATA: "true"
+      ADMIN_FORCE_CHANGE: "false"

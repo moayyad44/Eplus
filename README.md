@@ -82,18 +82,23 @@ Useful scripts:
 | `npm run i18n:check -w web` | Fails if any `t('key')` used in the UI is missing from the Arabic dictionary |
 | `npm run build && npm start` | Production build, then serve API + web on `:4000` |
 
-## Production deployment
+## Running with Docker
+
+**Try it (demo data included):** make sure Docker Desktop is running, then double-click `start-demo.bat` (Windows) or `start-demo.command` (macOS), or run:
 
 ```bash
-cp .env.production.example .env   # set DB_PASSWORD, JWT_SECRET (openssl rand -hex 48), ADMIN_PASSWORD
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 ```
 
-On every start the container applies pending migrations (`prisma migrate deploy`) and runs the idempotent bootstrap, which syncs permissions and never touches clinical or financial data.
+Then open **http://localhost:4080**. Demo logins: `admin` / `Admin@12345`, and `dr.ahmad`, `nurse.sara`, `reception` / `Test@12345`. To stop it, use `stop.bat` / `stop.command` or `docker compose stop`. Data is kept in Docker volumes between restarts.
 
-- **HTTPS is required.** Put the app behind a TLS reverse proxy (nginx or Caddy) and set `TRUST_PROXY=1`. In production, cookies are `Secure` and HSTS/CSP headers are enabled.
-- The server refuses to start in production with the development `JWT_SECRET`.
-- Back up both the PostgreSQL volume (`pg_dump`) and the `uploads` volume (attachments).
+**Real clinic use (no demo data):** `docker compose up -d --build`. The first admin signs in with `admin` / `Admin@12345` and must set a new password right away. Optional settings (port, database password, …) go in a `.env` file; see `.env.production.example`.
+
+Every start of the container applies pending migrations (`prisma migrate deploy`) and runs the idempotent bootstrap, which never touches clinical or financial data. If `JWT_SECRET` is not set, one is generated once and kept in the data volume.
+
+- **Other devices on the clinic network** can open `http://<this-computer's-IP>:4080`. The default (`SECURE_COOKIES=false`) allows plain http inside a private network.
+- **Anything reachable from the internet must use HTTPS:** put it behind a TLS reverse proxy (nginx or Caddy) and set `SECURE_COOKIES=true` and `TRUST_PROXY=1`. This enables HTTPS-only cookies, HSTS and upgrade-insecure-requests.
+- Back up both Docker volumes: `emergencyplus_pgdata` (database, via `pg_dump`) and `emergencyplus_appdata` (attachments).
 
 ## Roles & permissions
 

@@ -2,7 +2,8 @@
  * DEVELOPMENT / DEMO DATA ONLY.
  * Creates demo staff accounts, catalog prices, lab tests, drugs, inventory and a few demo patients
  * so the system can be explored locally. Every demo record is tagged with "[DEMO]" where a free-text
- * field exists. Refuses to run when NODE_ENV=production.
+ * field exists. Refuses to run when NODE_ENV=production unless ALLOW_DEMO_SEED=true
+ * (used only by the local demo: docker-compose.demo.yml).
  *
  *   npm run db:seed:dev
  */
@@ -10,7 +11,7 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { PrismaClient, type ServiceCategory } from '@prisma/client';
 
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') {
   console.error('seed-dev.ts must never run in production.');
   process.exit(1);
 }

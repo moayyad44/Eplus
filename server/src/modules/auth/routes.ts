@@ -7,7 +7,7 @@ import { ah } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { AppError, badRequest, notFound, unauthorized } from '../../lib/errors';
 import { audit } from '../../lib/audit';
-import { env, isProd } from '../../config/env';
+import { env, secureTransport } from '../../config/env';
 import { hashToken, newRefreshToken, signAccessToken } from '../../auth/tokens';
 import { effectivePermissions } from '../../auth/access';
 import { ACCESS_COOKIE, REFRESH_COOKIE, authenticate, clientInfo } from '../../middleware/auth';
@@ -24,7 +24,7 @@ const MAX_FAILED = 5;
 const DUMMY_HASH = bcrypt.hashSync('timing-equalisation', 12);
 const LOCK_MINUTES = 15;
 
-const cookieBase: CookieOptions = { httpOnly: true, secure: isProd, sameSite: 'strict' };
+const cookieBase: CookieOptions = { httpOnly: true, secure: secureTransport, sameSite: 'strict' };
 
 function setAuthCookies(res: Response, access: string, refresh: string) {
   res.cookie(ACCESS_COOKIE, access, { ...cookieBase, path: '/api', maxAge: env.ACCESS_TOKEN_TTL_MIN * 60_000 });
