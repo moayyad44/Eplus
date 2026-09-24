@@ -90,6 +90,7 @@ function ClinicTab() {
   const qc = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
   const [stamp, setStamp] = useState(Date.now());
+  const pub = useQuery({ queryKey: ['public-clinic'], queryFn: () => api.get<{ hasLogo: boolean }>('/public/clinic') });
   const upload = async (f: File) => {
     const fd = new FormData();
     fd.append('file', f);
@@ -105,7 +106,7 @@ function ClinicTab() {
       <Card>
         <CardHeader title={t('settings.clinic.logo')} />
         <div className="flex items-center gap-4">
-          <img src={`/api/public/logo?${stamp}`} alt="" className="h-16 w-auto rounded-lg bg-surface-subtle" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+          {pub.data?.hasLogo ? <img src={`/api/public/logo?${stamp}`} alt="" className="h-16 w-auto rounded-lg bg-surface-subtle" /> : <span className="grid h-16 w-16 place-items-center rounded-lg bg-surface-sunken text-xs text-ink-muted">—</span>}
           {can('settings.manage') && (
             <>
               <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

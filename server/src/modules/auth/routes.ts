@@ -160,6 +160,19 @@ authRouter.post(
   }),
 );
 
+/**
+ * Quiet session probe for the web app's first load: answers 200 with `null` when there is
+ * no session at all (instead of a 401 on the login screen), or asks the client to refresh.
+ */
+authRouter.get('/session', (req, res, next) => {
+  const hasAccess = !!req.cookies?.[ACCESS_COOKIE] || req.headers.authorization?.startsWith('Bearer ');
+  if (!hasAccess) return res.json(req.cookies?.[REFRESH_COOKIE] ? { needsRefresh: true } : null);
+  authenticate(req, res, (err?: unknown) => {
+    if (err) return next(err);
+    loadMe(req.ctx.userId).then((me) => res.json(me), next);
+  });
+});
+
 authRouter.get(
   '/me',
   authenticate,

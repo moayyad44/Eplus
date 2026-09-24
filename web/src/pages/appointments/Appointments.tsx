@@ -233,7 +233,7 @@ function ApptDialog({ appt, patientId, start, onClose }: { appt?: Appt; patientI
   return (
     <Dialog open onClose={onClose} title={appt ? t('appointments.edit') : t('appointments.new')} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(false)}>{t('common.save')}</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={t('appointments.patient')} required error={fe.patientId} className="sm:col-span-2">
+        <Field group label={t('appointments.patient')} required error={fe.patientId} className="sm:col-span-2">
           <PatientPicker value={patient} onChange={setPatient} invalid={!!fe.patientId} />
         </Field>
         <Field label={t('appointments.doctor')} required error={fe.doctorId}>

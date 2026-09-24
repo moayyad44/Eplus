@@ -131,7 +131,7 @@ export default function InvoiceEditor() {
         <div className="space-y-4">
           <Card>
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label={t('common.patient')} required error={save.fieldErrors.patientId}>
+              <Field group label={t('common.patient')} required error={save.fieldErrors.patientId}>
                 <PatientPicker value={patient} onChange={setPatient} invalid={!!save.fieldErrors.patientId} />
               </Field>
               <Field label={t('billing.template')} hint={t('billing.templateHint')}>

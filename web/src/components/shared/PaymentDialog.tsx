@@ -37,13 +37,13 @@ export function PaymentDialog({ invoiceId, max, mode = 'PAYMENT', onClose, onDon
       footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button variant={mode === 'REFUND' ? 'danger' : 'success'} loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.confirm')}</Button></>}
     >
       <div className="space-y-3">
-        <Field label={t('common.amount')} required error={save.fieldErrors.amount} hint={`${t('common.balance')}: ${money(max)}`}>
+        <Field group label={t('common.amount')} required error={save.fieldErrors.amount} hint={`${t('common.balance')}: ${money(max)}`}>
           <div className="flex gap-2">
             <Input type="number" step="0.001" min={0} max={max} value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} dir="ltr" className="text-lg font-bold" />
             <Button variant="outline" onClick={() => setV({ ...v, amount: String(max) })}>{t('billing.fullAmount')}</Button>
           </div>
         </Field>
-        <Field label={t('billing.method')} required error={save.fieldErrors.methodId}>
+        <Field group label={t('billing.method')} required error={save.fieldErrors.methodId}>
           <div className="grid grid-cols-2 gap-2">
             {methods.data?.map((m) => (
               <button key={m.id} type="button" onClick={() => setV({ ...v, methodId: m.id })} className={`h-11 rounded-xl border text-sm font-semibold transition ${v.methodId === m.id ? 'border-primary-500 bg-primary-50 text-primary-800 ring-2 ring-primary-100' : 'border-line-strong hover:bg-surface-subtle'}`}>

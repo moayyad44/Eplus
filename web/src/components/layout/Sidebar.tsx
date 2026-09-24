@@ -15,8 +15,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       <div className={clsx('fixed inset-0 z-30 bg-ink/30 lg:hidden', open ? 'block' : 'hidden')} onClick={onClose} />
       <aside
         className={clsx(
-          'fixed inset-y-0 start-0 z-40 flex w-64 flex-col border-e border-line bg-white transition-transform duration-200 print:hidden lg:sticky lg:top-0 lg:h-screen lg:translate-x-0',
-          open ? 'translate-x-0' : 'ltr:-translate-x-full rtl:translate-x-full',
+          'fixed inset-y-0 start-0 z-40 w-64 flex-col border-e border-line bg-white print:hidden lg:sticky lg:top-0 lg:flex lg:h-screen',
+          open ? 'flex animate-fade-in' : 'hidden',
         )}
       >
         <div className="flex h-16 items-center justify-between border-b border-line px-4">

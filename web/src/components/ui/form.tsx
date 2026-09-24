@@ -5,9 +5,11 @@ import { Search, X } from 'lucide-react';
 const control =
   'w-full rounded-xl border bg-white px-3 text-sm text-ink placeholder:text-ink-muted/70 transition focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400 disabled:bg-surface-sunken disabled:text-ink-muted';
 
-export function Field({ label, error, hint, required, children, className }: { label?: ReactNode; error?: string; hint?: ReactNode; required?: boolean; children: ReactNode; className?: string }) {
+/** Form field. Use `group` for button groups / multiple controls so the label doesn't activate the first one. */
+export function Field({ label, error, hint, required, children, className, group }: { label?: ReactNode; error?: string; hint?: ReactNode; required?: boolean; children: ReactNode; className?: string; group?: boolean }) {
+  const Tag = group ? 'div' : 'label';
   return (
-    <label className={clsx('block', className)}>
+    <Tag className={clsx('block', className)} {...(group ? { role: 'group', 'aria-label': typeof label === 'string' ? label : undefined } : {})}>
       {label && (
         <span className="mb-1.5 block text-xs font-semibold text-ink-soft">
           {label}
@@ -16,7 +18,7 @@ export function Field({ label, error, hint, required, children, className }: { l
       )}
       {children}
       {error ? <span className="mt-1 block text-xs text-danger-600">{error}</span> : hint ? <span className="mt-1 block text-xs text-ink-muted">{hint}</span> : null}
-    </label>
+    </Tag>
   );
 }
 

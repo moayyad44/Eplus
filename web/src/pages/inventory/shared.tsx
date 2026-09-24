@@ -65,7 +65,7 @@ export function MovementDialog({ item, onClose }: { item: Item; onClose: () => v
   return (
     <Dialog open onClose={onClose} title={t('inventory.newMovement')} subtitle={`${item.name} — ${t('inventory.quantity')}: ${num(item.quantity)}`} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={t('inventory.movementType')} className="sm:col-span-2">
+        <Field group label={t('inventory.movementType')} className="sm:col-span-2">
           <div className="grid grid-cols-3 gap-2">
             {TYPES.map((x) => (
               <button key={x} type="button" onClick={() => setV({ ...v, type: x })} className={`h-10 rounded-xl border text-sm font-semibold ${v.type === x ? 'border-primary-500 bg-primary-50 text-primary-800' : 'border-line-strong hover:bg-surface-subtle'}`}>{t(`enum.InventoryTxnType.${x}`)}</button>

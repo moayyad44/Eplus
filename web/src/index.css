@@ -12,6 +12,8 @@
   body { @apply bg-surface-subtle font-sans text-ink antialiased; }
   input[type='date'], input[type='datetime-local'], input[type='time'] { @apply text-start; }
   ::selection { @apply bg-primary-200; }
+  /* Grid items may shrink below their content width so wide tables scroll inside their card, not the page. */
+  .grid > * { min-width: 0; }
 }
 
 @layer utilities {

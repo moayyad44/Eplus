@@ -132,7 +132,7 @@ function AssignDialog({ staff, onClose, defaultFrom, defaultTo }: { staff: UserL
   return (
     <Dialog open onClose={onClose} size="lg" title={t('staff.assign')} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label={t('staff.employees')} required error={fe.userIds}>
+        <Field group label={t('staff.employees')} required error={fe.userIds}>
           <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-line p-2">
             {staff.map((u) => (
               <Checkbox key={u.id} className="w-full rounded-lg px-2 py-1 hover:bg-surface-subtle" label={<>{u.fullName} <span className="text-xs text-ink-muted">({t(`enum.StaffType.${u.staffType}`)})</span></>} checked={v.userIds.includes(u.id)} onChange={(e) => setV({ ...v, userIds: e.target.checked ? [...v.userIds, u.id] : v.userIds.filter((x) => x !== u.id) })} />
@@ -149,7 +149,7 @@ function AssignDialog({ staff, onClose, defaultFrom, defaultTo }: { staff: UserL
             <Field label={t('common.from')}><Input type="date" value={v.from} onChange={(e) => setV({ ...v, from: e.target.value })} /></Field>
             <Field label={t('common.to')}><Input type="date" value={v.to} onChange={(e) => setV({ ...v, to: e.target.value })} /></Field>
           </div>
-          <Field label={t('staff.weekdays')} error={fe.weekdays}>
+          <Field group label={t('staff.weekdays')} error={fe.weekdays}>
             <div className="flex flex-wrap gap-1">
               {[6, 0, 1, 2, 3, 4, 5].map((d) => (
                 <button key={d} type="button" onClick={() => setV({ ...v, weekdays: v.weekdays.includes(d) ? v.weekdays.filter((x) => x !== d) : [...v.weekdays, d] })} className={clsx('rounded-lg px-2.5 py-1.5 text-xs font-semibold', v.weekdays.includes(d) ? 'bg-primary-600 text-white' : 'bg-surface-sunken text-ink-muted')}>
@@ -158,7 +158,7 @@ function AssignDialog({ staff, onClose, defaultFrom, defaultTo }: { staff: UserL
               ))}
             </div>
           </Field>
-          <Field label={t('staff.customTime')}>
+          <Field group label={t('staff.customTime')}>
             <div className="grid grid-cols-2 gap-2">
               <Input type="time" value={v.startTime} onChange={(e) => setV({ ...v, startTime: e.target.value })} />
               <Input type="time" value={v.endTime} onChange={(e) => setV({ ...v, endTime: e.target.value })} />

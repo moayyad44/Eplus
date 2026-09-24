@@ -14,7 +14,7 @@ const schema = z.object({
   TZ: z.string().default('Asia/Amman'),
   WEB_DIST: z.string().optional(),
   TRUST_PROXY: z.coerce.number().default(0),
-  DISABLE_JOBS: z.coerce.boolean().default(false),
+  DISABLE_JOBS: z.enum(['true', 'false', '1', '0']).default('false').transform((v) => v === 'true' || v === '1'),
 });
 
 const parsed = schema.safeParse(process.env);

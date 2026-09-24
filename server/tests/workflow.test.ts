@@ -16,6 +16,14 @@ describe('authentication & security', () => {
     expect(res.status).toBe(401);
   });
 
+  it('session probe answers null (not 401) when signed out, and the user when signed in', async () => {
+    const anon = await makeClient().get('/api/auth/session');
+    expect(anon.status).toBe(200);
+    expect(anon.body).toBeNull();
+    const me = await reception.get('/api/auth/session');
+    expect(me.body.user.username).toBe('reception');
+  });
+
   it('rejects wrong password with a generic message', async () => {
     const res = await makeClient().post('/api/auth/login', { username: 'admin', password: 'wrong-pass1' });
     expect(res.status).toBe(401);

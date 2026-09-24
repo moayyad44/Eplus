@@ -18,7 +18,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ['me'],
-    queryFn: () => api.get<Me>('/auth/me').catch(() => null),
+    queryFn: async () => {
+      const s = await api.get<Me | { needsRefresh: true } | null>('/auth/session').catch(() => null);
+      if (s && 'needsRefresh' in s) {
+        const ok = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'EmergencyPlus' } }).then((r) => r.ok).catch(() => false);
+        return ok ? api.get<Me>('/auth/me').catch(() => null) : null;
+      }
+      return s as Me | null;
+    },
     staleTime: 5 * 60_000,
     retry: false,
   });

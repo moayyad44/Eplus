@@ -43,7 +43,7 @@ export function VisitQueueForm({ patient, onDone }: { patient: PatientLite; onDo
           {types.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </Select>
       </Field>
-      <Field label={t('reception.priority')} className="sm:col-span-2">
+      <Field group label={t('reception.priority')} className="sm:col-span-2">
         <div className="grid grid-cols-3 gap-2">
           {(['NORMAL', 'URGENT', 'EMERGENCY'] as Priority[]).map((p) => (
             <button
