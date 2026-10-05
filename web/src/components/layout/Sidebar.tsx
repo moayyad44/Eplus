@@ -9,7 +9,7 @@ import { Logo } from './Logo';
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const { canAny } = useAuth();
-  const sections = NAV.map((s) => ({ ...s, items: s.items.filter((i) => canAny(...i.any)) })).filter((s) => s.items.length);
+  const sections = NAV.map((s) => ({ ...s, items: s.items.filter((i) => !i.any.length || canAny(...i.any)) })).filter((s) => s.items.length);
   return (
     <>
       <div className={clsx('fixed inset-0 z-30 bg-ink/30 lg:hidden', open ? 'block' : 'hidden')} onClick={onClose} />

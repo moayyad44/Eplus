@@ -43,6 +43,7 @@ const Notifications = p(() => import('./pages/system/Notifications'));
 const AuditLogs = p(() => import('./pages/system/AuditLogs'));
 const Settings = p(() => import('./pages/settings/Settings'));
 const Account = p(() => import('./pages/system/Account'));
+const Help = p(() => import('./pages/system/Help'));
 const PrintRoutes = p(() => import('./pages/print/PrintRoutes'));
 
 /** Route guard: the API enforces permissions; this just avoids showing screens the user cannot use. */
@@ -120,6 +121,7 @@ export default function App() {
         <Route path="audit" element={<Guard any={['audit.view']}><AuditLogs /></Guard>} />
         <Route path="settings" element={<Guard any={['settings.view', 'settings.manage']}><Settings /></Guard>} />
         <Route path="account" element={<Account />} />
+        <Route path="help" element={<Help />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

@@ -27,7 +27,7 @@ export default {
     dashboard: 'Dashboard', home: 'Home', reception: 'Reception', queue: 'Queue', patients: 'Patients', appointments: 'Appointments', lab: 'Laboratory', invoices: 'Invoices',
     newInvoice: 'New invoice', outstanding: 'Outstanding', cashier: 'Cashier', payments: 'Payments', expenses: 'Expenses', inventory: 'Items', transactions: 'Stock movements',
     stockCounts: 'Stock counts', suppliers: 'Suppliers', purchases: 'Purchase orders', users: 'Staff & users', schedule: 'Schedule', attendance: 'Attendance', leaves: 'Leaves',
-    reports: 'Reports', notifications: 'Notifications', audit: 'Audit log', settings: 'Settings', account: 'My account', logout: 'Sign out', menu: 'Menu',
+    reports: 'Reports', notifications: 'Notifications', audit: 'Audit log', settings: 'Settings', help: 'User guide', account: 'My account', logout: 'Sign out', menu: 'Menu',
   },
   topbar: {
     search: 'Search patients, invoices, items…', searchHint: 'Ctrl + K', checkIn: 'Check in', checkOut: 'Check out', checkedInAt: 'Checked in at {{time}}',

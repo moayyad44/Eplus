@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Bell, ChevronDown, Globe, KeyRound, LogIn, LogOut, Menu, Search, UserRound } from 'lucide-react';
+import { Bell, ChevronDown, CircleHelp, Globe, KeyRound, LifeBuoy, LogIn, LogOut, Menu, Search, UserRound } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
 import { api, type Paged } from '@/lib/api';
@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { fmtDateTime, fmtTime } from '@/lib/format';
 import { LANGS } from '@/i18n';
 import { GlobalSearch } from './GlobalSearch';
+import { sectionForPath } from '@/help/guide.ar';
 
 function useOutside(ref: React.RefObject<HTMLElement>, onOut: () => void) {
   useEffect(() => {
@@ -138,6 +139,9 @@ function UserMenu() {
           <Link to="/account" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-subtle">
             <UserRound className="h-4 w-4 text-ink-muted" /> {t('nav.account')}
           </Link>
+          <Link to="/help" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-subtle">
+            <LifeBuoy className="h-4 w-4 text-ink-muted" /> {t('nav.help')}
+          </Link>
           <Link to="/account" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-surface-subtle">
             <KeyRound className="h-4 w-4 text-ink-muted" /> {t('auth.changePassword')}
           </Link>
@@ -157,6 +161,17 @@ function UserMenu() {
         </div>
       )}
     </div>
+  );
+}
+
+function HelpButton() {
+  const { t } = useTranslation();
+  const { pathname } = useLocation();
+  if (pathname.startsWith('/help')) return null;
+  return (
+    <Link to={`/help#${sectionForPath(pathname)}`} title={t('help.openHelp')} aria-label={t('help.openHelp')} className="grid h-10 w-10 place-items-center rounded-xl text-ink-soft hover:bg-surface-sunken hover:text-primary-700">
+      <CircleHelp className="h-5 w-5" />
+    </Link>
   );
 }
 
@@ -185,6 +200,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       </button>
       <div className="ms-auto flex items-center gap-1">
         <AttendanceButton />
+        <HelpButton />
         <NotificationBell />
         <UserMenu />
       </div>

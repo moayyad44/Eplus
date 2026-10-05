@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Activity, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardCheck, ConciergeBell, FileClock, FileText, FlaskConical, History,
-  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight,
+  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -67,6 +67,7 @@ export const NAV: NavSection[] = [
       { to: '/reports', label: 'nav.reports', icon: i(BarChart3), any: ['reports.patients', 'reports.doctors', 'reports.financial', 'reports.inventory', 'reports.attendance'] },
       { to: '/audit', label: 'nav.audit', icon: i(History), any: ['audit.view'] },
       { to: '/settings', label: 'nav.settings', icon: i(Settings), any: ['settings.view', 'settings.manage'] },
+      { to: '/help', label: 'nav.help', icon: i(LifeBuoy), any: [] },
     ],
   },
 ];

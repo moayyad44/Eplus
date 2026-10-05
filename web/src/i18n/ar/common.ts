@@ -27,7 +27,7 @@ export default {
     lab: 'المختبر', invoices: 'الفواتير', newInvoice: 'فاتورة جديدة', outstanding: 'الفواتير غير المدفوعة', cashier: 'الصندوق', payments: 'المدفوعات',
     expenses: 'المصروفات', inventory: 'الأصناف', transactions: 'حركات المخزون', stockCounts: 'الجرد', suppliers: 'الموردون', purchases: 'أوامر الشراء',
     users: 'الموظفون والمستخدمون', schedule: 'جدول الدوام', attendance: 'الحضور', leaves: 'الإجازات', reports: 'التقارير', notifications: 'الإشعارات',
-    audit: 'سجل العمليات', settings: 'الإعدادات', account: 'حسابي', logout: 'تسجيل الخروج', menu: 'القائمة',
+    audit: 'سجل العمليات', settings: 'الإعدادات', help: 'دليل الاستخدام', account: 'حسابي', logout: 'تسجيل الخروج', menu: 'القائمة',
   },
   topbar: {
     search: 'بحث عن مريض، فاتورة، صنف…', searchHint: 'Ctrl + K', checkIn: 'تسجيل حضور', checkOut: 'تسجيل مغادرة', checkedInAt: 'حاضر منذ {{time}}',
