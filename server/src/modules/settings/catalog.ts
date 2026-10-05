@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { ah } from '../../lib/http';
 import { parse } from '../../lib/validate';
@@ -72,16 +73,32 @@ export function catalogRouter(cfg: CatalogConfig) {
     }),
   );
 
+  /**
+   * Delete: an entry that was never used is removed for good. An entry referenced by existing
+   * records (invoices, visits, stock…) cannot be removed without breaking history, so it is
+   * deactivated instead — hidden from every list and dropdown, but old records still show it.
+   */
   r.delete(
     '/:id',
     requirePerm('settings.manage'),
     ah(async (req, res) => {
       const where = { [idField]: req.params.id };
+      const before = await delegate().findUnique({ where });
+      if (!before) throw notFound();
+      try {
+        await prisma.$transaction(async (tx) => {
+          await (tx as any)[cfg.model].delete({ where });
+          await audit(tx, req.ctx, { action: `${cfg.entity}.delete`, entityType: cfg.entity, entityId: req.params.id, before });
+        });
+        return res.json({ deleted: true });
+      } catch (e) {
+        if (!(e instanceof Prisma.PrismaClientKnownRequestError) || !['P2003', 'P2014'].includes(e.code)) throw e;
+      }
       await prisma.$transaction(async (tx) => {
         const updated = await (tx as any)[cfg.model].update({ where, data: { isActive: false } });
-        await audit(tx, req.ctx, { action: `${cfg.entity}.deactivate`, entityType: cfg.entity, entityId: req.params.id, after: updated });
+        await audit(tx, req.ctx, { action: `${cfg.entity}.deactivate`, entityType: cfg.entity, entityId: req.params.id, summary: 'مستخدم في سجلات سابقة — تم التعطيل بدل الحذف', after: updated });
       });
-      res.json({ ok: true });
+      res.json({ deleted: false, deactivated: true });
     }),
   );
 

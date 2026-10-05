@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
-import { Badge, Button, Card, Checkbox, DataTable, Dialog, Field, IconButton, Input, SearchInput, Select, Textarea, type Column } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, DataTable, Dialog, Field, IconButton, Input, SearchInput, Select, Textarea, useConfirm, type Column } from '@/components/ui';
 
 export interface FieldDef {
   key: string;
@@ -29,6 +30,8 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
   const { can } = useAuth();
   const editable = can('settings.manage');
   const [q, setQ] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
+  const confirm = useConfirm();
   const list = useQuery({ queryKey: ['catalog', path, 'all', q], queryFn: () => api.get<Row[]>(`/settings/${path}`, { all: 'true', q: q || undefined, limit: 500 }) });
   const [edit, setEdit] = useState<Row | null>(null);
   const [form, setForm] = useState<Record<string, string | boolean>>({});
@@ -49,6 +52,15 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
     }
     return isNew ? api.post(`/settings/${path}`, body) : api.put(`/settings/${path}/${encodeURIComponent(String(edit![idKey]))}`, body);
   }, { invalidate: [['catalog']], onSuccess: () => setEdit(null) });
+  const remove = useApiMutation((row: Row) => api.del<{ deleted: boolean }>(`/settings/${path}/${encodeURIComponent(String(row[idKey]))}`), {
+    invalidate: [['catalog']],
+    success: false,
+    onSuccess: (r) => (r.deleted ? toast.success(t('settings.deleted')) : toast.info(t('settings.deactivatedInstead'), { duration: 7000 })),
+  });
+  const askRemove = async (row: Row) => {
+    if (await confirm({ message: t('settings.deleteConfirm', { name: String(row.name ?? row.code ?? '') }), danger: true, confirmLabel: t('common.delete') })) remove.mutate(row);
+  };
+  const rows = list.data?.filter((r) => showInactive || r.isActive !== false);
   const toggle = useApiMutation((row: Row) => api.put(`/settings/${path}/${encodeURIComponent(String(row[idKey]))}`, { isActive: !row.isActive }), { invalidate: [['catalog']], success: false });
 
   return (
@@ -56,10 +68,11 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {title && <h3 className="text-base font-bold">{title}</h3>}
         {searchable && <SearchInput value={q} onChange={setQ} placeholder={t('common.searchPlaceholder')} className="w-full sm:w-64" />}
+        <Checkbox label={t('common.showInactive')} checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
         {editable && <Button className="ms-auto" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => open(null)}>{t('settings.add')}</Button>}
       </div>
       <DataTable
-        rows={list.data}
+        rows={rows}
         loading={list.isFetching}
         error={list.error}
         rowKey={(r) => String(r[idKey])}
@@ -67,8 +80,13 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
         rowClassName={(r) => (r.isActive === false ? 'opacity-50' : undefined)}
         columns={[
           ...columns,
-          { key: '_active', header: t('common.status'), cell: (r) => (editable ? <button onClick={() => toggle.mutate(r)}><Badge tone={r.isActive === false ? 'neutral' : 'success'}>{r.isActive === false ? t('common.inactive') : t('common.active')}</Badge></button> : <Badge tone={r.isActive === false ? 'neutral' : 'success'}>{r.isActive === false ? t('common.inactive') : t('common.active')}</Badge>) },
-          ...(editable ? [{ key: '_e', header: '', cell: (r: Row) => <IconButton size="sm" label={t('common.edit')} onClick={() => open(r)}><Pencil className="h-4 w-4" /></IconButton> }] : []),
+          { key: '_active', header: t('common.status'), cell: (r) => (editable ? <button title={t('settings.statusHint')} onClick={() => toggle.mutate(r)}><Badge tone={r.isActive === false ? 'neutral' : 'success'}>{r.isActive === false ? t('common.inactive') : t('common.active')}</Badge></button> : <Badge tone={r.isActive === false ? 'neutral' : 'success'}>{r.isActive === false ? t('common.inactive') : t('common.active')}</Badge>) },
+          ...(editable ? [{ key: '_e', header: '', cell: (r: Row) => (
+            <div className="flex gap-0.5">
+              <IconButton size="sm" label={t('common.edit')} onClick={() => open(r)}><Pencil className="h-4 w-4" /></IconButton>
+              <IconButton size="sm" label={t('common.delete')} onClick={() => askRemove(r)}><Trash2 className="h-4 w-4 text-danger-600" /></IconButton>
+            </div>
+          ) }] : []),
         ]}
       />
       <Dialog open={!!edit} onClose={() => setEdit(null)} title={isNew ? t('settings.add') : t('common.edit')} footer={<><Button variant="outline" onClick={() => setEdit(null)}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>

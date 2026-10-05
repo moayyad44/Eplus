@@ -152,6 +152,19 @@ settingsRouter.put('/invoice-templates/:id', requirePerm('settings.manage'), ah(
   res.json(await saveTemplate(req.params.id, parse(templateBody, req.body), req.ctx));
 }));
 
+settingsRouter.delete('/invoice-templates/:id', requirePerm('settings.manage'), ah(async (req, res) => {
+  const tpl = await prisma.invoiceTemplate.findUnique({ where: { id: req.params.id }, include: { _count: { select: { invoices: true } } } });
+  if (!tpl) throw notFound();
+  if (tpl.isDefault) throw badRequest('لا يمكن حذف النموذج الافتراضي. اختر نموذجاً افتراضياً آخر أولاً');
+  const used = tpl._count.invoices > 0;
+  await prisma.$transaction(async (tx) => {
+    if (used) await tx.invoiceTemplate.update({ where: { id: tpl.id }, data: { isActive: false } });
+    else await tx.invoiceTemplate.delete({ where: { id: tpl.id } });
+    await audit(tx, req.ctx, { action: used ? 'invoice_template.deactivate' : 'invoice_template.delete', entityType: 'invoice_template', entityId: tpl.id, before: { name: tpl.name } });
+  });
+  res.json({ deleted: !used, deactivated: used });
+}));
+
 // ── Clinic logo ──
 const logoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024, files: 1 } });
 

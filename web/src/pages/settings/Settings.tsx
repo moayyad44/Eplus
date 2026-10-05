@@ -9,7 +9,7 @@ import { useApiMutation } from '@/lib/hooks';
 import { money, num } from '@/lib/format';
 import type { Service } from '@/lib/types';
 import type { InvoiceTemplate } from '@/lib/billing';
-import { Badge, Button, Card, CardHeader, Checkbox, Dialog, Field, IconButton, Input, PageHeader, PageLoader, Select, Tabs, Textarea } from '@/components/ui';
+import { Badge, Button, Card, CardHeader, Checkbox, Dialog, Field, IconButton, Input, PageHeader, PageLoader, Select, Tabs, Textarea, useConfirm } from '@/components/ui';
 import { usePermissionCatalog, useRoles } from '../staff/Users';
 import { CatalogEditor, type FieldDef } from './CatalogEditor';
 
@@ -237,6 +237,11 @@ function Templates() {
   const services = useQuery({ queryKey: ['catalog', 'services'], queryFn: () => api.get<Service[]>('/settings/services') });
   const [edit, setEdit] = useState<{ id?: string; name: string; description: string; isDefault: boolean; isActive: boolean; items: { serviceId: string; quantity: number; isMandatory: boolean }[] } | null>(null);
   const save = useApiMutation(() => (edit!.id ? api.put(`/settings/invoice-templates/${edit!.id}`, edit) : api.post('/settings/invoice-templates', edit)), { invalidate: [['catalog']], onSuccess: () => setEdit(null) });
+  const confirm = useConfirm();
+  const remove = useApiMutation((id: string) => api.del<{ deleted: boolean }>(`/settings/invoice-templates/${id}`), {
+    invalidate: [['catalog']], success: false,
+    onSuccess: (r) => (r.deleted ? toast.success(t('settings.deleted')) : toast.info(t('settings.deactivatedInstead'), { duration: 7000 })),
+  });
   const editable = can('settings.manage');
   return (
     <div className="space-y-4">
@@ -248,7 +253,12 @@ function Templates() {
             <CardHeader
               title={<span className="flex items-center gap-2">{tpl.name}{tpl.isDefault && <Badge tone="primary">{t('settings.templates.isDefault')}</Badge>}</span>}
               subtitle={tpl.description}
-              actions={editable && <Button size="sm" variant="outline" onClick={() => setEdit({ id: tpl.id, name: tpl.name, description: tpl.description ?? '', isDefault: tpl.isDefault, isActive: tpl.isActive, items: tpl.items.map((i) => ({ serviceId: i.serviceId, quantity: num(i.quantity), isMandatory: i.isMandatory })) })}>{t('common.edit')}</Button>}
+              actions={editable && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => setEdit({ id: tpl.id, name: tpl.name, description: tpl.description ?? '', isDefault: tpl.isDefault, isActive: tpl.isActive, items: tpl.items.map((i) => ({ serviceId: i.serviceId, quantity: num(i.quantity), isMandatory: i.isMandatory })) })}>{t('common.edit')}</Button>
+                  {!tpl.isDefault && <IconButton size="sm" label={t('common.delete')} onClick={async () => (await confirm({ message: t('settings.deleteConfirm', { name: tpl.name }), danger: true, confirmLabel: t('common.delete') })) && remove.mutate(tpl.id)}><Trash2 className="h-4 w-4 text-danger-600" /></IconButton>}
+                </>
+              )}
             />
             {tpl.items.length ? (
               <ul className="space-y-1 text-sm">{tpl.items.map((i) => <li key={i.id} className="flex justify-between"><span>{i.service.name} × {num(i.quantity)} {i.isMandatory && <Badge tone="primary" dot={false}>{t('settings.templates.mandatory')}</Badge>}</span><span className="tabular-nums">{money(i.service.price)}</span></li>)}</ul>

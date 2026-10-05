@@ -337,6 +337,26 @@ describe('inventory is transaction-based', () => {
   });
 });
 
+describe('settings lists', () => {
+  it('delete removes an unused entry, but only hides one that old records use', async () => {
+    const created = await admin.post('/api/settings/drugs', { name: 'Test Drug 1mg' });
+    const del = await admin.del(`/api/settings/drugs/${created.body.id}`);
+    expect(del.body).toEqual({ deleted: true });
+    expect(await prisma.drug.findUnique({ where: { id: created.body.id } })).toBeNull();
+
+    const cash = await prisma.paymentMethod.findUniqueOrThrow({ where: { code: 'CASH' } });
+    const used = await admin.del(`/api/settings/payment-methods/${cash.id}`);
+    expect(used.body).toEqual({ deleted: false, deactivated: true });
+    expect((await prisma.paymentMethod.findUniqueOrThrow({ where: { id: cash.id } })).isActive).toBe(false);
+    expect(await prisma.payment.count({ where: { methodId: cash.id } })).toBeGreaterThan(0); // history intact
+    await admin.put(`/api/settings/payment-methods/${cash.id}`, { isActive: true });
+
+    expect((await reception.del(`/api/settings/drugs/${cash.id}`)).status).toBe(403);
+    const tpl = await prisma.invoiceTemplate.findFirstOrThrow({ where: { isDefault: true } });
+    expect((await admin.del(`/api/settings/invoice-templates/${tpl.id}`)).status).toBe(400);
+  });
+});
+
 describe('appointments, staff, reports, search', () => {
   it('appointment conflicts are detected and check-in creates a queue visit', async () => {
     const p = await prisma.patient.findFirstOrThrow({ where: { fullName: 'فاطمة سليم' } });
