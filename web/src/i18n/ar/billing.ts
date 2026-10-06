@@ -17,5 +17,12 @@ export default {
     invoiceCount: 'عدد الفواتير', paymentsTitle: 'سجل المدفوعات', paymentsSubtitle: 'جميع الإيصالات والمرتجعات', mine: 'مدفوعاتي فقط', noVisit: 'بدون زيارة',
     patientInfo: 'بيانات المريض', summary: 'الملخص', priceLocked: 'السعر محدد من قائمة الخدمات', editDraftOnly: 'لا يمكن تعديل فاتورة صادرة',
     cancelHasPayments: 'لإلغاء فاتورة عليها مدفوعات يجب إرجاع المبلغ أولاً', status: 'حالة الدفع', thermal: 'حراري 80mm',
+    ins: {
+      title: 'التأمين والذمم', hint: 'حصة التأمين ليست خصماً ولا تُحسب مقبوضة حتى تدفعها الشركة فعلياً.',
+      totalBilled: 'إجمالي الفواتير', patientBilled: 'حصة المرضى', insuranceBilled: 'حصة التأمين (مطالبات)', cashCollected: 'المحصّل فعلياً (مرضى + تأمين)',
+      insuranceReceived: 'المستلم من شركات التأمين', patientReceivables: 'ذمم المرضى', insuranceReceivables: 'ذمم شركات التأمين', rejected: 'المرفوض من التأمين',
+      footer: 'المعتمد من الشركات: {{approved}} · المشطوب: {{writtenOff}} · المحوّل على المرضى: {{transferred}}',
+      netIncomeHint: 'المحصّل فعلياً (مرضى + تأمين) − المصروفات',
+    },
   },
 };

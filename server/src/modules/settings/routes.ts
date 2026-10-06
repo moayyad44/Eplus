@@ -90,6 +90,13 @@ settingsRouter.use('/services', catalogRouter({
     code: z.string().trim().toUpperCase().min(1).max(20), name: z.string().trim().min(1).max(120), category: z.nativeEnum(ServiceCategory),
     price: money, taxRate: z.coerce.number().min(0).max(100).default(0), allowPriceEdit: z.boolean().default(false),
     inventoryItemId: z.string().uuid().nullable().optional(), isActive: z.boolean().optional(),
+    // Insurance defaults for this service (contracts can override them).
+    insurable: z.boolean().default(true),
+    insCoveragePercent: z.preprocess((v) => (v === '' || v === undefined ? null : v), z.coerce.number().min(0).max(100).nullable()),
+    insMaxAmount: z.preprocess((v) => (v === '' || v === undefined ? null : v), z.coerce.number().min(0).max(1_000_000).nullable()),
+    insRequiresApproval: z.boolean().default(false),
+    insRequiresReport: z.boolean().default(false),
+    insNotes: nullableStr(300),
   }),
 }));
 settingsRouter.use('/lab-tests', catalogRouter({

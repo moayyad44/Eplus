@@ -85,12 +85,19 @@ function InvoicePrint() {
             <Row k={t('patients.fileNumber')} v={inv.patient.fileNumber} />
             {inv.doctor && <Row k={t('common.doctor')} v={inv.doctor.fullName} />}
             <Row k={t('common.status')} v={t(`enum.InvoiceStatus.${inv.status}`)} />
+            {inv.payerType === 'INSURANCE' && (
+              <>
+                <Row k={t('ins.company')} v={`${inv.insuranceCompany?.nameAr ?? ''} — ${inv.insuranceContract?.name ?? ''}`} />
+                <Row k={t('ins.m.memberId')} v={inv.patientInsurance?.memberId} />
+                {inv.claim && <Row k={t('ins.c.number')} v={inv.claim.claimNumber} />}
+              </>
+            )}
           </div>
           <table className="w-full border-collapse">
-            <thead><tr className="bg-primary-50 text-xs"><th className="border border-gray-300 p-1.5 text-start">{t('billing.service')}</th><th className="border border-gray-300 p-1.5">{t('common.quantity')}</th>{!thermal && <th className="border border-gray-300 p-1.5">{t('billing.unitPrice')}</th>}{!thermal && <th className="border border-gray-300 p-1.5">{t('common.discount')}</th>}<th className="border border-gray-300 p-1.5 text-end">{t('billing.lineTotal')}</th></tr></thead>
+            <thead><tr className="bg-primary-50 text-xs"><th className="border border-gray-300 p-1.5 text-start">{t('billing.service')}</th><th className="border border-gray-300 p-1.5">{t('common.quantity')}</th>{!thermal && <th className="border border-gray-300 p-1.5">{t('billing.unitPrice')}</th>}{!thermal && <th className="border border-gray-300 p-1.5">{t('common.discount')}</th>}<th className="border border-gray-300 p-1.5 text-end">{t('billing.lineTotal')}</th>{inv.payerType === 'INSURANCE' && !thermal && <><th className="border border-gray-300 p-1.5 text-end">{t('ins.inv.insuranceShare')}</th><th className="border border-gray-300 p-1.5 text-end">{t('ins.inv.patientShare')}</th></>}</tr></thead>
             <tbody>
               {inv.items.map((i) => (
-                <tr key={i.id}><td className="border border-gray-300 p-1.5">{i.description}</td><td className="border border-gray-300 p-1.5 text-center">{qty(i.quantity)}</td>{!thermal && <td className="border border-gray-300 p-1.5 text-center">{money(i.unitPrice)}</td>}{!thermal && <td className="border border-gray-300 p-1.5 text-center">{num(i.discount) ? money(i.discount) : '—'}</td>}<td className="border border-gray-300 p-1.5 text-end">{money(i.lineTotal)}</td></tr>
+                <tr key={i.id}><td className="border border-gray-300 p-1.5">{i.description}</td><td className="border border-gray-300 p-1.5 text-center">{qty(i.quantity)}</td>{!thermal && <td className="border border-gray-300 p-1.5 text-center">{money(i.unitPrice)}</td>}{!thermal && <td className="border border-gray-300 p-1.5 text-center">{num(i.discount) ? money(i.discount) : '—'}</td>}<td className="border border-gray-300 p-1.5 text-end">{money(i.lineTotal)}</td>{inv.payerType === 'INSURANCE' && !thermal && <><td className="border border-gray-300 p-1.5 text-end">{money(i.insuranceShare)}</td><td className="border border-gray-300 p-1.5 text-end">{money(i.patientShare)}</td></>}</tr>
               ))}
             </tbody>
           </table>
@@ -98,9 +105,15 @@ function InvoicePrint() {
             <div className="flex justify-between"><span>{t('common.subtotal')}</span><span>{money(inv.subtotal)}</span></div>
             {num(inv.discountTotal) > 0 && <div className="flex justify-between"><span>{t('common.discount')}</span><span>-{money(inv.discountTotal)}</span></div>}
             {num(inv.taxTotal) > 0 && <div className="flex justify-between"><span>{t('common.tax')}</span><span>{money(inv.taxTotal)}</span></div>}
-            <div className="flex justify-between border-t border-gray-400 pt-1 text-base font-bold"><span>{t('billing.total')}</span><span>{money(inv.total)}</span></div>
-            <div className="flex justify-between"><span>{t('common.paid')}</span><span>{money(num(inv.paidAmount) - num(inv.refundedAmount))}</span></div>
-            <div className="flex justify-between font-bold"><span>{t('common.balance')}</span><span>{money(inv.balance)}</span></div>
+            <div className="flex justify-between border-t border-gray-400 pt-1 text-base font-bold"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.total') : t('billing.total')}</span><span>{money(inv.total)}</span></div>
+            {inv.payerType === 'INSURANCE' && (
+              <>
+                <div className="flex justify-between"><span>{t('ins.inv.insuranceShare')}</span><span>{money(inv.insuranceShare)}</span></div>
+                <div className="flex justify-between font-bold"><span>{t('ins.inv.patientShare')}</span><span>{money(num(inv.patientShare) + num(inv.transferredFromInsurance))}</span></div>
+              </>
+            )}
+            <div className="flex justify-between"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.patientPaid') : t('common.paid')}</span><span>{money(num(inv.paidAmount) - num(inv.refundedAmount))}</span></div>
+            <div className="flex justify-between font-bold"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.patientBalance') : t('common.balance')}</span><span>{money(inv.balance)}</span></div>
           </div>
           {inv.payments.filter((x) => !x.voidedAt).length > 0 && (
             <div className="mt-4 text-xs">

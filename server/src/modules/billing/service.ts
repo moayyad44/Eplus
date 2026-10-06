@@ -10,12 +10,17 @@ import { getSetting } from '../../lib/settings';
 import { addDays } from '../../lib/dates';
 import { recordMovement } from '../inventory/service';
 import { changeVisitStatus } from '../visits/service';
+import { computeCoverage, contractPrice, usableMembership, type MembershipWithContract } from '../insurance/coverage';
+import { cancelClaimWithInvoice, createClaimForInvoice } from '../insurance/claims';
 
 export interface InvoiceItemInput {
   serviceId: string;
   quantity: number;
   unitPrice?: number | null;
   discount?: number | null;
+  /** Insurance invoices only (needs insurance.coverage.override). */
+  overrideApproval?: boolean;
+  insuranceShare?: number | null;
 }
 
 export interface InvoiceInput {
@@ -23,9 +28,14 @@ export interface InvoiceInput {
   visitId?: string | null;
   doctorId?: string | null;
   templateId?: string | null;
+  /** Omitted → taken from the visit (or self pay without a visit). */
+  payerType?: 'SELF_PAY' | 'INSURANCE';
+  patientInsuranceId?: string | null;
   items: InvoiceItemInput[];
   invoiceDiscount?: number;
   notes?: string | null;
+  /** When rebuilding a draft: its own lines do not count against authorizations. */
+  excludeInvoiceId?: string | null;
 }
 
 /**
@@ -38,10 +48,18 @@ export async function buildInvoice(tx: Tx, ctx: Ctx, input: InvoiceInput) {
   if (!patient) throw notFound('المريض غير موجود');
 
   let doctorId = input.doctorId ?? null;
+  let payer: 'SELF_PAY' | 'INSURANCE' = input.payerType ?? 'SELF_PAY';
+  let membershipId = input.patientInsuranceId ?? null;
   if (input.visitId) {
     const visit = await tx.visit.findUnique({ where: { id: input.visitId } });
     if (!visit || visit.patientId !== patient.id) throw badRequest('الزيارة لا تخص هذا المريض');
     doctorId = doctorId ?? visit.doctorId;
+    if (!input.payerType) { payer = visit.payerType === 'INSURANCE' ? 'INSURANCE' : 'SELF_PAY'; membershipId = membershipId ?? visit.patientInsuranceId; }
+  }
+  let membership: MembershipWithContract | null = null;
+  if (payer === 'INSURANCE') {
+    if (!membershipId) throw badRequest('اختر تأمين المريض أو اختر الدفع النقدي');
+    membership = await usableMembership(tx, patient.id, membershipId);
   }
 
   const template = input.templateId
@@ -68,8 +86,9 @@ export async function buildInvoice(tx: Tx, ctx: Ctx, input: InvoiceInput) {
     if (!s) throw badRequest('إحدى المواد غير موجودة في قائمة الخدمات');
     if (!s.isActive && !mandatoryIds.has(s.id)) throw badRequest(`المادة "${s.name}" غير مفعلة`);
     if (!(l.quantity > 0)) throw badRequest('الكمية يجب أن تكون أكبر من صفر');
-    let unitPrice = D(s.price);
-    if (l.unitPrice != null && !D(l.unitPrice).eq(s.price)) {
+    const basePrice = membership ? contractPrice(membership.contract.rules, s) : D(s.price);
+    let unitPrice = basePrice;
+    if (l.unitPrice != null && !D(l.unitPrice).eq(basePrice)) {
       if (!s.allowPriceEdit && !can(ctx, 'invoices.price_override')) throw forbidden(`لا تملك صلاحية تعديل سعر "${s.name}"`);
       unitPrice = D(l.unitPrice);
     }
@@ -88,20 +107,50 @@ export async function buildInvoice(tx: Tx, ctx: Ctx, input: InvoiceInput) {
     return {
       serviceId: s.id, description: s.name, category: s.category, quantity: qty, unitPrice, discount, taxRate: s.taxRate,
       taxAmount, lineTotal, isMandatory: mandatoryIds.has(s.id), sortOrder: idx,
+      coveragePercent: null as Prisma.Decimal | null, insuranceShare: D(0), patientShare: lineTotal,
+      authorizationId: null as string | null, coverageNote: null as string | null,
+      _service: s, _input: l,
     };
   });
 
+  // Insurance split: coverage is a separate share, never a discount.
+  let warnings: string[] = [];
+  let coverage: Awaited<ReturnType<typeof computeCoverage>> | null = null;
+  if (membership) {
+    coverage = await computeCoverage(tx, ctx, membership, items.map((i) => ({
+      service: i._service, quantity: i.quantity, lineTotal: i.lineTotal, overrideApproval: i._input.overrideApproval, insuranceShare: i._input.insuranceShare,
+    })), { visitId: input.visitId, excludeInvoiceId: input.excludeInvoiceId });
+    coverage.lines.forEach((c, k) => Object.assign(items[k], {
+      coveragePercent: c.coveragePercent, insuranceShare: c.insuranceShare, patientShare: c.patientShare, authorizationId: c.authorizationId, coverageNote: c.coverageNote,
+    }));
+    warnings = coverage.warnings;
+  }
+  const insuranceShare = items.reduce((t, i) => t.add(i.insuranceShare), D(0));
+  const linesPatient = linesTotal.sub(insuranceShare);
+
   const invoiceDiscount = r3(input.invoiceDiscount ?? 0);
   if (invoiceDiscount.gt(0) && !can(ctx, 'invoices.discount')) throw forbidden('لا تملك صلاحية منح الخصم');
-  if (invoiceDiscount.lt(0) || invoiceDiscount.gt(linesTotal)) throw badRequest('الخصم أكبر من قيمة الفاتورة');
+  // A clinic discount only reduces what the patient pays; the company share is claimed in full.
+  if (invoiceDiscount.lt(0) || invoiceDiscount.gt(linesPatient)) throw badRequest(membership ? 'الخصم أكبر من حصة المريض' : 'الخصم أكبر من قيمة الفاتورة');
   const total = linesTotal.sub(invoiceDiscount);
+  const patientShare = linesPatient.sub(invoiceDiscount);
 
   return {
     header: {
       patientId: patient.id, visitId: input.visitId ?? null, doctorId, templateId: template?.id ?? null, notes: input.notes ?? null,
-      subtotal, itemsDiscount, invoiceDiscount, discountTotal: itemsDiscount.add(invoiceDiscount), taxTotal, total, balance: total,
+      subtotal, itemsDiscount, invoiceDiscount, discountTotal: itemsDiscount.add(invoiceDiscount), taxTotal, total, balance: patientShare,
+      payerType: membership ? ('INSURANCE' as const) : ('SELF_PAY' as const),
+      patientInsuranceId: membership?.id ?? null, insuranceCompanyId: membership?.companyId ?? null,
+      insuranceContractId: membership?.contractId ?? null, insuranceMemberId: membership?.memberId ?? null,
+      patientShare, insuranceShare,
     },
-    items,
+    items: items.map(({ _service, _input, ...rest }) => rest), // eslint-disable-line @typescript-eslint/no-unused-vars
+    warnings,
+    insurance: membership && coverage ? {
+      company: membership.contract.company.nameAr, contract: membership.contract.name, memberId: membership.memberId,
+      limit: coverage.limit.limit, used: coverage.limit.used, remaining: coverage.limit.remaining,
+      lines: coverage.lines.map((c) => ({ requiresApproval: c.requiresApproval, requiresReport: c.requiresReport, approvalMissing: c.approvalMissing })),
+    } : null,
   };
 }
 
@@ -121,6 +170,8 @@ export async function issueInvoice(tx: Tx, ctx: Ctx, invoiceId: string) {
   const inv = await tx.invoice.findUnique({ where: { id: invoiceId } });
   if (!inv) throw notFound();
   if (inv.status !== 'DRAFT') throw badRequest('الفاتورة صادرة مسبقاً');
+  // The insurance must still be valid on the day the invoice is issued.
+  if (inv.patientInsuranceId) await usableMembership(tx, inv.patientId, inv.patientInsuranceId);
   const fin = await getSetting('financial', tx);
   const n = await nextCounter(tx, 'invoice'); // single serial shared by all invoice templates
   const issuedAt = new Date();
@@ -128,12 +179,22 @@ export async function issueInvoice(tx: Tx, ctx: Ctx, invoiceId: string) {
   const updated = await tx.invoice.update({
     where: { id: inv.id },
     data: {
-      invoiceNumber, issuedAt, status: D(inv.total).eq(0) ? 'PAID' : 'ISSUED',
+      invoiceNumber, issuedAt, status: D(inv.patientShare).eq(0) ? 'PAID' : 'ISSUED',
       dueDate: fin.invoiceDueDays > 0 ? addDays(issuedAt, fin.invoiceDueDays) : issuedAt,
     },
   });
   await moveStockForInvoice(tx, ctx, inv.id, invoiceNumber, false);
-  await audit(tx, ctx, { action: 'invoice.issue', entityType: 'invoice', entityId: inv.id, summary: `إصدار الفاتورة ${invoiceNumber} بقيمة ${D(inv.total).toNumber()}` });
+  await audit(tx, ctx, {
+    action: 'invoice.issue', entityType: 'invoice', entityId: inv.id,
+    summary: `إصدار الفاتورة ${invoiceNumber} بقيمة ${D(inv.total).toNumber()}${D(inv.insuranceShare).gt(0) ? ` (حصة التأمين ${D(inv.insuranceShare).toNumber()}، حصة المريض ${D(inv.patientShare).toNumber()})` : ''}`,
+  });
+  // The company's share becomes an insurance receivable through its claim.
+  await createClaimForInvoice(tx, ctx, inv.id);
+  // Nothing left for the patient to pay (e.g. fully covered) → the visit is done.
+  if (updated.status === 'PAID' && inv.visitId) {
+    const visit = await tx.visit.findUnique({ where: { id: inv.visitId }, select: { status: true } });
+    if (visit?.status === 'WAITING_PAYMENT') await changeVisitStatus(tx, ctx, inv.visitId, 'COMPLETED', 'لا يوجد مبلغ على المريض', { system: true });
+  }
   return updated;
 }
 
@@ -143,13 +204,15 @@ export async function recomputeInvoice(tx: Tx, invoiceId: string) {
   const sums = await tx.payment.groupBy({ by: ['type'], where: { invoiceId, voidedAt: null }, _sum: { amount: true } });
   const paid = D(sums.find((s) => s.type === 'PAYMENT')?._sum.amount);
   const refunded = D(sums.find((s) => s.type === 'REFUND')?._sum.amount);
-  // Refunds return money AND write off the same amount, so the balance owed is total − payments.
-  const balance = Prisma.Decimal.max(D(inv.total).sub(paid), 0);
+  // Refunds return money AND write off the same amount, so the balance owed is (patient share) − payments.
+  // The patient owes their share plus any insurance amount the clinic transferred back to them.
+  const owed = D(inv.patientShare).add(inv.transferredFromInsurance);
+  const balance = Prisma.Decimal.max(owed.sub(paid), 0);
   let status: InvoiceStatus = inv.status;
   if (!['DRAFT', 'CANCELLED'].includes(inv.status)) {
     if (refunded.gt(0) && refunded.gte(paid)) status = 'REFUNDED';
     else if (balance.eq(0)) status = 'PAID';
-    else if (inv.dueDate && inv.dueDate < new Date() && paid.lt(inv.total)) status = 'OVERDUE';
+    else if (inv.dueDate && inv.dueDate < new Date() && paid.lt(owed)) status = 'OVERDUE';
     else if (paid.gt(0)) status = 'PARTIALLY_PAID';
     else status = 'ISSUED';
   }
@@ -210,6 +273,7 @@ export async function cancelInvoice(tx: Tx, ctx: Ctx, invoiceId: string, reason:
   if (inv.status === 'CANCELLED') throw badRequest('الفاتورة ملغاة مسبقاً');
   const netPaid = D(inv.paidAmount).sub(inv.refundedAmount);
   if (netPaid.gt(0)) throw new AppError(409, 'HAS_PAYMENTS', 'لا يمكن إلغاء فاتورة عليها مدفوعات. قم بإرجاع المبلغ أولاً');
+  await cancelClaimWithInvoice(tx, ctx, inv.id, reason);
   const updated = await tx.invoice.update({
     where: { id: inv.id },
     data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledById: ctx.userId, cancelReason: reason, balance: 0 },

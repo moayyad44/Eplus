@@ -17,11 +17,13 @@ export const attachmentsRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
 
 /** Expense receipts are financial documents; everything else is part of the medical record. */
-const canView = (ctx: Ctx, a: { expenseId: string | null }) => (a.expenseId ? can(ctx, 'expenses.view') : can(ctx, 'attachments.view'));
+const insuranceLinked = (a: { patientInsuranceId?: string | null; authorizationId?: string | null; claimId?: string | null }) => !!(a.patientInsuranceId || a.authorizationId || a.claimId);
+const canView = (ctx: Ctx, a: { expenseId: string | null; patientInsuranceId?: string | null; authorizationId?: string | null; claimId?: string | null }) =>
+  a.expenseId ? can(ctx, 'expenses.view') : can(ctx, 'attachments.view') || (insuranceLinked(a) && can(ctx, 'insurance.view'));
 
 attachmentsRouter.post(
   '/',
-  requireAnyPerm('attachments.upload', 'expenses.manage', 'settings.manage'),
+  requireAnyPerm('attachments.upload', 'expenses.manage', 'settings.manage', 'insurance.create', 'insurance.update', 'insurance.claim.create', 'insurance.authorization.manage'),
   upload.single('file'),
   ah(async (req, res) => {
     const file = req.file;
@@ -30,12 +32,19 @@ attachmentsRouter.post(
     const body = parse(
       z.object({
         patientId: z.string().uuid().optional(), visitId: z.string().uuid().optional(), labOrderId: z.string().uuid().optional(), expenseId: z.string().uuid().optional(),
+        patientInsuranceId: z.string().uuid().optional(), authorizationId: z.string().uuid().optional(), claimId: z.string().uuid().optional(),
         category: z.nativeEnum(AttachmentCategory).default('OTHER'), description: nullableStr(300),
       }),
       req.body,
     );
-    if (body.expenseId ? !can(req.ctx, 'expenses.manage') : !can(req.ctx, 'attachments.upload')) throw forbidden();
+    const insuranceOk = insuranceLinked(body) && ['insurance.create', 'insurance.update', 'insurance.claim.create', 'insurance.authorization.manage'].some((p) => req.ctx.perms.has(p));
+    if (body.expenseId ? !can(req.ctx, 'expenses.manage') : !can(req.ctx, 'attachments.upload') && !insuranceOk) throw forbidden();
     let patientId = body.patientId;
+    // Insurance documents (card, policy, approval, claim papers) are filed under the patient too.
+    if (body.patientInsuranceId) patientId = (await prisma.patientInsurance.findUnique({ where: { id: body.patientInsuranceId }, select: { patientId: true } }))?.patientId ?? patientId;
+    if (body.authorizationId) patientId = (await prisma.insuranceAuthorization.findUnique({ where: { id: body.authorizationId }, select: { patientId: true } }))?.patientId ?? patientId;
+    if (body.claimId) patientId = (await prisma.insuranceClaim.findUnique({ where: { id: body.claimId }, select: { patientId: true } }))?.patientId ?? patientId;
+    if (insuranceLinked(body)) body.category = 'INSURANCE';
     if (body.visitId) {
       const v = await prisma.visit.findUnique({ where: { id: body.visitId }, select: { patientId: true } });
       if (!v) throw notFound('الزيارة غير موجودة');
@@ -62,11 +71,14 @@ attachmentsRouter.post(
 
 attachmentsRouter.get(
   '/',
-  requireAnyPerm('attachments.view', 'expenses.view'),
+  requireAnyPerm('attachments.view', 'expenses.view', 'insurance.view'),
   ah(async (req, res) => {
-    const q = parse(z.object({ patientId: z.string().uuid().optional(), visitId: z.string().uuid().optional(), labOrderId: z.string().uuid().optional(), expenseId: z.string().uuid().optional() }), req.query);
+    const q = parse(z.object({
+      patientId: z.string().uuid().optional(), visitId: z.string().uuid().optional(), labOrderId: z.string().uuid().optional(), expenseId: z.string().uuid().optional(),
+      patientInsuranceId: z.string().uuid().optional(), authorizationId: z.string().uuid().optional(), claimId: z.string().uuid().optional(),
+    }), req.query);
     if (!Object.values(q).some(Boolean)) throw badRequest('حدد المريض أو الزيارة');
-    if (q.expenseId ? !can(req.ctx, 'expenses.view') : !can(req.ctx, 'attachments.view')) throw forbidden();
+    if (q.expenseId ? !can(req.ctx, 'expenses.view') : !can(req.ctx, 'attachments.view') && !(insuranceLinked(q) && can(req.ctx, 'insurance.view'))) throw forbidden();
     const where: Prisma.AttachmentWhereInput = { deletedAt: null, ...q };
     res.json(await prisma.attachment.findMany({ where, orderBy: { createdAt: 'desc' } }));
   }),
@@ -74,7 +86,7 @@ attachmentsRouter.get(
 
 attachmentsRouter.get(
   '/:id/file',
-  requireAnyPerm('attachments.view', 'expenses.view'),
+  requireAnyPerm('attachments.view', 'expenses.view', 'insurance.view'),
   ah(async (req, res) => {
     const a = await prisma.attachment.findFirst({ where: { id: req.params.id, deletedAt: null } });
     if (!a) throw notFound();
@@ -90,11 +102,11 @@ attachmentsRouter.get(
 
 attachmentsRouter.delete(
   '/:id',
-  requireAnyPerm('attachments.upload', 'expenses.manage'),
+  requireAnyPerm('attachments.upload', 'expenses.manage', 'insurance.update'),
   ah(async (req, res) => {
     const a = await prisma.attachment.findFirst({ where: { id: req.params.id, deletedAt: null } });
     if (!a) throw notFound();
-    if (a.expenseId ? !can(req.ctx, 'expenses.manage') : !can(req.ctx, 'attachments.upload')) throw forbidden();
+    if (a.expenseId ? !can(req.ctx, 'expenses.manage') : !can(req.ctx, 'attachments.upload') && !(insuranceLinked(a) && can(req.ctx, 'insurance.update'))) throw forbidden();
     await prisma.$transaction(async (tx) => {
       await tx.attachment.update({ where: { id: a.id }, data: { deletedAt: new Date() } });
       await audit(tx, req.ctx, { action: 'attachment.remove', entityType: 'attachment', entityId: a.id, summary: a.fileName });

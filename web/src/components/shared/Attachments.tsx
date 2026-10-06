@@ -10,20 +10,24 @@ import { Button, EmptyState, IconButton, Select, Spinner, useConfirm } from '@/c
 
 interface Att { id: string; fileName: string; mimeType: string; size: number; category: string; createdAt: string; description: string | null }
 
-const CATEGORIES = ['REPORT', 'IMAGE', 'LAB_RESULT', 'DOCUMENT', 'INVOICE', 'OTHER'];
+const CATEGORIES = ['REPORT', 'IMAGE', 'LAB_RESULT', 'DOCUMENT', 'INVOICE', 'INSURANCE', 'OTHER'];
 
-export function AttachmentsPanel({ patientId, visitId, labOrderId, expenseId, compact }: { patientId?: string; visitId?: string; labOrderId?: string; expenseId?: string; compact?: boolean }) {
+export function AttachmentsPanel({ patientId, visitId, labOrderId, expenseId, patientInsuranceId, authorizationId, claimId, compact }: {
+  patientId?: string; visitId?: string; labOrderId?: string; expenseId?: string; patientInsuranceId?: string; authorizationId?: string; claimId?: string; compact?: boolean;
+}) {
   const { t } = useTranslation();
   const { can } = useAuth();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const input = useRef<HTMLInputElement>(null);
-  const [category, setCategory] = useState(expenseId ? 'INVOICE' : 'REPORT');
+  const insurance = !!(patientInsuranceId || authorizationId || claimId);
+  const [category, setCategory] = useState(expenseId ? 'INVOICE' : insurance ? 'INSURANCE' : 'REPORT');
   const [busy, setBusy] = useState(false);
-  const params = { patientId, visitId, labOrderId, expenseId };
+  const params = { patientId, visitId, labOrderId, expenseId, patientInsuranceId, authorizationId, claimId };
   const key = ['attachments', params];
   const list = useQuery({ queryKey: key, queryFn: () => api.get<Att[]>('/attachments', params) });
-  const canUpload = expenseId ? can('expenses.manage') : can('attachments.upload');
+  const { canAny } = useAuth();
+  const canUpload = expenseId ? can('expenses.manage') : can('attachments.upload') || (insurance && canAny('insurance.create', 'insurance.update', 'insurance.claim.create', 'insurance.authorization.manage'));
 
   const upload = async (file: File) => {
     const fd = new FormData();
@@ -51,7 +55,7 @@ export function AttachmentsPanel({ patientId, visitId, labOrderId, expenseId, co
     <div>
       {canUpload && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Select value={category} onChange={(e) => setCategory(e.target.value)} className="!h-9 w-40">
+          <Select value={category} disabled={insurance} onChange={(e) => setCategory(e.target.value)} className="!h-9 w-40">
             {CATEGORIES.map((c) => <option key={c} value={c}>{t(`enum.AttachmentCategory.${c}`)}</option>)}
           </Select>
           <input ref={input} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.txt" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

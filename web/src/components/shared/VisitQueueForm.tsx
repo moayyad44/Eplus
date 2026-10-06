@@ -8,6 +8,8 @@ import { api } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
 import type { NamedItem, PatientLite, Priority, UserLite } from '@/lib/types';
 import { Button, Field, Input, Select } from '@/components/ui';
+import { useAuth } from '@/lib/auth';
+import { PayerPicker, type PayerValue } from '@/components/insurance/widgets';
 
 export const useDoctors = () => useQuery({ queryKey: ['users', 'lookup', 'DOCTOR'], queryFn: () => api.get<UserLite[]>('/users/lookup', { staffType: 'DOCTOR' }), staleTime: 5 * 60_000 });
 export const useVisitTypes = () => useQuery({ queryKey: ['catalog', 'visit-types'], queryFn: () => api.get<(NamedItem & { durationMin: number; color: string | null })[]>('/settings/visit-types'), staleTime: 5 * 60_000 });
@@ -18,8 +20,10 @@ export function VisitQueueForm({ patient, onDone }: { patient: PatientLite; onDo
   const doctors = useDoctors();
   const types = useVisitTypes();
   const [v, setV] = useState({ doctorId: '', visitTypeId: '', priority: 'NORMAL' as Priority, chiefComplaint: '' });
+  const { canAny } = useAuth();
+  const [payer, setPayer] = useState<PayerValue | null>(null);
   const create = useApiMutation(
-    () => api.post<{ queueNumber: number }>('/visits', { patientId: patient.id, doctorId: v.doctorId || null, visitTypeId: v.visitTypeId || null, priority: v.priority, chiefComplaint: v.chiefComplaint || null }),
+    () => api.post<{ queueNumber: number }>('/visits', { patientId: patient.id, doctorId: v.doctorId || null, visitTypeId: v.visitTypeId || null, priority: v.priority, chiefComplaint: v.chiefComplaint || null, ...(payer ?? {}) }),
     {
       invalidate: [['queue'], ['dashboard']],
       success: false,
@@ -62,6 +66,11 @@ export function VisitQueueForm({ patient, onDone }: { patient: PatientLite; onDo
           ))}
         </div>
       </Field>
+      {canAny('insurance.view', 'insurance.update') && (
+        <Field group label={t('ins.payer.label')} className="sm:col-span-2">
+          <PayerPicker patientId={patient.id} value={payer} onChange={setPayer} />
+        </Field>
+      )}
       <Field label={t('reception.complaint')} className="sm:col-span-2">
         <Input value={v.chiefComplaint} onChange={(e) => setV({ ...v, chiefComplaint: e.target.value })} />
       </Field>

@@ -59,6 +59,24 @@ export const PERMISSIONS = {
   'stockcount.approve': { module: 'inventory', description: 'اعتماد الجرد' },
   'suppliers.view': { module: 'inventory', description: 'عرض الموردين' },
   'suppliers.manage': { module: 'inventory', description: 'إدارة الموردين وأوامر الشراء والدفعات' },
+  // Insurance
+  'insurance.view': { module: 'insurance', description: 'عرض بيانات التأمين والمطالبات' },
+  'insurance.create': { module: 'insurance', description: 'إضافة تأمين لمريض' },
+  'insurance.update': { module: 'insurance', description: 'تعديل تأمين مريض واختيار الدافع للزيارة' },
+  'insurance.delete': { module: 'insurance', description: 'حذف (أرشفة) تأمين مريض' },
+  'insurance.verify': { module: 'insurance', description: 'التحقق من صلاحية التأمين' },
+  'insurance.authorization.manage': { module: 'insurance', description: 'طلبات الموافقة المسبقة وتسجيل ردّ الشركة' },
+  'insurance.coverage.override': { module: 'insurance', description: 'اعتماد تغطية بدون موافقة مسبقة أو تعديل حصة التأمين على البند' },
+  'insurance.claim.create': { module: 'insurance', description: 'إنشاء وتجهيز المطالبات' },
+  'insurance.claim.submit': { module: 'insurance', description: 'إرسال المطالبات لشركة التأمين' },
+  'insurance.claim.approve': { module: 'insurance', description: 'تسجيل اعتماد شركة التأمين للمطالبة' },
+  'insurance.claim.reject': { module: 'insurance', description: 'تسجيل رفض المطالبة، الشطب، وتحويل المرفوض على المريض' },
+  'insurance.claim.resubmit': { module: 'insurance', description: 'إعادة تقديم المطالبات المرفوضة' },
+  'insurance.payment.create': { module: 'insurance', description: 'تسجيل دفعات شركات التأمين' },
+  'insurance.payment.void': { module: 'insurance', description: 'إلغاء دفعة شركة تأمين' },
+  'insurance.report.view': { module: 'insurance', description: 'لوحة وتقارير التأمين وحسابات الشركات' },
+  'insurance.contract.manage': { module: 'insurance', description: 'إدارة العقود والتغطيات والأسعار التعاقدية' },
+  'insurance.company.manage': { module: 'insurance', description: 'إدارة شركات التأمين' },
   // Staff
   'shifts.view': { module: 'staff', description: 'عرض جداول الدوام' },
   'shifts.manage': { module: 'staff', description: 'إدارة الشفتات والجداول والإجازات' },
@@ -94,7 +112,7 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
     permissions: [
       'patients.view', 'medical.view', 'medical.history.manage', 'consultation.manage', 'vitals.record',
       'attachments.view', 'attachments.upload', 'queue.view', 'queue.call', 'appointments.view',
-      'lab.view', 'lab.order', 'shifts.view', 'attendance.view', 'invoices.view',
+      'lab.view', 'lab.order', 'shifts.view', 'attendance.view', 'invoices.view', 'insurance.view',
     ],
   },
   {
@@ -115,6 +133,7 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
       'patients.view', 'patients.create', 'patients.update', 'queue.view', 'queue.view_all', 'queue.manage',
       'queue.call', 'queue.reorder', 'appointments.view', 'appointments.manage', 'invoices.view', 'invoices.create',
       'invoices.update', 'payments.create', 'attachments.upload', 'shifts.view', 'attendance.view',
+      'insurance.view', 'insurance.create', 'insurance.update', 'insurance.verify', 'insurance.authorization.manage', 'insurance.claim.create',
     ],
   },
 ];

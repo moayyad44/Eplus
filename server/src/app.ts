@@ -31,6 +31,8 @@ import { dashboardRouter } from './modules/dashboard/routes';
 import { reportsRouter } from './modules/reports/routes';
 import { auditRouter, notificationsRouter, searchRouter } from './modules/system/routes';
 import { backupsRouter } from './modules/system/backups';
+import { insuranceRouter } from './modules/insurance/routes';
+import { claimsRouter, insurancePaymentsRouter, insuranceReportsRouter } from './modules/insurance/claimRoutes';
 
 export function createApp() {
   const app = express();
@@ -112,6 +114,10 @@ export function createApp() {
   api.use('/audit-logs', auditRouter);
   api.use('/search', searchRouter);
   api.use('/backups', backupsRouter);
+  api.use('/insurance/claims', claimsRouter);
+  api.use('/insurance/payments', insurancePaymentsRouter);
+  api.use('/insurance/reports', insuranceReportsRouter);
+  api.use('/insurance', insuranceRouter);
   api.use((_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'المسار غير موجود' } }));
 
   app.use('/api', api);

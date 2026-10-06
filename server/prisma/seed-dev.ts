@@ -128,6 +128,35 @@ async function main() {
     await prisma.patient.create({ data: { fullName, phone, gender, dateOfBirth: new Date(dob), fileNumber: String(n).padStart(6, '0'), nationality: 'أردني', notes: '[DEMO] بيانات تجريبية' } });
   }
 
+  // Demo insurance: one company, one programme with typical Jordanian rules, and one insured patient.
+  if (!(await prisma.insuranceCompany.findUnique({ where: { code: 'DEMO-INS' } }))) {
+    const yearEnd = new Date(Date.UTC(new Date().getUTCFullYear() + 1, 11, 31));
+    const company = await prisma.insuranceCompany.create({
+      data: { code: 'DEMO-INS', nameAr: 'شركة الشفاء للتأمين (تجريبي)', nameEn: 'Al-Shifa Insurance (demo)', phone: '065000000', contactPerson: 'قسم المطالبات', contractNumber: 'CL-2026-01', notes: '[DEMO]' },
+    });
+    const contract = await prisma.insuranceContract.create({
+      data: {
+        companyId: company.id, name: 'البرنامج الذهبي', contractNumber: 'GOLD-01', coveragePercent: 80, annualLimit: 1500, endDate: yearEnd,
+        coveredServices: 'الكشفيات، الإجراءات، التحاليل', excludedServices: 'الأدوية والخدمات التجميلية', notes: '[DEMO]',
+        rules: {
+          create: [
+            { category: 'EXAMINATION', covered: true, patientFixed: 2 },
+            { category: 'PROCEDURE', covered: true, coveragePercent: 90 },
+            { category: 'LAB', covered: true, coveragePercent: 100, requiresApproval: true },
+            { category: 'MEDICATION', covered: false },
+          ],
+        },
+      },
+    });
+    const insured = await prisma.patient.findFirst({ where: { fullName: 'خالد محمود العمري' } });
+    if (insured) {
+      await prisma.patientInsurance.create({
+        data: { patientId: insured.id, companyId: company.id, contractId: contract.id, memberId: 'SH-100245', cardNumber: '7788-1100-245', policyNumber: 'POL-55120', endDate: yearEnd, notes: '[DEMO]' },
+      });
+      await prisma.patient.update({ where: { id: insured.id }, data: { payerType: 'INSURANCE' } });
+    }
+  }
+
   console.log(`Demo data ready. Demo accounts (password ${DEMO_PASSWORD}): ${staff.map((s) => s.username).join(', ')}`);
 }
 

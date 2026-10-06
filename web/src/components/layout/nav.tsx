@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Activity, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardCheck, ConciergeBell, FileClock, FileText, FlaskConical, History,
-  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy,
+  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -40,6 +40,17 @@ export const NAV: NavSection[] = [
       { to: '/billing/cashier', label: 'nav.cashier', icon: i(Wallet), any: ['cashier.view'] },
       { to: '/billing/payments', label: 'nav.payments', icon: i(CreditCard), any: ['cashier.view', 'payments.create'] },
       { to: '/expenses', label: 'nav.expenses', icon: i(Receipt), any: ['expenses.view'] },
+    ],
+  },
+  {
+    label: 'nav.sections.insurance',
+    items: [
+      { to: '/insurance', label: 'nav.insDashboard', icon: i(ShieldCheck), any: ['insurance.report.view'] },
+      { to: '/insurance/claims', label: 'nav.insClaims', icon: i(FileStack), any: ['insurance.view'] },
+      { to: '/insurance/authorizations', label: 'nav.insAuthorizations', icon: i(BadgeCheck), any: ['insurance.view'] },
+      { to: '/insurance/payments', label: 'nav.insPayments', icon: i(Landmark), any: ['insurance.view'] },
+      { to: '/insurance/companies', label: 'nav.insCompanies', icon: i(Building2), any: ['insurance.view'] },
+      { to: '/insurance/reports', label: 'nav.insReports', icon: i(PieChart), any: ['insurance.report.view'] },
     ],
   },
   {

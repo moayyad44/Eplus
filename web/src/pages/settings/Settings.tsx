@@ -155,6 +155,13 @@ function Services() {
     { key: 'taxRate', label: t('settings.fields.taxRate'), type: 'number' },
     { key: 'inventoryItemId', label: t('settings.fields.inventoryItem'), type: 'select', options: (items.data ?? []).map((i) => ({ value: i.id, label: i.name })) },
     { key: 'allowPriceEdit', label: t('settings.fields.allowPriceEdit'), type: 'checkbox' },
+    // Insurance defaults for the service (contracts can override them).
+    { key: 'insurable', label: t('settings.ins.insurable'), type: 'checkbox', fromApi: (v) => (v == null ? true : Boolean(v)) },
+    { key: 'insCoveragePercent', label: t('settings.ins.coveragePercent'), type: 'number' },
+    { key: 'insMaxAmount', label: t('settings.ins.maxAmount'), type: 'number' },
+    { key: 'insRequiresApproval', label: t('settings.ins.requiresApproval'), type: 'checkbox' },
+    { key: 'insRequiresReport', label: t('settings.ins.requiresReport'), type: 'checkbox' },
+    { key: 'insNotes', label: t('settings.ins.notes'), wide: true },
   ];
   return <CatalogEditor path="services" searchable fields={f} columns={[
     { key: 'c', header: t('settings.fields.code'), cell: (r) => <span className="font-mono text-xs">{String(r.code)}</span> },
@@ -162,6 +169,7 @@ function Services() {
     { key: 'cat', header: t('settings.fields.category'), cell: (r) => <Badge dot={false}>{t(`enum.ServiceCategory.${r.category}`)}</Badge> },
     { key: 'p', header: t('settings.fields.price'), cell: (r) => <b className="tabular-nums">{money(r.price)}</b> },
     { key: 'inv', header: t('settings.fields.inventoryItem'), hideOnMobile: true, cell: (r) => (r.inventoryItem as { name: string } | null)?.name ?? '—' },
+    { key: 'ins', header: t('settings.ins.title'), hideOnMobile: true, cell: (r) => (r.insurable === false ? <Badge tone="danger" dot={false}>{t('ins.rules.notCovered')}</Badge> : r.insRequiresApproval ? <Badge tone="warning" dot={false}>{t('ins.rules.requiresApproval')}</Badge> : '—') },
   ]} />;
 }
 

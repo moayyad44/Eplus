@@ -198,6 +198,8 @@ model Patient {
   emergencyContactRelation String?
   notes                    String?
   familyHistory            String?
+  /// How the patient usually pays. Insurance details live in patient_insurances.
+  payerType                PayerType @default(SELF_PAY)
   firstVisitAt             DateTime?
   lastVisitAt              DateTime?
   visitCount               Int       @default(0)
@@ -219,6 +221,9 @@ model Patient {
   attachments    Attachment[]
   invoices       Invoice[]
   payments       Payment[]
+  insurances     PatientInsurance[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
 
   @@index([phone])
   @@index([altPhone])
@@ -318,23 +323,33 @@ enum ServiceCategory {
 
 /// Billable catalog item ("مادة"). Invoices are built only from catalog items.
 model Service {
-  id              String          @id @default(uuid())
-  code            String          @unique
-  name            String
-  category        ServiceCategory
-  price           Decimal         @db.Decimal(12, 3)
-  taxRate         Decimal         @default(0) @db.Decimal(5, 2)
-  allowPriceEdit  Boolean         @default(false)
-  inventoryItemId String?
-  isActive        Boolean         @default(true)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  deletedAt       DateTime?
+  id                  String          @id @default(uuid())
+  code                String          @unique
+  name                String
+  category            ServiceCategory
+  price               Decimal         @db.Decimal(12, 3)
+  taxRate             Decimal         @default(0) @db.Decimal(5, 2)
+  allowPriceEdit      Boolean         @default(false)
+  inventoryItemId     String?
+  /// Insurance defaults (a contract's coverage rules override them).
+  insurable           Boolean         @default(true)
+  insCoveragePercent  Decimal?        @db.Decimal(5, 2)
+  insMaxAmount        Decimal?        @db.Decimal(12, 3)
+  insRequiresApproval Boolean         @default(false)
+  insRequiresReport   Boolean         @default(false)
+  insNotes            String?
+  isActive            Boolean         @default(true)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  deletedAt           DateTime?
 
-  inventoryItem InventoryItem?        @relation(fields: [inventoryItemId], references: [id])
-  invoiceItems  InvoiceItem[]
-  templateItems InvoiceTemplateItem[]
-  labTests      LabTest[]
+  inventoryItem  InventoryItem?           @relation(fields: [inventoryItemId], references: [id])
+  invoiceItems   InvoiceItem[]
+  templateItems  InvoiceTemplateItem[]
+  labTests       LabTest[]
+  coverageRules  InsuranceCoverageRule[]
+  authorizations InsuranceAuthorization[]
+  claimItems     InsuranceClaimItem[]
 
   @@index([category, isActive])
   @@map("services")
@@ -447,47 +462,56 @@ enum Priority {
 /// A visit is one encounter. Queue fields live on the visit so the queue is always
 /// consistent with the visit state machine (no second source of truth).
 model Visit {
-  id              String      @id @default(uuid())
-  visitNumber     String      @unique
-  patientId       String
-  doctorId        String?
-  visitTypeId     String?
-  appointmentId   String?     @unique
-  branchId        String?
-  status          VisitStatus @default(WAITING)
-  priority        Priority    @default(NORMAL)
-  chiefComplaint  String?
-  notes           String?
-  queueDate       DateTime    @db.Date
+  id                  String      @id @default(uuid())
+  visitNumber         String      @unique
+  patientId           String
+  doctorId            String?
+  visitTypeId         String?
+  appointmentId       String?     @unique
+  branchId            String?
+  status              VisitStatus @default(WAITING)
+  priority            Priority    @default(NORMAL)
+  chiefComplaint      String?
+  notes               String?
+  queueDate           DateTime    @db.Date
   /// Null for direct visits (opened straight to the doctor, never in the waiting queue).
-  queueNumber     Int?
-  queuePosition   Float?
-  isDirect        Boolean     @default(false)
-  arrivedAt       DateTime    @default(now())
-  calledAt        DateTime?
-  nurseStartedAt  DateTime?
-  doctorStartedAt DateTime?
-  completedAt     DateTime?
-  cancelReason    String?
-  createdById     String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  queueNumber         Int?
+  queuePosition       Float?
+  isDirect            Boolean     @default(false)
+  /// Payer chosen when the visit was opened (snapshot of the insurance used).
+  payerType           PayerType   @default(SELF_PAY)
+  patientInsuranceId  String?
+  insuranceCompanyId  String?
+  insuranceContractId String?
+  insuranceMemberId   String?
+  arrivedAt           DateTime    @default(now())
+  calledAt            DateTime?
+  nurseStartedAt      DateTime?
+  doctorStartedAt     DateTime?
+  completedAt         DateTime?
+  cancelReason        String?
+  createdById         String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
-  patient        Patient          @relation(fields: [patientId], references: [id])
-  doctor         User?            @relation("VisitDoctor", fields: [doctorId], references: [id])
-  visitType      VisitType?       @relation(fields: [visitTypeId], references: [id])
-  appointment    Appointment?     @relation(fields: [appointmentId], references: [id])
-  branch         Branch?          @relation(fields: [branchId], references: [id])
-  statusLogs     VisitStatusLog[]
-  vitalSigns     VitalSigns[]
-  nursingNotes   NursingNote[]
-  consultation   Consultation?
-  diagnoses      Diagnosis[]
-  prescriptions  Prescription[]
-  labOrders      LabOrder[]
-  medicalReports MedicalReport[]
-  attachments    Attachment[]
-  invoices       Invoice[]
+  patient          Patient                  @relation(fields: [patientId], references: [id])
+  doctor           User?                    @relation("VisitDoctor", fields: [doctorId], references: [id])
+  visitType        VisitType?               @relation(fields: [visitTypeId], references: [id])
+  appointment      Appointment?             @relation(fields: [appointmentId], references: [id])
+  branch           Branch?                  @relation(fields: [branchId], references: [id])
+  statusLogs       VisitStatusLog[]
+  vitalSigns       VitalSigns[]
+  nursingNotes     NursingNote[]
+  consultation     Consultation?
+  diagnoses        Diagnosis[]
+  prescriptions    Prescription[]
+  labOrders        LabOrder[]
+  medicalReports   MedicalReport[]
+  attachments      Attachment[]
+  invoices         Invoice[]
+  patientInsurance PatientInsurance?        @relation(fields: [patientInsuranceId], references: [id])
+  authorizations   InsuranceAuthorization[]
+  claims           InsuranceClaim[]
 
   @@unique([queueDate, queueNumber, branchId])
   @@index([queueDate, status])
@@ -739,29 +763,36 @@ enum AttachmentCategory {
   LAB_RESULT
   DOCUMENT
   INVOICE
+  INSURANCE
   OTHER
 }
 
 model Attachment {
-  id           String             @id @default(uuid())
-  patientId    String?
-  visitId      String?
-  labOrderId   String?
-  expenseId    String?
-  category     AttachmentCategory @default(OTHER)
-  fileName     String
-  mimeType     String
-  size         Int
-  storageKey   String             @unique
-  description  String?
-  uploadedById String?
-  createdAt    DateTime           @default(now())
-  deletedAt    DateTime?
+  id                 String             @id @default(uuid())
+  patientId          String?
+  visitId            String?
+  labOrderId         String?
+  expenseId          String?
+  patientInsuranceId String?
+  authorizationId    String?
+  claimId            String?
+  category           AttachmentCategory @default(OTHER)
+  fileName           String
+  mimeType           String
+  size               Int
+  storageKey         String             @unique
+  description        String?
+  uploadedById       String?
+  createdAt          DateTime           @default(now())
+  deletedAt          DateTime?
 
-  patient  Patient?  @relation(fields: [patientId], references: [id])
-  visit    Visit?    @relation(fields: [visitId], references: [id])
-  labOrder LabOrder? @relation(fields: [labOrderId], references: [id])
-  expense  Expense?  @relation(fields: [expenseId], references: [id])
+  patient          Patient?                @relation(fields: [patientId], references: [id])
+  visit            Visit?                  @relation(fields: [visitId], references: [id])
+  labOrder         LabOrder?               @relation(fields: [labOrderId], references: [id])
+  expense          Expense?                @relation(fields: [expenseId], references: [id])
+  patientInsurance PatientInsurance?       @relation(fields: [patientInsuranceId], references: [id])
+  authorization    InsuranceAuthorization? @relation(fields: [authorizationId], references: [id])
+  claim            InsuranceClaim?         @relation(fields: [claimId], references: [id])
 
   @@index([patientId])
   @@index([visitId])
@@ -811,42 +842,58 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id              String        @id @default(uuid())
-  invoiceNumber   String?       @unique
-  templateId      String?
-  patientId       String
-  visitId         String?
-  doctorId        String?
-  branchId        String?
-  status          InvoiceStatus @default(DRAFT)
-  issuedAt        DateTime?
-  dueDate         DateTime?
-  subtotal        Decimal       @default(0) @db.Decimal(12, 3)
-  itemsDiscount   Decimal       @default(0) @db.Decimal(12, 3)
-  invoiceDiscount Decimal       @default(0) @db.Decimal(12, 3)
-  discountTotal   Decimal       @default(0) @db.Decimal(12, 3)
-  taxTotal        Decimal       @default(0) @db.Decimal(12, 3)
-  total           Decimal       @default(0) @db.Decimal(12, 3)
-  paidAmount      Decimal       @default(0) @db.Decimal(12, 3)
-  refundedAmount  Decimal       @default(0) @db.Decimal(12, 3)
-  balance         Decimal       @default(0) @db.Decimal(12, 3)
-  notes           String?
-  cancelledAt     DateTime?
-  cancelledById   String?
-  cancelReason    String?
-  createdById     String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id                       String        @id @default(uuid())
+  invoiceNumber            String?       @unique
+  templateId               String?
+  /// SELF_PAY → the patient owes the whole total. INSURANCE → total = patientShare + insuranceShare.
+  /// Coverage is never a discount: discountTotal only holds clinic discounts.
+  payerType                PayerType     @default(SELF_PAY)
+  patientInsuranceId       String?
+  insuranceCompanyId       String?
+  insuranceContractId      String?
+  insuranceMemberId        String?
+  patientShare             Decimal       @default(0) @db.Decimal(12, 3)
+  insuranceShare           Decimal       @default(0) @db.Decimal(12, 3)
+  /// Rejected insurance amounts billed back to the patient (raises the patient balance).
+  transferredFromInsurance Decimal       @default(0) @db.Decimal(12, 3)
+  patientId                String
+  visitId                  String?
+  doctorId                 String?
+  branchId                 String?
+  status                   InvoiceStatus @default(DRAFT)
+  issuedAt                 DateTime?
+  dueDate                  DateTime?
+  subtotal                 Decimal       @default(0) @db.Decimal(12, 3)
+  itemsDiscount            Decimal       @default(0) @db.Decimal(12, 3)
+  invoiceDiscount          Decimal       @default(0) @db.Decimal(12, 3)
+  discountTotal            Decimal       @default(0) @db.Decimal(12, 3)
+  taxTotal                 Decimal       @default(0) @db.Decimal(12, 3)
+  total                    Decimal       @default(0) @db.Decimal(12, 3)
+  paidAmount               Decimal       @default(0) @db.Decimal(12, 3)
+  refundedAmount           Decimal       @default(0) @db.Decimal(12, 3)
+  balance                  Decimal       @default(0) @db.Decimal(12, 3)
+  notes                    String?
+  cancelledAt              DateTime?
+  cancelledById            String?
+  cancelReason             String?
+  createdById              String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
-  template InvoiceTemplate? @relation(fields: [templateId], references: [id])
-  patient  Patient          @relation(fields: [patientId], references: [id])
-  visit    Visit?           @relation(fields: [visitId], references: [id])
-  doctor   User?            @relation("InvoiceDoctor", fields: [doctorId], references: [id])
-  branch   Branch?          @relation(fields: [branchId], references: [id])
-  items    InvoiceItem[]
-  payments Payment[]
+  template          InvoiceTemplate?   @relation(fields: [templateId], references: [id])
+  patient           Patient            @relation(fields: [patientId], references: [id])
+  visit             Visit?             @relation(fields: [visitId], references: [id])
+  doctor            User?              @relation("InvoiceDoctor", fields: [doctorId], references: [id])
+  branch            Branch?            @relation(fields: [branchId], references: [id])
+  items             InvoiceItem[]
+  payments          Payment[]
+  patientInsurance  PatientInsurance?  @relation(fields: [patientInsuranceId], references: [id])
+  insuranceCompany  InsuranceCompany?  @relation(fields: [insuranceCompanyId], references: [id])
+  insuranceContract InsuranceContract? @relation(fields: [insuranceContractId], references: [id])
+  claim             InsuranceClaim?
 
   @@index([status, issuedAt])
+  @@index([insuranceCompanyId, issuedAt])
   @@index([patientId])
   @@index([visitId])
   @@index([doctorId, issuedAt])
@@ -854,24 +901,34 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id          String          @id @default(uuid())
-  invoiceId   String
-  serviceId   String
-  description String
-  category    ServiceCategory
-  quantity    Decimal         @db.Decimal(10, 2)
-  unitPrice   Decimal         @db.Decimal(12, 3)
-  discount    Decimal         @default(0) @db.Decimal(12, 3)
-  taxRate     Decimal         @default(0) @db.Decimal(5, 2)
-  taxAmount   Decimal         @default(0) @db.Decimal(12, 3)
-  lineTotal   Decimal         @db.Decimal(12, 3)
-  isMandatory Boolean         @default(false)
-  sortOrder   Int             @default(0)
+  id              String          @id @default(uuid())
+  invoiceId       String
+  serviceId       String
+  description     String
+  category        ServiceCategory
+  quantity        Decimal         @db.Decimal(10, 2)
+  unitPrice       Decimal         @db.Decimal(12, 3)
+  discount        Decimal         @default(0) @db.Decimal(12, 3)
+  taxRate         Decimal         @default(0) @db.Decimal(5, 2)
+  taxAmount       Decimal         @default(0) @db.Decimal(12, 3)
+  lineTotal       Decimal         @db.Decimal(12, 3)
+  /// Insurance split of lineTotal (patientShare + insuranceShare = lineTotal).
+  coveragePercent Decimal?        @db.Decimal(5, 2)
+  insuranceShare  Decimal         @default(0) @db.Decimal(12, 3)
+  patientShare    Decimal         @default(0) @db.Decimal(12, 3)
+  authorizationId String?
+  /// Why the line is (not) covered: not covered, needs approval, limit reached, manual override…
+  coverageNote    String?
+  isMandatory     Boolean         @default(false)
+  sortOrder       Int             @default(0)
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  service Service @relation(fields: [serviceId], references: [id])
+  invoice       Invoice                 @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service       Service                 @relation(fields: [serviceId], references: [id])
+  authorization InsuranceAuthorization? @relation(fields: [authorizationId], references: [id])
+  claimItems    InsuranceClaimItem[]
 
   @@index([invoiceId])
+  @@index([authorizationId])
   @@map("invoice_items")
 }
 
@@ -885,9 +942,10 @@ model PaymentMethod {
   sortOrder         Int      @default(0)
   createdAt         DateTime @default(now())
 
-  payments         Payment[]
-  expenses         Expense[]
-  supplierPayments SupplierPayment[]
+  payments          Payment[]
+  expenses          Expense[]
+  supplierPayments  SupplierPayment[]
+  insurancePayments InsurancePayment[]
 
   @@map("payment_methods")
 }
@@ -922,6 +980,398 @@ model Payment {
   @@index([invoiceId])
   @@index([methodId, paidAt])
   @@map("payments")
+}
+
+// ───────────────────────────── Insurance ─────────────────────────────
+
+enum PayerType {
+  SELF_PAY
+  INSURANCE
+  CORPORATE
+  GOVERNMENT
+  OTHER
+}
+
+enum InsurancePriority {
+  PRIMARY
+  SECONDARY
+}
+
+enum InsuranceStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+enum AuthorizationStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ClaimStatus {
+  DRAFT
+  READY
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  RESUBMISSION_REQUIRED
+  PAID
+  PARTIALLY_PAID
+  CLOSED
+  CANCELLED
+}
+
+/// Ledger entry types of a claim. Amount deltas live on the entry; claim totals are their sum.
+enum ClaimEventType {
+  CREATED
+  READY
+  SUBMITTED
+  UNDER_REVIEW
+  DECISION
+  RESUBMISSION_REQUIRED
+  RESUBMITTED
+  PAYMENT
+  TRANSFER_TO_PATIENT
+  WRITE_OFF
+  CLOSED
+  CANCELLED
+  NOTE
+}
+
+model InsuranceCompany {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  nameAr         String
+  nameEn         String?
+  phone          String?
+  email          String?
+  address        String?
+  contactPerson  String?
+  contractNumber String?
+  contractStart  DateTime? @db.Date
+  contractEnd    DateTime? @db.Date
+  /// Amount owed by the company before the system was used (company account statement).
+  openingBalance Decimal   @default(0) @db.Decimal(12, 3)
+  isActive       Boolean   @default(true)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  contracts      InsuranceContract[]
+  memberships    PatientInsurance[]
+  invoices       Invoice[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
+  payments       InsurancePayment[]
+
+  @@map("insurance_companies")
+}
+
+/// A contract / insurance program of a company (e.g. "Gold", "Corporate X"). Coverage rules hang off it.
+model InsuranceContract {
+  id               String    @id @default(uuid())
+  companyId        String
+  name             String
+  contractNumber   String?
+  startDate        DateTime? @db.Date
+  endDate          DateTime? @db.Date
+  isActive         Boolean   @default(true)
+  terms            String?
+  /// Default share the company pays for covered services without a specific rule.
+  coveragePercent  Decimal   @default(80) @db.Decimal(5, 2)
+  /// Yearly cap per member (null = unlimited). A membership may override it.
+  annualLimit      Decimal?  @db.Decimal(12, 3)
+  /// Free-text summaries shown to staff; the enforceable version is the coverage rules.
+  coveredServices  String?
+  excludedServices String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  company        InsuranceCompany         @relation(fields: [companyId], references: [id])
+  rules          InsuranceCoverageRule[]
+  memberships    PatientInsurance[]
+  invoices       Invoice[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
+
+  @@index([companyId])
+  @@map("insurance_contracts")
+}
+
+/// Coverage of one service, or of a whole service category, under a contract.
+/// Precedence: service rule → category rule → service defaults → contract default.
+model InsuranceCoverageRule {
+  id               String           @id @default(uuid())
+  contractId       String
+  serviceId        String?
+  category         ServiceCategory?
+  covered          Boolean          @default(true)
+  /// Share paid by the company (0–100). Ignored when patientFixed is set.
+  coveragePercent  Decimal?         @db.Decimal(5, 2)
+  /// The patient pays this fixed amount per unit; the company pays the rest.
+  patientFixed     Decimal?         @db.Decimal(12, 3)
+  /// Highest amount the company pays per unit.
+  maxAmount        Decimal?         @db.Decimal(12, 3)
+  /// Contract price of the service (instead of the clinic price).
+  price            Decimal?         @db.Decimal(12, 3)
+  requiresApproval Boolean          @default(false)
+  requiresReport   Boolean          @default(false)
+  notes            String?
+
+  contract InsuranceContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  service  Service?          @relation(fields: [serviceId], references: [id])
+
+  @@unique([contractId, serviceId])
+  @@unique([contractId, category])
+  @@map("insurance_coverage_rules")
+}
+
+/// An insurance membership of a patient (primary or secondary).
+model PatientInsurance {
+  id              String            @id @default(uuid())
+  patientId       String
+  companyId       String
+  contractId      String
+  priority        InsurancePriority @default(PRIMARY)
+  cardNumber      String?
+  policyNumber    String?
+  memberId        String
+  subscriberName  String?
+  /// Relation to the policy holder: SELF, SPOUSE, CHILD, PARENT, OTHER.
+  relation        String            @default("SELF")
+  startDate       DateTime?         @db.Date
+  endDate         DateTime?         @db.Date
+  /// Manual status. An end date in the past always means expired, whatever this says.
+  status          InsuranceStatus   @default(ACTIVE)
+  /// Overrides of the contract defaults for this member.
+  coveragePercent Decimal?          @db.Decimal(5, 2)
+  annualLimit     Decimal?          @db.Decimal(12, 3)
+  network         String?
+  notes           String?
+  verifiedAt      DateTime?
+  verifiedById    String?
+  createdById     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  patient        Patient                  @relation(fields: [patientId], references: [id])
+  company        InsuranceCompany         @relation(fields: [companyId], references: [id])
+  contract       InsuranceContract        @relation(fields: [contractId], references: [id])
+  visits         Visit[]
+  invoices       Invoice[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
+  attachments    Attachment[]
+
+  @@index([patientId])
+  @@index([companyId])
+  @@index([endDate])
+  @@map("patient_insurances")
+}
+
+/// Pre-authorization requested from the insurance company for a service.
+model InsuranceAuthorization {
+  id                 String              @id @default(uuid())
+  requestNumber      String              @unique
+  patientId          String
+  patientInsuranceId String
+  companyId          String
+  contractId         String
+  visitId            String?
+  doctorId           String?
+  serviceId          String
+  quantity           Decimal             @default(1) @db.Decimal(10, 2)
+  diagnosis          String?
+  reason             String?
+  medicalReportId    String?
+  status             AuthorizationStatus @default(PENDING)
+  /// Number issued by the company when it approves.
+  approvalNumber     String?
+  approvedQuantity   Decimal?            @db.Decimal(10, 2)
+  /// Highest amount the company accepts to pay for this service (null = per the contract).
+  approvedAmount     Decimal?            @db.Decimal(12, 3)
+  validUntil         DateTime?           @db.Date
+  rejectReason       String?
+  notes              String?
+  requestedAt        DateTime            @default(now())
+  submittedAt        DateTime?
+  decidedAt          DateTime?
+  decidedById        String?
+  createdById        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  patient          Patient           @relation(fields: [patientId], references: [id])
+  patientInsurance PatientInsurance  @relation(fields: [patientInsuranceId], references: [id])
+  company          InsuranceCompany  @relation(fields: [companyId], references: [id])
+  contract         InsuranceContract @relation(fields: [contractId], references: [id])
+  visit            Visit?            @relation(fields: [visitId], references: [id])
+  service          Service           @relation(fields: [serviceId], references: [id])
+  invoiceItems     InvoiceItem[]
+  attachments      Attachment[]
+
+  @@index([patientId, status])
+  @@index([status, requestedAt])
+  @@map("insurance_authorizations")
+}
+
+/// One claim per insurance invoice. Amounts are the sum of the claim's ledger events (never edited directly).
+/// insuranceAmount = pending + approved + rejected + transferred + writtenOff;  outstanding = pending + approved − paid.
+model InsuranceClaim {
+  id                 String      @id @default(uuid())
+  claimNumber        String      @unique
+  invoiceId          String      @unique
+  patientId          String
+  companyId          String
+  contractId         String
+  patientInsuranceId String
+  visitId            String?
+  doctorId           String?
+  policyNumber       String?
+  memberId           String
+  diagnosis          String?
+  totalAmount        Decimal     @db.Decimal(12, 3)
+  insuranceAmount    Decimal     @db.Decimal(12, 3)
+  patientAmount      Decimal     @db.Decimal(12, 3)
+  submittedAmount    Decimal     @default(0) @db.Decimal(12, 3)
+  approvedAmount     Decimal     @default(0) @db.Decimal(12, 3)
+  rejectedAmount     Decimal     @default(0) @db.Decimal(12, 3)
+  paidAmount         Decimal     @default(0) @db.Decimal(12, 3)
+  transferredAmount  Decimal     @default(0) @db.Decimal(12, 3)
+  writtenOffAmount   Decimal     @default(0) @db.Decimal(12, 3)
+  pendingAmount      Decimal     @default(0) @db.Decimal(12, 3)
+  outstandingAmount  Decimal     @default(0) @db.Decimal(12, 3)
+  /// Workflow step chosen by staff (DRAFT…RESUBMISSION_REQUIRED/CANCELLED); `status` is derived from it and the amounts.
+  workflowStatus     ClaimStatus @default(DRAFT)
+  status             ClaimStatus @default(DRAFT)
+  submissionCount    Int         @default(0)
+  submittedAt        DateTime?
+  lastPaymentAt      DateTime?
+  closedAt           DateTime?
+  notes              String?
+  createdById        String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  invoice          Invoice                      @relation(fields: [invoiceId], references: [id])
+  patient          Patient                      @relation(fields: [patientId], references: [id])
+  company          InsuranceCompany             @relation(fields: [companyId], references: [id])
+  contract         InsuranceContract            @relation(fields: [contractId], references: [id])
+  patientInsurance PatientInsurance             @relation(fields: [patientInsuranceId], references: [id])
+  visit            Visit?                       @relation(fields: [visitId], references: [id])
+  items            InsuranceClaimItem[]
+  events           InsuranceClaimEvent[]
+  allocations      InsurancePaymentAllocation[]
+  attachments      Attachment[]
+
+  @@index([companyId, status])
+  @@index([status, submittedAt])
+  @@index([patientId])
+  @@map("insurance_claims")
+}
+
+model InsuranceClaimItem {
+  id              String  @id @default(uuid())
+  claimId         String
+  invoiceItemId   String
+  serviceId       String
+  description     String
+  quantity        Decimal @db.Decimal(10, 2)
+  unitPrice       Decimal @db.Decimal(12, 3)
+  totalAmount     Decimal @db.Decimal(12, 3)
+  insuranceAmount Decimal @db.Decimal(12, 3)
+  approvedAmount  Decimal @default(0) @db.Decimal(12, 3)
+  rejectedAmount  Decimal @default(0) @db.Decimal(12, 3)
+  rejectReason    String?
+  approvalNumber  String?
+
+  claim       InsuranceClaim @relation(fields: [claimId], references: [id])
+  invoiceItem InvoiceItem    @relation(fields: [invoiceItemId], references: [id])
+  service     Service        @relation(fields: [serviceId], references: [id])
+
+  @@index([claimId])
+  @@map("insurance_claim_items")
+}
+
+/// Append-only history and money ledger of a claim (insurance_claim_status_history).
+model InsuranceClaimEvent {
+  id           String         @id @default(uuid())
+  claimId      String
+  type         ClaimEventType
+  fromStatus   ClaimStatus?
+  toStatus     ClaimStatus?
+  dApproved    Decimal        @default(0) @db.Decimal(12, 3)
+  dRejected    Decimal        @default(0) @db.Decimal(12, 3)
+  dPaid        Decimal        @default(0) @db.Decimal(12, 3)
+  dTransferred Decimal        @default(0) @db.Decimal(12, 3)
+  dWrittenOff  Decimal        @default(0) @db.Decimal(12, 3)
+  dSubmitted   Decimal        @default(0) @db.Decimal(12, 3)
+  /// Receivable dropped because the invoice (and so the claim) was cancelled.
+  dCancelled   Decimal        @default(0) @db.Decimal(12, 3)
+  reason       String?
+  notes        String?
+  allocationId String?
+  /// Set when the payment behind this entry is voided; the entry then no longer counts.
+  voidedAt     DateTime?
+  userId       String?
+  userName     String?
+  createdAt    DateTime       @default(now())
+
+  claim      InsuranceClaim              @relation(fields: [claimId], references: [id])
+  allocation InsurancePaymentAllocation? @relation(fields: [allocationId], references: [id])
+
+  @@index([claimId, createdAt])
+  @@index([type, createdAt])
+  @@map("insurance_claim_events")
+}
+
+/// Money received from an insurance company.
+model InsurancePayment {
+  id            String    @id @default(uuid())
+  receiptNumber String    @unique
+  companyId     String
+  amount        Decimal   @db.Decimal(12, 3)
+  methodId      String
+  reference     String?
+  notes         String?
+  paidAt        DateTime  @default(now())
+  receivedById  String?
+  voidedAt      DateTime?
+  voidedById    String?
+  voidReason    String?
+  createdAt     DateTime  @default(now())
+
+  company     InsuranceCompany             @relation(fields: [companyId], references: [id])
+  method      PaymentMethod                @relation(fields: [methodId], references: [id])
+  allocations InsurancePaymentAllocation[]
+
+  @@index([companyId, paidAt])
+  @@index([paidAt])
+  @@map("insurance_payments")
+}
+
+model InsurancePaymentAllocation {
+  id        String  @id @default(uuid())
+  paymentId String
+  claimId   String
+  amount    Decimal @db.Decimal(12, 3)
+
+  payment InsurancePayment      @relation(fields: [paymentId], references: [id])
+  claim   InsuranceClaim        @relation(fields: [claimId], references: [id])
+  events  InsuranceClaimEvent[]
+
+  @@index([claimId])
+  @@index([paymentId])
+  @@map("insurance_payment_allocations")
 }
 
 // ───────────────────────────── Expenses ─────────────────────────────
@@ -1308,6 +1758,7 @@ enum NotificationType {
   STAFF_LATE
   SHIFT_ENDING
   QUEUE
+  INSURANCE
   SYSTEM
 }
 

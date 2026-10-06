@@ -84,7 +84,20 @@ export async function runScan(now = new Date()) {
     });
   }
 
-  // 7. Housekeeping: drop sessions expired more than 30 days ago
+  // 7. Insurance memberships expiring within 7 days or already expired while still marked active (reception, once a week)
+  const insExpiring = await prisma.patientInsurance.findMany({
+    where: { deletedAt: null, status: 'ACTIVE', endDate: { not: null, gte: addDays(today, -30), lte: addDays(today, 7) } },
+    include: { patient: { select: { id: true, fullName: true } }, company: { select: { nameAr: true } } },
+  });
+  for (const m of insExpiring) {
+    const days = Math.round((m.endDate!.getTime() - today.getTime()) / 86_400_000);
+    await notifyPermission('insurance.update', {
+      type: 'INSURANCE', title: days < 0 ? `تأمين منتهي: ${m.patient.fullName}` : `ينتهي التأمين خلال ${days} يوم: ${m.patient.fullName}`,
+      body: `${m.company.nameAr} — عضوية ${m.memberId} — ${m.endDate!.toISOString().slice(0, 10)}`, link: `/patients/${m.patient.id}?tab=insurance`, dedupeKey: `insexp:${m.id}:${week}`,
+    });
+  }
+
+  // 8. Housekeeping: drop sessions expired more than 30 days ago
   await prisma.session.deleteMany({ where: { expiresAt: { lt: addDays(now, -30) } } });
 }
 

@@ -10,11 +10,15 @@ export default {
     fields: { name: 'الاسم', code: 'الرمز', price: 'السعر', category: 'التصنيف', taxRate: 'الضريبة %', allowPriceEdit: 'يسمح بتعديل السعر', inventoryItem: 'صنف المخزون المرتبط (للبيع)', color: 'اللون', duration: 'المدة (دقيقة)', order: 'الترتيب', requiresReference: 'يتطلب رقم عملية', symbol: 'الرمز المختصر', genericName: 'الاسم العلمي', form: 'الشكل الدوائي', strength: 'التركيز', defaultDose: 'الجرعة الافتراضية', defaultFrequency: 'عدد المرات', defaultRoute: 'طريقة الاستخدام', nameAr: 'الاسم بالعربية', sampleType: 'نوع العينة', unit: 'الوحدة', referenceRange: 'المعدل الطبيعي', parameters: 'فحوصات فرعية (سطر لكل فحص: الاسم | الوحدة | المعدل)', service: 'المادة المرتبطة للفوترة', startTime: 'البداية', endTime: 'النهاية', type: 'النوع', active: 'فعال' },
     templates: { name: 'اسم النموذج', isDefault: 'النموذج الافتراضي', items: 'المواد', mandatory: 'إجبارية', addItem: 'إضافة مادة', hint: 'المواد الإجبارية تُضاف تلقائياً لكل فاتورة من هذا النموذج ولا يمكن حذفها. جميع النماذج تشترك في نفس الترقيم التسلسلي.', new: 'نموذج جديد' },
     roles: { new: 'دور جديد', key: 'المعرف (إنجليزي)', name: 'اسم الدور', description: 'الوصف', users: 'مستخدمين', system: 'أساسي', permissionsCount: '{{count}} صلاحية', selectAll: 'تحديد الكل' },
-    modules: { dashboard: 'لوحة التحكم', users: 'المستخدمون', patients: 'المرضى', medical: 'الملف الطبي', queue: 'قائمة الانتظار', appointments: 'المواعيد', lab: 'المختبر', billing: 'الفواتير والمدفوعات', expenses: 'المصروفات', inventory: 'المخزون', staff: 'الدوام', reports: 'التقارير', settings: 'النظام' },
+    modules: { dashboard: 'لوحة التحكم', users: 'المستخدمون', patients: 'المرضى', medical: 'الملف الطبي', queue: 'قائمة الانتظار', appointments: 'المواعيد', lab: 'المختبر', billing: 'الفواتير والمدفوعات', expenses: 'المصروفات', inventory: 'المخزون', staff: 'الدوام', reports: 'التقارير', settings: 'النظام', insurance: 'التأمين الطبي' },
     add: 'إضافة', noEditPermission: 'لديك صلاحية عرض فقط', deleted: 'تم الحذف',
     deleteConfirm: 'حذف "{{name}}"؟ إذا كان مستخدماً في سجلات سابقة (فواتير، زيارات، مخزون…) سيتم إخفاؤه بدل حذفه حتى لا تتأثر السجلات القديمة.',
     deactivatedInstead: 'هذا العنصر مستخدم في سجلات سابقة، لذلك تم إخفاؤه من القوائم بدل حذفه. يمكنك إعادة تفعيله في أي وقت.',
     statusHint: 'اضغط على الحالة للتفعيل أو التعطيل',
+    ins: {
+      title: 'التأمين', insurable: 'قابلة للتغطية التأمينية', coveragePercent: 'نسبة التغطية الافتراضية % (فارغ = حسب العقد)', maxAmount: 'الحد الأعلى لتغطية الوحدة',
+      requiresApproval: 'تحتاج موافقة مسبقة من شركة التأمين', requiresReport: 'تحتاج تقريراً طبياً أو وصفة', notes: 'ملاحظات شركات التأمين',
+    },
     backups: {
       title: 'النسخ الاحتياطي', subtitle: 'نسخة تلقائية يومية من قاعدة البيانات والمرفقات',
       now: 'نسخ احتياطي الآن', running: 'جارٍ النسخ…', requested: 'بدأ النسخ الاحتياطي، سيظهر الملف خلال دقيقة',

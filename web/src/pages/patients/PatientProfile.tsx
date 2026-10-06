@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Archive, ArrowRight, CalendarPlus, FilePlus2, ListPlus, Pencil, Plus, Printer, Stethoscope, Trash2, UserRound } from 'lucide-react';
@@ -16,8 +16,11 @@ import { StatusBadge } from '@/components/shared/StatusBadge';
 import { VisitTimelineItem } from '@/components/shared/VisitTimeline';
 import { AttachmentsPanel } from '@/components/shared/Attachments';
 import { DirectVisitDialog } from '@/components/shared/DirectVisitDialog';
+import { InsuranceAlert, InsuranceStatusBadge } from '@/components/insurance/widgets';
+import { useInsuranceSummary } from '@/lib/insurance';
+import { PatientInsuranceTab } from './PatientInsuranceTab';
 
-type Tab = 'overview' | 'history' | 'timeline' | 'labs' | 'invoices' | 'attachments' | 'reports';
+type Tab = 'overview' | 'insurance' | 'history' | 'timeline' | 'labs' | 'invoices' | 'attachments' | 'reports';
 
 export default function PatientProfile() {
   const { id } = useParams<{ id: string }>();
@@ -25,12 +28,14 @@ export default function PatientProfile() {
   const { can, canAny } = useAuth();
   const nav = useNavigate();
   const confirm = useConfirm();
-  const [tab, setTab] = useState<Tab>('overview');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>((params.get('tab') as Tab) || 'overview');
   const [editing, setEditing] = useState(false);
   const [queueing, setQueueing] = useState(false);
   const [direct, setDirect] = useState(false);
   const q = useQuery({ queryKey: ['patient', id], queryFn: () => api.get<Patient>(`/patients/${id}`) });
   const archive = useApiMutation(() => api.del(`/patients/${id}`), { invalidate: [['patients']], success: t('patients.archived'), onSuccess: () => nav('/patients') });
+  const insurance = useInsuranceSummary(id);
 
   if (q.isLoading) return <PageLoader />;
   if (q.error || !q.data) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
@@ -39,6 +44,7 @@ export default function PatientProfile() {
 
   const tabs = [
     { key: 'overview' as const, label: t('patients.tabs.overview') },
+    { key: 'insurance' as const, label: t('ins.patientTab'), hidden: !canAny('insurance.view', 'insurance.create', 'insurance.update') },
     { key: 'history' as const, label: t('patients.tabs.history'), hidden: !medical },
     { key: 'timeline' as const, label: t('patients.tabs.timeline') },
     { key: 'labs' as const, label: t('patients.tabs.labs'), hidden: !can('lab.view') },
@@ -61,7 +67,14 @@ export default function PatientProfile() {
               <span>{t(`enum.Gender.${p.gender}`)}</span>
               {p.age != null && <span>{t('common.yearsOld', { age: p.age })}</span>}
               {p.bloodType && <Badge tone="danger" dot={false}>{p.bloodType}</Badge>}
+              {insurance.data && (
+                <button type="button" onClick={() => setTab('insurance')} className="inline-flex items-center gap-1.5">
+                  <InsuranceStatusBadge m={insurance.data.primary} />
+                  {insurance.data.primary && <span className="text-xs text-ink-muted">{insurance.data.primary.company.nameAr} · {insurance.data.primary.memberId}</span>}
+                </button>
+              )}
             </div>
+            <InsuranceAlert m={insurance.data?.primary} className="mt-2" />
             {medical && p.allergies && p.allergies.length > 0 && (
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <AlertTriangle className="h-4 w-4 text-danger-600" />
@@ -88,6 +101,7 @@ export default function PatientProfile() {
       <Tabs items={tabs} value={tab} onChange={setTab} className="mb-4" />
 
       {tab === 'overview' && <Overview p={p} />}
+      {tab === 'insurance' && <PatientInsuranceTab patientId={p.id} />}
       {tab === 'history' && medical && <MedicalHistory p={p} />}
       {tab === 'timeline' && (medical ? <Timeline patientId={p.id} /> : <VisitsBasic patientId={p.id} />)}
       {tab === 'labs' && <PatientLabs patientId={p.id} />}

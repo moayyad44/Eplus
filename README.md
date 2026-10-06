@@ -122,7 +122,7 @@ The `backup` service (`docker/backup.sh`) writes `eplus-backup-YYYY-MM-DD_HHMMSS
 
 Permissions are enforced **on every API route** (`requirePerm`), not just by hiding buttons. The UI hides what the user can't use, and the API rejects it regardless. On every request the server re-reads the session, the user and the effective permissions, so logout, deactivation and permission changes apply immediately.
 
-- **Roles are editable** in *Settings → Roles & Permissions* (58 permission keys grouped by module).
+- **Roles are editable** in *Settings → Roles & Permissions* (75 permission keys grouped by module).
 - **Per-user overrides** (grant or deny) sit on top of the role. For example, one doctor can be allowed to record stock movements (*Staff → Permissions*).
 
 Default roles (bootstrap):
@@ -145,6 +145,20 @@ Billing:   invoice (template's mandatory items + ordered lab tests pre-filled) �
 ```
 
 The visit **state machine** (`server/src/modules/visits/stateMachine.ts`) runs `WAITING → CALLED → WITH_NURSE → WITH_DOCTOR → IN_LAB → WAITING_PAYMENT → COMPLETED`, plus `CANCELLED` and `NO_SHOW`. Skipping forward is allowed. Going backwards requires `queue.revert`. Each target status needs a specific permission. Every transition is written to `visit_status_logs` and to the audit log.
+
+## Insurance
+
+The insurance module is part of the billing ledger. It is not a separate system.
+
+- **Companies → contracts / programmes → coverage rules.** A rule targets one service or a whole service category. It sets: covered or not, the company percentage *or* a fixed amount the patient pays per unit, the maximum the company pays per unit, the contract price, and whether pre-authorization or a report is required. Precedence is service rule → category rule → the service's own insurance defaults (*Settings → Services*) → the contract default percentage. A yearly limit per member caps the company share; any excess goes to the patient.
+- **Patient insurance** (`patient_insurances`): primary / secondary, member ID, card, policy, subscriber and relation, dates, status. The effective status is computed: an end date in the past always means *expired*, so the membership cannot be used until someone with `insurance.update` edits it. A secondary insurance is used only when the primary is not valid. Staff record when they verified the membership (`insurance.verify`). Insurance documents are attachments linked to the membership, authorization or claim.
+- **Visit payer.** Each visit stores self-pay or insurance, plus a snapshot of the company, contract and member. The payer can be changed until an invoice is issued.
+- **Invoice split.** `total = patientShare + insuranceShare` per line and per invoice. Coverage is never a discount: `discountTotal` holds clinic discounts only, and they reduce the patient's share. The patient balance is `patientShare + transferredFromInsurance − payments`. `POST /billing/invoices/preview` returns the split without saving.
+- **Pre-authorization** (`insurance_authorizations`). A line that needs approval is not covered until an approved, unexpired, unused authorization exists. A user with `insurance.coverage.override` can cover it explicitly, or edit the company share on a line; both are written to the line's coverage note and to the audit log.
+- **Claims.** One claim per insurance invoice, created when the invoice is issued. Claim money is a ledger (`insurance_claim_events`, append-only and protected by a trigger) holding approved, rejected, paid, transferred, written-off and cancelled amounts. The claim columns are recomputed from that ledger. The workflow is draft → ready → submitted (also in batches) → under review → company decision per line, with reasons for rejections. A rejected amount can be resubmitted (history kept), transferred to the patient (raises their balance), or written off. Status is derived: partially approved, partially paid, paid, closed. A claim is never deleted. It is cancelled only together with its invoice, and only before anything is approved or paid.
+- **Company payments** (`insurance_payments` + allocations) reduce the insurance receivable. Paying more than the approved amount approves the difference. Voiding a payment voids its ledger entries and reopens the receivable.
+- **Reports.** The insurance dashboard; receivables aged current / 30+ / 60+ / 90+ / 120+ days; rejected claims with how each was resolved; a company account statement for any period (opening balance + claims − rejected (+ resubmitted) − written off − cancelled − payments = closing). The financial summary separates cash collected (patients + insurance), patient receivables, insurance receivables, approved, rejected and written-off amounts.
+- **Alerts.** Reception sees insurance status badges and warnings on the patient, visit and invoice screens. A background job notifies users holding `insurance.update` about memberships that expire within 7 days, or have expired while still marked active.
 
 ## Business rules worth knowing
 

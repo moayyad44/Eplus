@@ -8,11 +8,13 @@ import { useApiMutation } from '@/lib/hooks';
 import { toLocalInput } from '@/lib/format';
 import { Button, Checkbox, Dialog, Field, Input, Select } from '@/components/ui';
 import { useDoctors, useVisitTypes } from './VisitQueueForm';
+import { PayerPicker, type PayerValue } from '@/components/insurance/widgets';
 
 /** Opens a visit straight with the doctor (no queue number), optionally dated in the past. */
 export function DirectVisitDialog({ patient, onClose }: { patient: { id: string; fullName: string }; onClose: () => void }) {
   const { t } = useTranslation();
-  const { me } = useAuth();
+  const { me, canAny } = useAuth();
+  const [payer, setPayer] = useState<PayerValue | null>(null);
   const nav = useNavigate();
   const doctors = useDoctors();
   const types = useVisitTypes();
@@ -25,6 +27,7 @@ export function DirectVisitDialog({ patient, onClose }: { patient: { id: string;
       visitTypeId: v.visitTypeId || null,
       chiefComplaint: v.chiefComplaint || null,
       visitedAt: v.past && v.visitedAt ? new Date(v.visitedAt).toISOString() : null,
+      ...(payer ?? {}),
     }),
     { invalidate: [['queue'], ['patient'], ['timeline']], success: t('visit.direct.opened'), onSuccess: (r) => { onClose(); nav(`/visits/${r.id}`); } },
   );
@@ -51,6 +54,9 @@ export function DirectVisitDialog({ patient, onClose }: { patient: { id: string;
         <Field label={t('reception.complaint')} className="sm:col-span-2">
           <Input value={v.chiefComplaint} onChange={(e) => setV({ ...v, chiefComplaint: e.target.value })} />
         </Field>
+        {canAny('insurance.view', 'insurance.update') && (
+          <Field group label={t('ins.payer.label')} className="sm:col-span-2"><PayerPicker patientId={patient.id} value={payer} onChange={setPayer} /></Field>
+        )}
         <Checkbox className="sm:col-span-2" label={t('visit.direct.past')} checked={v.past} onChange={(e) => setV({ ...v, past: e.target.checked })} />
         {v.past && (
           <Field label={t('visit.direct.when')} error={save.fieldErrors.visitedAt}>

@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, ArrowRight, CheckCircle2, FileText, FlaskConical, HeartPulse, Pill, Printer, Stethoscope } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, FileText, FlaskConical, HeartPulse, Pill, Printer, ShieldCheck, Stethoscope } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
 import { fmtDateTime, money } from '@/lib/format';
 import type { Patient, VisitStatus } from '@/lib/types';
 import type { Consultation, Diagnosis, LabOrder, MedicalReport, NursingNote, Prescription, Vitals } from '@/lib/clinical';
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageLoader, Tabs, useConfirm } from '@/components/ui';
+import { Badge, Button, Card, CardHeader, Dialog, EmptyState, ErrorState, PageLoader, Tabs, useConfirm } from '@/components/ui';
+import { AuthorizationsList, PayerPicker, type PayerValue } from '@/components/insurance/widgets';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { VitalsStrip } from '@/components/shared/VitalsStrip';
 import { AttachmentsPanel } from '@/components/shared/Attachments';
@@ -20,7 +21,9 @@ export interface VisitDetail {
   id: string; visitNumber: string; status: VisitStatus; priority: string; queueNumber: number | null; isDirect: boolean; arrivedAt: string; chiefComplaint?: string | null; notes: string | null;
   patient: Patient; doctor: { id: string; fullName: string; specialty: string | null } | null; visitType: { name: string } | null;
   statusLogs: { id: string; fromStatus: string | null; toStatus: string; userId: string | null; note: string | null; createdAt: string }[];
-  invoices: { id: string; invoiceNumber: string | null; status: string; total: number; balance: number }[];
+  invoices: { id: string; invoiceNumber: string | null; status: string; total: number; balance: number; payerType: string; insuranceShare: number; patientShare: number }[];
+  payerType: 'SELF_PAY' | 'INSURANCE'; patientInsuranceId: string | null;
+  patientInsurance: { id: string; memberId: string; cardNumber: string | null; company: { id: string; nameAr: string }; contract: { id: string; name: string; coveragePercent: number } } | null;
   vitalSigns?: Vitals[]; nursingNotes?: NursingNote[]; consultation?: Consultation | null; diagnoses?: Diagnosis[]; prescriptions?: Prescription[];
   labOrders?: LabOrder[]; medicalReports?: (MedicalReport & { content: string })[];
   userNames: Record<string, string>; canViewMedical: boolean;
@@ -76,6 +79,7 @@ export default function VisitWorkspace() {
               <Link to={`/patients/${p.id}`} className="text-xl font-bold hover:text-primary-700">{p.fullName}</Link>
               <StatusBadge enumName="VisitStatus" value={v.status} />
               {v.priority !== 'NORMAL' && <StatusBadge enumName="Priority" value={v.priority} dot={false} />}
+              <PayerBadge v={v} />
             </div>
             <p className="mt-1 text-sm text-ink-muted">
               #{p.fileNumber} · {t(`enum.Gender.${p.gender}`)}{p.age != null && ` · ${t('common.yearsOld', { age: p.age })}`} · {v.visitNumber} · {fmtDateTime(v.arrivedAt)} · {v.doctor?.fullName ?? t('queue.unassigned')}{v.visitType && ` · ${v.visitType.name}`}
@@ -104,7 +108,10 @@ export default function VisitWorkspace() {
       </Card>
 
       {!v.canViewMedical ? (
-        <Card><EmptyState title={t('visit.noMedical')} /></Card>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card><EmptyState title={t('visit.noMedical')} /></Card>
+          {canAny('insurance.view', 'insurance.update') && <VisitInsuranceCard v={v} />}
+        </div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
           <div className="min-w-0">
@@ -150,6 +157,7 @@ export default function VisitWorkspace() {
               {v.chiefComplaint && <><p className="text-xs font-bold text-ink-muted">{t('patients.chiefComplaint')}</p><p className="mb-3 text-sm">{v.chiefComplaint}</p></>}
               {latestVitals && <><p className="mb-1.5 text-xs font-bold text-ink-muted">{t('patients.vitals')}</p><VitalsStrip v={latestVitals} /></>}
             </Card>
+            {canAny('insurance.view', 'insurance.update') && <VisitInsuranceCard v={v} />}
             {(v.prescriptions?.length ?? 0) > 0 && (
               <Button variant="outline" className="w-full" icon={<Printer className="h-4 w-4" />} onClick={() => window.open(`/print/prescription/${v.prescriptions![0].id}`, '_blank')}>{t('visit.rx.print')}</Button>
             )}
@@ -157,5 +165,39 @@ export default function VisitWorkspace() {
         </div>
       )}
     </div>
+  );
+}
+
+function PayerBadge({ v }: { v: VisitDetail }) {
+  const { t } = useTranslation();
+  if (v.payerType !== 'INSURANCE' || !v.patientInsurance) return <Badge tone="neutral" dot={false}>{t('ins.payer.selfPay')}</Badge>;
+  return <Badge tone="primary"><ShieldCheck className="h-3 w-3" />{t('ins.payer.insurance')}: {v.patientInsurance.company.nameAr} · {v.patientInsurance.memberId}</Badge>;
+}
+
+/** Who pays for this visit, and its pre-authorizations. The payer can change until an invoice is issued. */
+function VisitInsuranceCard({ v }: { v: VisitDetail }) {
+  const { t } = useTranslation();
+  const { can } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [payer, setPayer] = useState<PayerValue | null>({ payerType: v.payerType, patientInsuranceId: v.patientInsuranceId });
+  const save = useApiMutation(() => api.put(`/visits/${v.id}/payer`, payer), { invalidate: [['visit', v.id]], success: t('ins.payer.changed'), onSuccess: () => setOpen(false) });
+  const issued = v.invoices.some((i) => !['DRAFT', 'CANCELLED'].includes(i.status));
+  return (
+    <Card>
+      <CardHeader title={t('ins.payer.label')} icon={<ShieldCheck className="h-5 w-5" />}
+        actions={can('insurance.update') && !issued && <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>{t('ins.payer.change')}</Button>} />
+      {v.payerType === 'INSURANCE' && v.patientInsurance ? (
+        <dl className="mb-3 space-y-1 text-sm">
+          <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('ins.company')}</dt><dd className="font-semibold">{v.patientInsurance.company.nameAr}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('ins.contract')}</dt><dd>{v.patientInsurance.contract.name}</dd></div>
+          <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('ins.m.memberId')}</dt><dd className="font-mono" dir="ltr">{v.patientInsurance.memberId}</dd></div>
+        </dl>
+      ) : <p className="mb-3 text-sm text-ink-muted">{t('ins.payer.selfPay')}</p>}
+      {v.payerType === 'INSURANCE' && <AuthorizationsList patientId={v.patient.id} visitId={v.id} compact />}
+      <Dialog open={open} onClose={() => setOpen(false)} title={t('ins.payer.change')} subtitle={v.patient.fullName}
+        footer={<><Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
+        <PayerPicker patientId={v.patient.id} value={payer} onChange={setPayer} />
+      </Dialog>
+    </Card>
   );
 }

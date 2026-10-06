@@ -26,10 +26,18 @@ export default {
     LeaveType: { ANNUAL: 'سنوية', SICK: 'مرضية', UNPAID: 'بدون راتب', EMERGENCY: 'طارئة', OTHER: 'أخرى' },
     LeaveStatus: { PENDING: 'بانتظار الموافقة', APPROVED: 'موافق عليها', REJECTED: 'مرفوضة', CANCELLED: 'ملغاة' },
     AttendanceStatus: { PRESENT: 'حاضر', LATE: 'متأخر', EARLY_LEAVE: 'مغادرة مبكرة', LATE_AND_EARLY: 'تأخير ومغادرة مبكرة', ABSENT: 'غائب', LEAVE: 'إجازة' },
-    AttachmentCategory: { REPORT: 'تقرير', IMAGE: 'صورة', LAB_RESULT: 'نتيجة تحليل', DOCUMENT: 'مستند', INVOICE: 'فاتورة', OTHER: 'أخرى' },
+    AttachmentCategory: { REPORT: 'تقرير', IMAGE: 'صورة', LAB_RESULT: 'نتيجة تحليل', DOCUMENT: 'مستند', INVOICE: 'فاتورة', INSURANCE: 'تأمين', OTHER: 'أخرى' },
+    PayerType: { SELF_PAY: 'نقدي', INSURANCE: 'مؤمّن', CORPORATE: 'تأمين شركات', GOVERNMENT: 'تأمين حكومي', OTHER: 'أخرى' },
+    InsurancePriority: { PRIMARY: 'أساسي', SECONDARY: 'ثانوي' },
+    InsuranceStatus: { ACTIVE: 'فعال', SUSPENDED: 'موقوف', EXPIRED: 'منتهي', NOT_STARTED: 'لم يبدأ', ARCHIVED: 'مؤرشف' },
+    AuthorizationStatus: { PENDING: 'بانتظار الإرسال', SUBMITTED: 'مرسل للشركة', APPROVED: 'موافق عليه', PARTIALLY_APPROVED: 'موافقة جزئية', REJECTED: 'مرفوض', EXPIRED: 'منتهي الصلاحية', CANCELLED: 'ملغى' },
+    ClaimStatus: {
+      DRAFT: 'مسودة', READY: 'جاهزة للإرسال', SUBMITTED: 'مرسلة', UNDER_REVIEW: 'قيد المراجعة', APPROVED: 'معتمدة', PARTIALLY_APPROVED: 'معتمدة جزئياً',
+      REJECTED: 'مرفوضة', RESUBMISSION_REQUIRED: 'تحتاج إعادة تقديم', PAID: 'مدفوعة', PARTIALLY_PAID: 'مدفوعة جزئياً', CLOSED: 'مغلقة', CANCELLED: 'ملغاة',
+    },
     NotificationType: {
       LOW_STOCK: 'مخزون منخفض', EXPIRY: 'انتهاء صلاحية', UNPAID_INVOICE: 'فاتورة غير مدفوعة', UPCOMING_APPOINTMENT: 'موعد قادم',
-      LAB_REQUESTED: 'طلب تحليل', LAB_RESULT_READY: 'نتيجة تحليل', STAFF_LATE: 'تأخر موظف', SHIFT_ENDING: 'انتهاء شفت', QUEUE: 'قائمة الانتظار', SYSTEM: 'النظام',
+      LAB_REQUESTED: 'طلب تحليل', LAB_RESULT_READY: 'نتيجة تحليل', STAFF_LATE: 'تأخر موظف', SHIFT_ENDING: 'انتهاء شفت', QUEUE: 'قائمة الانتظار', INSURANCE: 'التأمين', SYSTEM: 'النظام',
     },
   },
 };

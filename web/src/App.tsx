@@ -39,6 +39,14 @@ const Schedule = p(() => import('./pages/staff/Schedule'));
 const Attendance = p(() => import('./pages/staff/Attendance'));
 const Leaves = p(() => import('./pages/staff/Leaves'));
 const Reports = p(() => import('./pages/reports/Reports'));
+const InsuranceDashboard = p(() => import('./pages/insurance/Dashboard'));
+const InsuranceClaims = p(() => import('./pages/insurance/Claims'));
+const InsuranceClaimDetail = p(() => import('./pages/insurance/ClaimDetail'));
+const InsuranceAuthorizations = p(() => import('./pages/insurance/Authorizations'));
+const InsurancePayments = p(() => import('./pages/insurance/Payments'));
+const InsuranceCompanies = p(() => import('./pages/insurance/Companies'));
+const InsuranceCompanyDetail = p(() => import('./pages/insurance/CompanyDetail'));
+const InsuranceReports = p(() => import('./pages/insurance/Reports'));
 const Notifications = p(() => import('./pages/system/Notifications'));
 const AuditLogs = p(() => import('./pages/system/AuditLogs'));
 const Settings = p(() => import('./pages/settings/Settings'));
@@ -103,6 +111,14 @@ export default function App() {
         <Route path="billing/cashier" element={<Guard any={['cashier.view']}><Cashier /></Guard>} />
         <Route path="billing/payments" element={<Guard any={['cashier.view', 'payments.create']}><Payments /></Guard>} />
         <Route path="expenses" element={<Guard any={['expenses.view']}><Expenses /></Guard>} />
+        <Route path="insurance" element={<Guard any={['insurance.report.view']}><InsuranceDashboard /></Guard>} />
+        <Route path="insurance/claims" element={<Guard any={['insurance.view']}><InsuranceClaims /></Guard>} />
+        <Route path="insurance/claims/:id" element={<Guard any={['insurance.view']}><InsuranceClaimDetail /></Guard>} />
+        <Route path="insurance/authorizations" element={<Guard any={['insurance.view']}><InsuranceAuthorizations /></Guard>} />
+        <Route path="insurance/payments" element={<Guard any={['insurance.view']}><InsurancePayments /></Guard>} />
+        <Route path="insurance/companies" element={<Guard any={['insurance.view']}><InsuranceCompanies /></Guard>} />
+        <Route path="insurance/companies/:id" element={<Guard any={['insurance.view']}><InsuranceCompanyDetail /></Guard>} />
+        <Route path="insurance/reports" element={<Guard any={['insurance.report.view']}><InsuranceReports /></Guard>} />
         <Route path="inventory/items" element={<Guard any={['inventory.view']}><Items /></Guard>} />
         <Route path="inventory/items/:id" element={<Guard any={['inventory.view']}><ItemDetail /></Guard>} />
         <Route path="inventory/transactions" element={<Guard any={['inventory.view']}><Transactions /></Guard>} />

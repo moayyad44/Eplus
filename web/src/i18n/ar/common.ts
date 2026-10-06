@@ -22,7 +22,8 @@ export default {
     day: 'اليوم', week: 'أسبوع', month: 'شهر', list: 'قائمة', calendar: 'تقويم', generatedAt: 'تاريخ الإصدار', printedBy: 'طُبع بواسطة',
   },
   nav: {
-    sections: { main: 'الرئيسية', clinical: 'العمل الطبي', finance: 'المالية', inventory: 'المخزون', staff: 'الموظفون', system: 'النظام' },
+    sections: { main: 'الرئيسية', clinical: 'العمل الطبي', finance: 'المالية', insurance: 'التأمين الطبي', inventory: 'المخزون', staff: 'الموظفون', system: 'النظام' },
+    insDashboard: 'لوحة التأمين', insClaims: 'المطالبات', insAuthorizations: 'الموافقات المسبقة', insPayments: 'دفعات الشركات', insCompanies: 'شركات التأمين والعقود', insReports: 'تقارير التأمين',
     dashboard: 'لوحة التحكم', home: 'الرئيسية', reception: 'الاستقبال', queue: 'قائمة الانتظار', patients: 'المرضى', appointments: 'المواعيد',
     lab: 'المختبر', invoices: 'الفواتير', newInvoice: 'فاتورة جديدة', outstanding: 'الفواتير غير المدفوعة', cashier: 'الصندوق', payments: 'المدفوعات',
     expenses: 'المصروفات', inventory: 'الأصناف', transactions: 'حركات المخزون', stockCounts: 'الجرد', suppliers: 'الموردون', purchases: 'أوامر الشراء',

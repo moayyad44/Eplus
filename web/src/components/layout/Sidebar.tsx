@@ -34,6 +34,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   <li key={i.to}>
                     <NavLink
                       to={i.to}
+                      end={i.to === '/insurance'}
                       onClick={onClose}
                       className={({ isActive }) =>
                         clsx(

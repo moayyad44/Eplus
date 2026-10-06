@@ -13,6 +13,10 @@ const TONES: Record<string, Record<string, Tone>> = {
   AttendanceStatus: { PRESENT: 'success', LATE: 'warning', EARLY_LEAVE: 'warning', LATE_AND_EARLY: 'danger', ABSENT: 'danger', LEAVE: 'violet' },
   ResultFlag: { NORMAL: 'success', LOW: 'warning', HIGH: 'warning', ABNORMAL: 'danger', CRITICAL: 'danger' },
   AllergySeverity: { MILD: 'warning', MODERATE: 'warning', SEVERE: 'danger' },
+  ClaimStatus: { DRAFT: 'neutral', READY: 'info', SUBMITTED: 'primary', UNDER_REVIEW: 'violet', APPROVED: 'success', PARTIALLY_APPROVED: 'warning', REJECTED: 'danger', RESUBMISSION_REQUIRED: 'warning', PAID: 'success', PARTIALLY_PAID: 'warning', CLOSED: 'success', CANCELLED: 'neutral' },
+  AuthorizationStatus: { PENDING: 'neutral', SUBMITTED: 'info', APPROVED: 'success', PARTIALLY_APPROVED: 'warning', REJECTED: 'danger', EXPIRED: 'danger', CANCELLED: 'neutral' },
+  InsuranceStatus: { ACTIVE: 'success', SUSPENDED: 'danger', EXPIRED: 'danger', NOT_STARTED: 'warning', ARCHIVED: 'neutral' },
+  PayerType: { SELF_PAY: 'neutral', INSURANCE: 'primary', CORPORATE: 'violet', GOVERNMENT: 'info', OTHER: 'neutral' },
   InventoryTxnType: { PURCHASE: 'success', RECEIPT: 'success', RETURN: 'success', SALE_REVERSAL: 'success', ISSUE: 'warning', CONSUMPTION: 'warning', SALE: 'info', ADJUSTMENT: 'violet', STOCK_COUNT: 'violet' },
 };
 

@@ -6,6 +6,7 @@ import { nextCounter, pad } from '../../lib/counters';
 import { dateOnly, ymd } from '../../lib/dates';
 import { AppError, badRequest, forbidden, notFound } from '../../lib/errors';
 import { ACTIVE_STATUSES, checkTransition } from './stateMachine';
+import { resolveVisitPayer } from '../insurance/coverage';
 
 const PRIORITY_RANK: Record<Priority, number> = { EMERGENCY: 3, URGENT: 2, NORMAL: 1 };
 
@@ -37,6 +38,8 @@ export interface CreateVisitInput {
   notes?: string | null;
   appointmentId?: string | null;
   allowDuplicate?: boolean;
+  payerType?: 'SELF_PAY' | 'INSURANCE';
+  patientInsuranceId?: string | null;
 }
 
 export async function createVisit(tx: Tx, ctx: Ctx, input: CreateVisitInput) {
@@ -52,6 +55,7 @@ export async function createVisit(tx: Tx, ctx: Ctx, input: CreateVisitInput) {
     const active = await tx.visit.findFirst({ where: { patientId: patient.id, queueDate, status: { in: ACTIVE_STATUSES } }, select: { id: true, queueNumber: true } });
     if (active) throw new AppError(409, 'ACTIVE_VISIT', `المريض موجود حالياً في قائمة الانتظار (رقم ${active.queueNumber})`, { visitId: active.id });
   }
+  const payer = await resolveVisitPayer(tx, patient.id, input);
   const priority = input.priority ?? 'NORMAL';
   const queueNumber = await nextCounter(tx, `queue:${ymd(now)}:${ctx.branchId ?? 'main'}`);
   const visitSeq = await nextCounter(tx, 'visit');
@@ -69,6 +73,7 @@ export async function createVisit(tx: Tx, ctx: Ctx, input: CreateVisitInput) {
       queueDate,
       queueNumber,
       queuePosition: await positionFor(tx, queueDate, ctx.branchId, priority),
+      ...payer,
       createdById: ctx.userId,
       statusLogs: { create: { toStatus: 'WAITING', userId: ctx.userId } },
     },
@@ -90,6 +95,8 @@ export interface DirectVisitInput {
   notes?: string | null;
   /** When the visit took place; defaults to now. Past dates allow recording an earlier visit. */
   visitedAt?: Date | null;
+  payerType?: 'SELF_PAY' | 'INSURANCE';
+  patientInsuranceId?: string | null;
 }
 
 /**
@@ -106,12 +113,14 @@ export async function createDirectVisit(tx: Tx, ctx: Ctx, input: DirectVisitInpu
   const now = new Date();
   const at = input.visitedAt ?? now;
   if (at.getTime() > now.getTime() + 5 * 60_000) throw badRequest('لا يمكن فتح زيارة بتاريخ مستقبلي');
+  const payer = await resolveVisitPayer(tx, patient.id, input);
   const visitSeq = await nextCounter(tx, 'visit');
   const visit = await tx.visit.create({
     data: {
       visitNumber: `V-${pad(visitSeq, 7)}`,
       patientId: patient.id,
       doctorId,
+      ...payer,
       visitTypeId: input.visitTypeId ?? null,
       branchId: ctx.branchId,
       status: 'WITH_DOCTOR',

@@ -16,10 +16,13 @@ import { ICD10_COMMON } from './data/icd10';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Permissions catalog (sync)
+  // Permissions catalog (sync). Remember which keys are new in this release.
+  const known = new Set((await prisma.permission.findMany({ select: { key: true } })).map((p) => p.key));
+  const firstRun = known.size === 0;
   for (const [key, v] of Object.entries(PERMISSIONS)) {
     await prisma.permission.upsert({ where: { key }, create: { key, ...v }, update: v });
   }
+  const added = Object.keys(PERMISSIONS).filter((k) => !known.has(k));
   await prisma.permission.deleteMany({ where: { key: { notIn: Object.keys(PERMISSIONS) } } });
 
   // System roles: created once; afterwards they are owned by the admin (editable in Settings).
@@ -32,6 +35,11 @@ async function main() {
     } else if (r.key === 'admin') {
       // The admin role always holds every permission, including ones added in new releases.
       await prisma.rolePermission.createMany({ data: r.permissions.map((permissionKey) => ({ roleId: existing.id, permissionKey })), skipDuplicates: true });
+    } else if (!firstRun && existing.isSystem) {
+      // Permissions introduced by this release go to the system roles that have them by default.
+      // Existing permissions are left alone, so the administrator's own choices are kept.
+      const grant = r.permissions.filter((k) => added.includes(k));
+      if (grant.length) await prisma.rolePermission.createMany({ data: grant.map((permissionKey) => ({ roleId: existing.id, permissionKey })), skipDuplicates: true });
     }
   }
 

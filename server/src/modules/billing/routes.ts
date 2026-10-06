@@ -17,12 +17,16 @@ const itemSchema = z.object({
   quantity: z.coerce.number().positive('الكمية يجب أن تكون أكبر من صفر').max(10000),
   unitPrice: z.coerce.number().min(0).max(1_000_000).nullable().optional(),
   discount: z.coerce.number().min(0).max(1_000_000).nullable().optional(),
+  overrideApproval: z.boolean().optional(),
+  insuranceShare: z.coerce.number().min(0).max(1_000_000).nullable().optional(),
 });
 const invoiceBody = z.object({
   patientId: z.string().uuid('اختر المريض'),
   visitId: z.string().uuid().nullable().optional(),
   doctorId: z.string().uuid().nullable().optional(),
   templateId: z.string().uuid().nullable().optional(),
+  payerType: z.enum(['SELF_PAY', 'INSURANCE']).optional(),
+  patientInsuranceId: z.string().uuid().nullable().optional(),
   items: z.array(itemSchema).max(100),
   invoiceDiscount: z.coerce.number().min(0).default(0),
   notes: nullableStr(1000),
@@ -45,7 +49,11 @@ const detailInclude = {
   doctor: { select: { id: true, fullName: true, specialty: true } },
   visit: { select: { id: true, visitNumber: true, arrivedAt: true, status: true } },
   template: { select: { id: true, name: true } },
-  items: { orderBy: { sortOrder: 'asc' } },
+  items: { orderBy: { sortOrder: 'asc' }, include: { authorization: { select: { id: true, requestNumber: true, approvalNumber: true } } } },
+  insuranceCompany: { select: { id: true, nameAr: true, nameEn: true } },
+  insuranceContract: { select: { id: true, name: true } },
+  patientInsurance: { select: { id: true, memberId: true, cardNumber: true, policyNumber: true, priority: true, endDate: true, status: true } },
+  claim: { select: { id: true, claimNumber: true, status: true, insuranceAmount: true, approvedAmount: true, rejectedAmount: true, paidAmount: true, transferredAmount: true, writtenOffAmount: true, outstandingAmount: true } },
   payments: { orderBy: { paidAt: 'asc' }, include: { method: { select: { id: true, name: true, code: true } } } },
 } satisfies Prisma.InvoiceInclude;
 
@@ -67,6 +75,7 @@ billingRouter.get(
       pageQuery.extend({
         status: z.nativeEnum(InvoiceStatus).optional(), patientId: z.string().uuid().optional(), doctorId: z.string().uuid().optional(),
         visitId: z.string().uuid().optional(), from: z.string().optional(), to: z.string().optional(),
+        payerType: z.enum(['SELF_PAY', 'INSURANCE']).optional(), insuranceCompanyId: z.string().uuid().optional(),
       }),
       req.query,
     );
@@ -75,6 +84,8 @@ billingRouter.get(
       ...(q.patientId && { patientId: q.patientId }),
       ...(q.doctorId && { doctorId: q.doctorId }),
       ...(q.visitId && { visitId: q.visitId }),
+      ...(q.payerType && { payerType: q.payerType }),
+      ...(q.insuranceCompanyId && { insuranceCompanyId: q.insuranceCompanyId }),
       ...(q.from && { createdAt: (({ from, to }) => ({ gte: from, lte: to }))(rangeFromQuery(q.from, q.to)) }),
       ...(q.q && { OR: [{ invoiceNumber: { contains: q.q, mode: 'insensitive' } }, { patient: { fullName: { contains: q.q, mode: 'insensitive' } } }, { patient: { phone: { contains: q.q } } }, { patient: { fileNumber: q.q } }] }),
     };
@@ -82,10 +93,10 @@ billingRouter.get(
       prisma.invoice.findMany({
         where, ...paginate(q),
         orderBy: sortBy(q.sort, ['createdAt', 'issuedAt', 'total', 'balance', 'invoiceNumber'] as const, 'createdAt', q.order),
-        include: { patient: { select: { id: true, fullName: true, phone: true, fileNumber: true } }, doctor: { select: { fullName: true } }, template: { select: { name: true } } },
+        include: { patient: { select: { id: true, fullName: true, phone: true, fileNumber: true } }, doctor: { select: { fullName: true } }, template: { select: { name: true } }, insuranceCompany: { select: { nameAr: true } } },
       }),
       prisma.invoice.count({ where }),
-      prisma.invoice.aggregate({ where: { ...where, status: where.status ?? { notIn: ['CANCELLED', 'DRAFT'] } }, _sum: { total: true, paidAmount: true, balance: true } }),
+      prisma.invoice.aggregate({ where: { ...where, status: where.status ?? { notIn: ['CANCELLED', 'DRAFT'] } }, _sum: { total: true, paidAmount: true, balance: true, insuranceShare: true, patientShare: true } }),
     ]);
     res.json({ ...paged(items, total, q), sums: sums._sum });
   }),
@@ -144,6 +155,17 @@ billingRouter.get(
   }),
 );
 
+/** Dry run of an invoice: prices, insurance split per line and warnings — nothing is saved. */
+billingRouter.post(
+  '/invoices/preview',
+  requireAnyPerm('invoices.create', 'invoices.update'),
+  ah(async (req, res) => {
+    const body = parse(invoiceBody.omit({ payment: true, issue: true }).extend({ draftId: z.string().uuid().optional() }), req.body);
+    const built = await prisma.$transaction((tx) => buildInvoice(tx, req.ctx, { ...body, excludeInvoiceId: body.draftId }));
+    res.json({ ...built.header, items: built.items, warnings: built.warnings, insurance: built.insurance });
+  }),
+);
+
 billingRouter.get(
   '/invoices/:id',
   requirePerm('invoices.view'),
@@ -180,7 +202,7 @@ billingRouter.put(
       const before = await tx.invoice.findUnique({ where: { id: req.params.id }, include: { items: true } });
       if (!before) throw notFound();
       if (before.status !== 'DRAFT') throw badRequest('لا يمكن تعديل فاتورة صادرة. يمكنك إلغاؤها وإصدار فاتورة جديدة');
-      const built = await buildInvoice(tx, req.ctx, body);
+      const built = await buildInvoice(tx, req.ctx, { ...body, excludeInvoiceId: before.id });
       await tx.invoiceItem.deleteMany({ where: { invoiceId: before.id } });
       await tx.invoice.update({ where: { id: before.id }, data: { ...built.header, items: { create: built.items } } });
       await audit(tx, req.ctx, {

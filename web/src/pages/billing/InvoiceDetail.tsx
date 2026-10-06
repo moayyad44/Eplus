@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Ban, Pencil, Printer, Receipt, RotateCcw, Send, Wallet } from 'lucide-react';
+import { Ban, Pencil, Printer, Receipt, RotateCcw, Send, ShieldCheck, Wallet } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -39,6 +39,7 @@ export default function InvoiceDetail() {
   const inv = q.data;
   const open = ['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'].includes(inv.status);
   const netPaid = num(inv.paidAmount) - num(inv.refundedAmount);
+  const insured = inv.payerType === 'INSURANCE';
 
   return (
     <div>
@@ -88,6 +89,12 @@ export default function InvoiceDetail() {
                 { key: 'p', header: t('billing.unitPrice'), cell: (r) => money(r.unitPrice) },
                 { key: 'di', header: t('common.discount'), cell: (r) => (num(r.discount) ? money(r.discount) : '—') },
                 { key: 't', header: t('billing.lineTotal'), align: 'end', cell: (r) => <b className="tabular-nums">{money(r.lineTotal)}</b> },
+                ...(insured ? [
+                  { key: 'ins', header: t('ins.inv.insuranceShare'), align: 'end' as const, cell: (r: Invoice['items'][number]) => (
+                    <span className="tabular-nums text-primary-700">{money(r.insuranceShare)}{r.coverageNote && <span className="block text-[11px] text-ink-muted">{r.coverageNote}</span>}</span>
+                  ) },
+                  { key: 'pat', header: t('ins.inv.patientShare'), align: 'end' as const, cell: (r: Invoice['items'][number]) => <b className="tabular-nums">{money(r.patientShare)}</b> },
+                ] : []),
               ]}
             />
             {inv.notes && <p className="mt-3 text-sm text-ink-soft">{inv.notes}</p>}
@@ -128,16 +135,43 @@ export default function InvoiceDetail() {
             {inv.doctor && <p className="mt-2 text-sm">{t('common.doctor')}: <b>{inv.doctor.fullName}</b></p>}
             {inv.visit && <p className="text-sm">{t('billing.visit')}: <Link to={`/visits/${inv.visit.id}`} className="font-semibold text-primary-700 hover:underline">{inv.visit.visitNumber}</Link></p>}
           </Card>
+          {insured && (
+            <Card>
+              <CardHeader title={t('ins.title')} icon={<ShieldCheck className="h-5 w-5" />} />
+              <dl className="space-y-1 text-sm">
+                <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('ins.company')}</dt><dd className="font-semibold">{inv.insuranceCompany?.nameAr}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('ins.contract')}</dt><dd>{inv.insuranceContract?.name}</dd></div>
+                <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('ins.m.memberId')}</dt><dd className="font-mono" dir="ltr">{inv.patientInsurance?.memberId}</dd></div>
+                {inv.claim && (
+                  <>
+                    <div className="flex justify-between gap-2 border-t border-line pt-2"><dt className="text-ink-muted">{t('ins.inv.claimLink')}</dt>
+                      <dd>{can('insurance.view') ? <Link to={`/insurance/claims/${inv.claim.id}`} className="font-mono font-semibold text-primary-700 hover:underline">{inv.claim.claimNumber}</Link> : <span className="font-mono">{inv.claim.claimNumber}</span>}</dd></div>
+                    <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('common.status')}</dt><dd><StatusBadge enumName="ClaimStatus" value={inv.claim.status} /></dd></div>
+                    <div className="flex justify-between gap-2"><dt className="text-ink-muted">{t('ins.c.paid')}</dt><dd className="tabular-nums">{money(inv.claim.paidAmount)}</dd></div>
+                    {num(inv.claim.rejectedAmount) > 0 && <div className="flex justify-between gap-2 text-danger-700"><dt>{t('ins.c.rejected')}</dt><dd className="tabular-nums">{money(inv.claim.rejectedAmount)}</dd></div>}
+                    <div className="flex justify-between gap-2 rounded-lg bg-primary-50 px-2 py-1 font-bold text-primary-800"><dt>{t('ins.inv.receivable')}</dt><dd className="tabular-nums">{money(inv.claim.outstandingAmount)}</dd></div>
+                  </>
+                )}
+              </dl>
+            </Card>
+          )}
           <Card>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between"><dt className="text-ink-muted">{t('common.subtotal')}</dt><dd className="tabular-nums">{money(inv.subtotal)}</dd></div>
               {num(inv.discountTotal) > 0 && <div className="flex justify-between"><dt className="text-ink-muted">{t('common.discount')}</dt><dd className="tabular-nums">-{money(inv.discountTotal)}</dd></div>}
               {num(inv.taxTotal) > 0 && <div className="flex justify-between"><dt className="text-ink-muted">{t('common.tax')}</dt><dd className="tabular-nums">{money(inv.taxTotal)}</dd></div>}
-              <div className="flex justify-between border-t border-line pt-2 text-base font-bold"><dt>{t('billing.total')}</dt><dd className="tabular-nums">{money(inv.total)}</dd></div>
-              <div className="flex justify-between text-success-700"><dt>{t('common.paid')}</dt><dd className="tabular-nums">{money(inv.paidAmount)}</dd></div>
+              <div className="flex justify-between border-t border-line pt-2 text-base font-bold"><dt>{insured ? t('ins.inv.total') : t('billing.total')}</dt><dd className="tabular-nums">{money(inv.total)}</dd></div>
+              {insured && (
+                <>
+                  <div className="flex justify-between rounded-lg bg-primary-50 px-2 py-1 text-primary-800"><dt>{t('ins.inv.insuranceShare')}</dt><dd className="tabular-nums font-semibold">{money(inv.insuranceShare)}</dd></div>
+                  <div className="flex justify-between px-2 font-semibold"><dt>{t('ins.inv.patientShare')}</dt><dd className="tabular-nums">{money(inv.patientShare)}</dd></div>
+                  {num(inv.transferredFromInsurance) > 0 && <div className="flex justify-between px-2 text-warning-700"><dt>+ {t('ins.inv.transferred')}</dt><dd className="tabular-nums">{money(inv.transferredFromInsurance)}</dd></div>}
+                </>
+              )}
+              <div className="flex justify-between text-success-700"><dt>{insured ? t('ins.inv.patientPaid') : t('common.paid')}</dt><dd className="tabular-nums">{money(inv.paidAmount)}</dd></div>
               {num(inv.refundedAmount) > 0 && <div className="flex justify-between text-violet-700"><dt>{t('billing.refunded')}</dt><dd className="tabular-nums">-{money(inv.refundedAmount)}</dd></div>}
               <div className={clsx('flex justify-between rounded-xl px-3 py-2 text-lg font-bold', num(inv.balance) > 0 ? 'bg-danger-50 text-danger-700' : 'bg-success-50 text-success-700')}>
-                <dt>{t('common.balance')}</dt><dd className="tabular-nums">{money(inv.balance)}</dd>
+                <dt>{insured ? t('ins.inv.patientBalance') : t('common.balance')}</dt><dd className="tabular-nums">{money(inv.balance)}</dd>
               </div>
             </dl>
           </Card>

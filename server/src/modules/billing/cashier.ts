@@ -8,6 +8,7 @@ import { requirePerm } from '../../middleware/auth';
 import { rangeFromQuery } from '../../lib/dates';
 import { D, num } from '../../lib/money';
 import { env } from '../../config/env';
+import { insuranceTotals } from '../insurance/claimRoutes';
 
 export const cashierRouter = Router();
 
@@ -17,7 +18,7 @@ export async function financialSummary(from: Date, to: Date, branchId?: string |
   const [sales, byMethod, expenses, outstanding, daily] = await Promise.all([
     prisma.invoice.aggregate({
       where: { status: { notIn: ['DRAFT', 'CANCELLED'] }, issuedAt: { gte: from, lte: to }, ...(branchId && { branchId }) },
-      _sum: { subtotal: true, discountTotal: true, taxTotal: true, total: true, balance: true },
+      _sum: { subtotal: true, discountTotal: true, taxTotal: true, total: true, balance: true, patientShare: true, insuranceShare: true },
       _count: true,
     }),
     prisma.$queryRaw<{ methodId: string; name: string; code: string; type: string; amount: Prisma.Decimal; count: bigint }[]>`
@@ -46,6 +47,9 @@ export async function financialSummary(from: Date, to: Date, branchId?: string |
   const refunded = [...methods.values()].reduce((a, m) => a + m.refunded, 0);
   const expenseTotal = num(expenses._sum.amount);
   const netReceipts = D(collected).sub(refunded).toNumber();
+  // Insurance money only counts as collected when the company actually pays it.
+  const ins = await insuranceTotals(from, to);
+  const cashCollected = D(netReceipts).add(ins.received).toNumber();
   return {
     period: { from, to },
     invoiceCount: sales._count,
@@ -60,9 +64,20 @@ export async function financialSummary(from: Date, to: Date, branchId?: string |
     byMethod: [...methods.values()],
     expenses: expenseTotal,
     expenseCount: expenses._count,
-    netIncome: D(netReceipts).sub(expenseTotal).toNumber(),
+    netIncome: D(cashCollected).sub(expenseTotal).toNumber(),
     outstandingTotal: num(outstanding._sum.balance),
     outstandingCount: outstanding._count,
+    // Insurance, kept apart from patient money and from discounts.
+    patientBilled: num(sales._sum.patientShare),
+    insuranceBilled: num(sales._sum.insuranceShare),
+    insuranceReceived: ins.received,
+    cashCollected,
+    patientReceivables: num(outstanding._sum.balance),
+    insuranceReceivables: ins.outstanding,
+    insuranceApproved: ins.approved,
+    insuranceRejected: ins.rejected,
+    insuranceWrittenOff: ins.writtenOff,
+    insuranceTransferred: ins.transferred,
     daily: daily.map((d) => ({ day: d.day, collected: num(d.collected), refunded: num(d.refunded) })),
   };
 }

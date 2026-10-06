@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Banknote, BadgePercent, Printer, ReceiptText, RotateCcw, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { Banknote, BadgePercent, Printer, ReceiptText, RotateCcw, ShieldCheck, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { money } from '@/lib/format';
 import { Card, CardHeader, DateRangePicker, EmptyState, ErrorState, Button, PageHeader, PageLoader, StatCard, presetRange } from '@/components/ui';
@@ -10,6 +10,8 @@ import { BarsChart, ShareBars } from '@/components/shared/charts';
 export interface FinanceSummary {
   invoiceCount: number; grossSales: number; discounts: number; tax: number; netSales: number; unpaidFromPeriod: number; collected: number; refunded: number;
   netReceipts: number; expenses: number; netIncome: number; outstandingTotal: number; outstandingCount: number;
+  patientBilled: number; insuranceBilled: number; insuranceReceived: number; cashCollected: number; patientReceivables: number; insuranceReceivables: number;
+  insuranceApproved: number; insuranceRejected: number; insuranceWrittenOff: number; insuranceTransferred: number;
   byMethod: { methodId: string; name: string; code: string; collected: number; refunded: number; count: number }[];
   daily: { day: string; collected: number; refunded: number }[];
 }
@@ -34,8 +36,9 @@ export default function Cashier() {
             <StatCard label={t('billing.discounts')} value={money(s.discounts)} tone="warning" icon={<BadgePercent className="h-5 w-5" />} />
             <StatCard label={t('billing.unpaid')} value={money(s.unpaidFromPeriod)} tone="danger" hint={`${t('billing.totalOutstanding')}: ${money(s.outstandingTotal)}`} />
             <StatCard label={t('billing.expenses')} value={money(s.expenses)} tone="neutral" icon={<TrendingDown className="h-5 w-5" />} />
-            <StatCard label={t('billing.netIncome')} value={money(s.netIncome)} tone={s.netIncome >= 0 ? 'success' : 'danger'} icon={<TrendingUp className="h-5 w-5" />} />
+            <StatCard label={t('billing.netIncome')} hint={t('billing.ins.netIncomeHint')} value={money(s.netIncome)} tone={s.netIncome >= 0 ? 'success' : 'danger'} icon={<TrendingUp className="h-5 w-5" />} />
           </div>
+          <InsuranceFigures s={s} />
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader title={t('billing.byMethod')} />
@@ -49,5 +52,30 @@ export default function Cashier() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Insurance kept apart: billed to companies, actually received, and still owed — never mixed with patient cash or discounts. */
+export function InsuranceFigures({ s }: { s: FinanceSummary }) {
+  const { t } = useTranslation();
+  if (!s.insuranceBilled && !s.insuranceReceived && !s.insuranceReceivables) return null;
+  const cell = (label: string, value: number, tone: string) => (
+    <div className={`rounded-xl p-3 ${tone}`}><p className="text-xs text-ink-muted">{label}</p><b className="text-lg tabular-nums">{money(value)}</b></div>
+  );
+  return (
+    <Card>
+      <CardHeader title={t('billing.ins.title')} icon={<ShieldCheck className="h-5 w-5" />} subtitle={t('billing.ins.hint')} />
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+        {cell(t('billing.ins.totalBilled'), s.netSales, 'bg-surface-subtle')}
+        {cell(t('billing.ins.patientBilled'), s.patientBilled, 'bg-surface-subtle')}
+        {cell(t('billing.ins.insuranceBilled'), s.insuranceBilled, 'bg-primary-50')}
+        {cell(t('billing.ins.cashCollected'), s.cashCollected, 'bg-success-50')}
+        {cell(t('billing.ins.insuranceReceived'), s.insuranceReceived, 'bg-success-50')}
+        {cell(t('billing.ins.patientReceivables'), s.patientReceivables, 'bg-danger-50')}
+        {cell(t('billing.ins.insuranceReceivables'), s.insuranceReceivables, 'bg-warning-50')}
+        {cell(t('billing.ins.rejected'), s.insuranceRejected, 'bg-danger-50')}
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">{t('billing.ins.footer', { approved: money(s.insuranceApproved), writtenOff: money(s.insuranceWrittenOff), transferred: money(s.insuranceTransferred) })}</p>
+    </Card>
   );
 }

@@ -12,6 +12,7 @@ import { ageFrom } from '../../lib/dates';
 import { can } from '../../auth/context';
 import { ACTIVE_STATUSES } from './stateMachine';
 import { changeVisitStatus, createDirectVisit, createVisit, positionFor } from './service';
+import { resolveVisitPayer } from '../insurance/coverage';
 
 export const visitsRouter = Router();
 
@@ -24,6 +25,8 @@ const createBody = z.object({
   notes: nullableStr(1000),
   appointmentId: z.string().uuid().nullable().optional(),
   allowDuplicate: z.boolean().optional(),
+  payerType: z.enum(['SELF_PAY', 'INSURANCE']).optional(),
+  patientInsuranceId: z.string().uuid().nullable().optional(),
 });
 
 visitsRouter.post(
@@ -49,6 +52,8 @@ visitsRouter.post(
         chiefComplaint: nullableStr(500),
         notes: nullableStr(1000),
         visitedAt: optionalDate,
+        payerType: z.enum(['SELF_PAY', 'INSURANCE']).optional(),
+        patientInsuranceId: z.string().uuid().nullable().optional(),
       }),
       req.body,
     );
@@ -85,7 +90,8 @@ visitsRouter.get(
       select: {
         id: true, visitNumber: true, queueNumber: true, queuePosition: true, status: true, priority: true,
         arrivedAt: true, calledAt: true, nurseStartedAt: true, doctorStartedAt: true, completedAt: true, cancelReason: true,
-        chiefComplaint: true, notes: true, appointmentId: true,
+        chiefComplaint: true, notes: true, appointmentId: true, payerType: true,
+        patientInsurance: { select: { id: true, memberId: true, company: { select: { nameAr: true } } } },
         patient: { select: { id: true, fullName: true, phone: true, fileNumber: true, gender: true, dateOfBirth: true } },
         doctor: { select: { id: true, fullName: true } },
         visitType: { select: { id: true, name: true, color: true } },
@@ -155,7 +161,9 @@ visitsRouter.get(
         visitType: true,
         appointment: { select: { id: true, startAt: true } },
         statusLogs: { orderBy: { createdAt: 'asc' } },
-        invoices: { select: { id: true, invoiceNumber: true, status: true, total: true, balance: true } },
+        invoices: { select: { id: true, invoiceNumber: true, status: true, total: true, balance: true, payerType: true, insuranceShare: true, patientShare: true } },
+        patientInsurance: { include: { company: { select: { id: true, nameAr: true } }, contract: { select: { id: true, name: true, coveragePercent: true } } } },
+        authorizations: { orderBy: { requestedAt: 'desc' }, include: { service: { select: { name: true } } } },
         ...(medical && {
           vitalSigns: { orderBy: { recordedAt: 'desc' } },
           nursingNotes: { orderBy: { performedAt: 'desc' } },
@@ -173,6 +181,29 @@ visitsRouter.get(
     const userIds = [...new Set(visit.statusLogs.map((l) => l.userId).filter(Boolean) as string[])];
     const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } });
     res.json({ ...visit, patient: { ...visit.patient, age: ageFrom(visit.patient.dateOfBirth) }, userNames: Object.fromEntries(users.map((u) => [u.id, u.fullName])), canViewMedical: medical });
+  }),
+);
+
+/** Changes who pays for a visit (self pay / insurance) as long as no invoice was issued for it. */
+visitsRouter.put(
+  '/:id/payer',
+  requirePerm('insurance.update'),
+  ah(async (req, res) => {
+    const body = parse(z.object({ payerType: z.enum(['SELF_PAY', 'INSURANCE']), patientInsuranceId: z.string().uuid().nullable().optional() }), req.body);
+    const updated = await prisma.$transaction(async (tx) => {
+      const before = await tx.visit.findUnique({ where: { id: req.params.id } });
+      if (!before) throw notFound();
+      const issued = await tx.invoice.count({ where: { visitId: before.id, status: { notIn: ['DRAFT', 'CANCELLED'] } } });
+      if (issued) throw badRequest('صدرت فاتورة لهذه الزيارة. ألغِ الفاتورة أولاً لتغيير طريقة الدفع');
+      const payer = await resolveVisitPayer(tx, before.patientId, body);
+      const v = await tx.visit.update({ where: { id: before.id }, data: payer });
+      await audit(tx, req.ctx, {
+        action: 'visit.payer', entityType: 'visit', entityId: v.id, summary: `تغيير الدافع للزيارة ${v.visitNumber} إلى ${payer.payerType === 'INSURANCE' ? 'التأمين' : 'نقدي'}`,
+        before: { payerType: before.payerType, patientInsuranceId: before.patientInsuranceId }, after: payer,
+      });
+      return v;
+    });
+    res.json(updated);
   }),
 );
 

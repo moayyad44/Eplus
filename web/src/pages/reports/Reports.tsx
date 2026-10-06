@@ -10,7 +10,7 @@ import { Badge, Button, Card, CardHeader, DataTable, DateRangePicker, EmptyState
 import { BarsChart, ShareBars } from '@/components/shared/charts';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useDoctors } from '@/components/shared/VisitQueueForm';
-import type { FinanceSummary } from '../billing/Cashier';
+import { InsuranceFigures, type FinanceSummary } from '../billing/Cashier';
 
 type Tab = 'patients' | 'doctors' | 'financial' | 'inventory' | 'attendance';
 
@@ -189,8 +189,9 @@ function FinancialReport({ range }: { range: Range }) {
             <StatCard label={t('billing.refunds')} value={money(d.summary.refunded)} tone="neutral" />
             <StatCard label={t('billing.unpaid')} value={money(d.summary.unpaidFromPeriod)} tone="danger" />
             <StatCard label={t('billing.expenses')} value={money(d.summary.expenses)} tone="warning" />
-            <StatCard label={t('billing.netIncome')} value={money(d.summary.netIncome)} tone={d.summary.netIncome >= 0 ? 'success' : 'danger'} />
+            <StatCard label={t('billing.netIncome')} hint={t('billing.ins.netIncomeHint')} value={money(d.summary.netIncome)} tone={d.summary.netIncome >= 0 ? 'success' : 'danger'} />
           </div>
+          <InsuranceFigures s={d.summary} />
           <div className="grid gap-4 lg:grid-cols-3">
             <Card><CardHeader title={t('billing.byMethod')} /><ShareBars rows={d.summary.byMethod.map((m) => ({ label: m.name, value: m.collected - m.refunded }))} format={(v) => money(v)} /></Card>
             <Card><CardHeader title={t('reports.revenueByCategory')} /><ShareBars rows={d.revenueByCategory.map((c) => ({ label: t(`enum.ServiceCategory.${c.category}`), value: c.amount }))} format={(v) => money(v)} /></Card>
