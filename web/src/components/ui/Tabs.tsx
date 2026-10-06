@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import clsx from 'clsx';
 
 export interface TabItem<K extends string = string> {
@@ -10,8 +10,15 @@ export interface TabItem<K extends string = string> {
 }
 
 export function Tabs<K extends string>({ items, value, onChange, className }: { items: TabItem<K>[]; value: K; onChange: (k: K) => void; className?: string }) {
+  const list = useRef<HTMLDivElement>(null);
+  // Keep the selected tab visible when the bar scrolls (e.g. opened by a link to the last tab).
+  useEffect(() => {
+    const el = list.current?.querySelector<HTMLElement>('[aria-selected=true]');
+    const bar = list.current;
+    if (el && bar && bar.scrollWidth > bar.clientWidth) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [value]);
   return (
-    <div className={clsx('no-scrollbar -mx-1 flex gap-1 overflow-x-auto border-b border-line px-1 print:hidden', className)} role="tablist">
+    <div ref={list} className={clsx('no-scrollbar -mx-1 flex gap-1 overflow-x-auto border-b border-line px-1 print:hidden', className)} role="tablist">
       {items
         .filter((i) => !i.hidden)
         .map((i) => (

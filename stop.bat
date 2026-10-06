@@ -1,4 +1,5 @@
 @echo off
-docker compose -f docker-compose.yml -f docker-compose.demo.yml stop
+cd /d "%~dp0"
+docker compose stop
 echo EmergencyPlus stopped. Your data is kept.
 pause

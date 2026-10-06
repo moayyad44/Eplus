@@ -30,6 +30,7 @@ import { staffRouter } from './modules/staff/routes';
 import { dashboardRouter } from './modules/dashboard/routes';
 import { reportsRouter } from './modules/reports/routes';
 import { auditRouter, notificationsRouter, searchRouter } from './modules/system/routes';
+import { backupsRouter } from './modules/system/backups';
 
 export function createApp() {
   const app = express();
@@ -110,6 +111,7 @@ export function createApp() {
   api.use('/notifications', notificationsRouter);
   api.use('/audit-logs', auditRouter);
   api.use('/search', searchRouter);
+  api.use('/backups', backupsRouter);
   api.use((_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'المسار غير موجود' } }));
 
   app.use('/api', api);

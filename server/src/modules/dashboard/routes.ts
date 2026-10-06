@@ -9,6 +9,7 @@ import { financialSummary } from '../billing/cashier';
 import { num } from '../../lib/money';
 import { can } from '../../auth/context';
 import { env } from '../../config/env';
+import { listBackups } from '../system/backups';
 
 export const dashboardRouter = Router();
 
@@ -85,6 +86,39 @@ dashboardRouter.get(
       visitsByDoctor: byDoctor.map((d) => ({ doctorId: d.doctorId, name: doctorNames.find((n) => n.id === d.doctorId)?.fullName ?? 'غير محدد', count: d._count })),
       series,
     });
+  }),
+);
+
+/** Go-live checklist for the administrator: what still has to be configured before real use. */
+dashboardRouter.get(
+  '/setup',
+  requirePerm('dashboard.admin'),
+  ah(async (_req, res) => {
+    const staff = { isActive: true, deletedAt: null };
+    const [clinic, services, exam, doctors, others, labTests, drugs, backups] = await Promise.all([
+      getSetting('clinic'),
+      prisma.service.count({ where: { deletedAt: null } }),
+      prisma.service.findUnique({ where: { code: 'EXAM' }, select: { createdAt: true, updatedAt: true } }),
+      prisma.user.count({ where: { ...staff, staffType: 'DOCTOR' } }),
+      prisma.user.count({ where: { ...staff, staffType: { notIn: ['ADMIN', 'DOCTOR'] } } }),
+      prisma.labTest.count({ where: { isActive: true } }),
+      prisma.drug.count({ where: { isActive: true } }),
+      listBackups(),
+    ]);
+    const lastBackup = backups.items[0]?.createdAt ?? null;
+    const items = [
+      { key: 'clinic', done: clinic.name !== 'EmergencyPlus' && !!(clinic.phone || clinic.address), link: '/settings?tab=clinic' },
+      { key: 'prices', done: services > 1 || (!!exam && exam.updatedAt.getTime() - exam.createdAt.getTime() > 2000), link: '/settings?tab=services' },
+      { key: 'doctors', done: doctors > 0, link: '/staff/users' },
+      { key: 'staff', done: others > 0, link: '/staff/users' },
+      { key: 'labTests', done: labTests > 0, optional: true, link: '/settings?tab=labTests' },
+      { key: 'drugs', done: drugs > 0, optional: true, link: '/settings?tab=drugs' },
+      {
+        key: 'backup', done: !!lastBackup && Date.now() - lastBackup.getTime() < 48 * 3600_000, optional: !backups.enabled,
+        link: '/settings?tab=backups',
+      },
+    ];
+    res.json({ items, lastBackup, backupsEnabled: backups.enabled, backupError: backups.lastError });
   }),
 );
 

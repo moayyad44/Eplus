@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
@@ -12,18 +13,22 @@ import type { InvoiceTemplate } from '@/lib/billing';
 import { Badge, Button, Card, CardHeader, Checkbox, Dialog, Field, IconButton, Input, PageHeader, PageLoader, Select, Tabs, Textarea, useConfirm } from '@/components/ui';
 import { usePermissionCatalog, useRoles } from '../staff/Users';
 import { CatalogEditor, type FieldDef } from './CatalogEditor';
+import { Backups } from './Backups';
 
-type Tab = 'clinic' | 'financial' | 'paymentMethods' | 'templates' | 'services' | 'medical' | 'visitTypes' | 'labTests' | 'diagnoses' | 'drugs' | 'inventory' | 'expenses' | 'shifts' | 'roles';
+type Tab = 'clinic' | 'financial' | 'paymentMethods' | 'templates' | 'services' | 'medical' | 'visitTypes' | 'labTests' | 'diagnoses' | 'drugs' | 'inventory' | 'expenses' | 'shifts' | 'roles' | 'backups';
 type SettingsData = Record<string, Record<string, unknown>>;
 
 export default function Settings() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<Tab>('clinic');
-  const keys: Tab[] = ['clinic', 'financial', 'paymentMethods', 'templates', 'services', 'medical', 'visitTypes', 'labTests', 'diagnoses', 'drugs', 'inventory', 'expenses', 'shifts', 'roles'];
+  const { can } = useAuth();
+  const [params, setParams] = useSearchParams();
+  const keys: Tab[] = ['clinic', 'financial', 'paymentMethods', 'templates', 'services', 'medical', 'visitTypes', 'labTests', 'diagnoses', 'drugs', 'inventory', 'expenses', 'shifts', 'roles', ...(can('backups.manage') ? (['backups'] as const) : [])];
+  const tab: Tab = keys.find((k) => k === params.get('tab')) ?? 'clinic';
+  const setTab = (k: Tab) => setParams({ tab: k }, { replace: true });
   return (
     <div>
       <PageHeader title={t('settings.title')} subtitle={t('settings.subtitle')} />
-      <Tabs items={keys.map((k) => ({ key: k, label: t(`settings.tabs.${k}`) }))} value={tab} onChange={setTab} className="mb-4" />
+      <Tabs items={keys.map((k) => ({ key: k, label: t(`settings.tabs.${k}`) }))} value={tab} onChange={setTab} className="mb-4 lg:flex-wrap" />
       {tab === 'clinic' && <ClinicTab />}
       {tab === 'financial' && <KeyValueForm settingKey="financial" fields={[['currency', 'text'], ['currencySymbol', 'text'], ['decimals', 'number'], ['defaultTaxRate', 'number'], ['invoicePrefix', 'text'], ['receiptPrefix', 'text'], ['invoiceDueDays', 'number'], ['invoiceFooter', 'textarea'], ['thermalReceipt', 'checkbox']]} ns="financial" />}
       {tab === 'paymentMethods' && <PaymentMethods />}
@@ -51,6 +56,7 @@ export default function Settings() {
       {tab === 'expenses' && <CatalogEditor path="expense-categories" fields={[{ key: 'name', label: t('settings.fields.name'), required: true }]} columns={[{ key: 'n', header: t('settings.fields.name'), cell: (r) => <b>{String(r.name)}</b> }]} />}
       {tab === 'shifts' && <Shifts />}
       {tab === 'roles' && <Roles />}
+      {tab === 'backups' && <Backups />}
     </div>
   );
 }

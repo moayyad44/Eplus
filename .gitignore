@@ -10,3 +10,5 @@ server/tests/.uploads/
 .DS_Store
 coverage/
 web/test-results/
+backups/
+server/tests/.backups/

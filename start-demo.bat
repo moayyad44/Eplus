@@ -1,6 +1,9 @@
 @echo off
+rem Demo / training copy with sample data - separate from the real clinic data. Runs on port 4090.
 chcp 65001 >nul
-echo Starting EmergencyPlus demo... (first run takes a few minutes)
+cd /d "%~dp0"
+set APP_PORT=4090
+echo Starting the EmergencyPlus DEMO... (first run takes a few minutes)
 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 if errorlevel 1 (
   echo.
@@ -8,9 +11,12 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo.
-echo Waiting for the system to be ready...
-timeout /t 20 /nobreak >nul
-start http://localhost:4080
-echo EmergencyPlus is running at http://localhost:4080
+echo Waiting for the demo to be ready...
+for /l %%i in (1,1,60) do (
+  curl -s -o nul -f http://localhost:4090/api/health && goto ready
+  timeout /t 3 /nobreak >nul
+)
+:ready
+start http://localhost:4090
+echo The DEMO is running at http://localhost:4090  (demo data only - not the real clinic)
 pause

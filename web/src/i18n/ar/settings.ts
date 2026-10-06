@@ -1,7 +1,7 @@
 export default {
   settings: {
     title: 'الإعدادات', subtitle: 'إعدادات العيادة والقوائم والصلاحيات',
-    tabs: { clinic: 'العيادة', financial: 'المالية', paymentMethods: 'طرق الدفع', templates: 'نماذج الفواتير', services: 'الخدمات والمواد', medical: 'الطبية', visitTypes: 'أنواع الزيارات', labTests: 'التحاليل', diagnoses: 'التشخيصات ICD-10', drugs: 'الأدوية', inventory: 'المخزون', expenses: 'تصنيفات المصروفات', shifts: 'الشفتات', roles: 'الأدوار والصلاحيات' },
+    tabs: { clinic: 'العيادة', financial: 'المالية', paymentMethods: 'طرق الدفع', templates: 'نماذج الفواتير', services: 'الخدمات والمواد', medical: 'الطبية', visitTypes: 'أنواع الزيارات', labTests: 'التحاليل', diagnoses: 'التشخيصات ICD-10', drugs: 'الأدوية', inventory: 'المخزون', expenses: 'تصنيفات المصروفات', shifts: 'الشفتات', roles: 'الأدوار والصلاحيات', backups: 'النسخ الاحتياطي' },
     clinic: { name: 'اسم العيادة', nameEn: 'الاسم بالإنجليزية', address: 'العنوان', phone: 'الهاتف', email: 'البريد', website: 'الموقع', workingHours: 'ساعات العمل', taxNumber: 'الرقم الضريبي', reportFooter: 'تذييل التقارير', logo: 'الشعار', uploadLogo: 'رفع شعار' },
     financial: { currency: 'رمز العملة', currencySymbol: 'رمز العرض', decimals: 'الخانات العشرية', defaultTaxRate: 'نسبة الضريبة الافتراضية %', invoicePrefix: 'بادئة رقم الفاتورة', receiptPrefix: 'بادئة رقم الإيصال', invoiceDueDays: 'أيام الاستحقاق (بعدها تصبح الفاتورة متأخرة)', invoiceFooter: 'تذييل الفاتورة', thermalReceipt: 'استخدام الطابعة الحرارية للإيصالات افتراضياً' },
     medicalS: { defaultAppointmentMinutes: 'مدة الموعد الافتراضية (دقيقة)', prescriptionFooter: 'تذييل الوصفة الطبية' },
@@ -15,5 +15,14 @@ export default {
     deleteConfirm: 'حذف "{{name}}"؟ إذا كان مستخدماً في سجلات سابقة (فواتير، زيارات، مخزون…) سيتم إخفاؤه بدل حذفه حتى لا تتأثر السجلات القديمة.',
     deactivatedInstead: 'هذا العنصر مستخدم في سجلات سابقة، لذلك تم إخفاؤه من القوائم بدل حذفه. يمكنك إعادة تفعيله في أي وقت.',
     statusHint: 'اضغط على الحالة للتفعيل أو التعطيل',
+    backups: {
+      title: 'النسخ الاحتياطي', subtitle: 'نسخة تلقائية يومية من قاعدة البيانات والمرفقات',
+      now: 'نسخ احتياطي الآن', running: 'جارٍ النسخ…', requested: 'بدأ النسخ الاحتياطي، سيظهر الملف خلال دقيقة',
+      disabled: 'النسخ الاحتياطي التلقائي غير مفعّل في هذا التشغيل. يعمل تلقائياً عند تشغيل البرنامج عبر start.bat (Docker).',
+      failed: 'فشلت آخر محاولة نسخ', stale: 'لا توجد نسخة احتياطية خلال آخر يومين. اضغط «نسخ احتياطي الآن» وتأكد أن البرنامج يعمل عبر start.bat.',
+      ok: 'آخر نسخة احتياطية: {{when}}',
+      offsite: 'تُحفظ النسخ في مجلد backups بجانب البرنامج (أو المجلد المحدد في BACKUP_DIR داخل ملف ‎.env). احتفظ بنسخة خارج هذا الجهاز: انسخ أحدث ملف إلى فلاشة أو اجعل المجلد داخل OneDrive / Google Drive. كل ملف يحتوي بيانات المرضى كاملة، فاحفظه في مكان آمن.',
+      date: 'التاريخ', file: 'الملف', size: 'الحجم',
+    },
   },
 };

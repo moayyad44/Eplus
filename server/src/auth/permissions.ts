@@ -74,6 +74,7 @@ export const PERMISSIONS = {
   'settings.view': { module: 'settings', description: 'عرض الإعدادات' },
   'settings.manage': { module: 'settings', description: 'تعديل الإعدادات' },
   'audit.view': { module: 'settings', description: 'عرض سجل العمليات' },
+  'backups.manage': { module: 'settings', description: 'النسخ الاحتياطي: عرض وتنزيل وتشغيل نسخة الآن' },
 } as const;
 
 export type PermissionKey = keyof typeof PERMISSIONS;

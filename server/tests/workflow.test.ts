@@ -450,3 +450,37 @@ describe('appointments, staff, reports, search', () => {
     expect(await prisma.notification.count()).toBe(count);
   });
 });
+
+describe('backups & go-live checklist', () => {
+  it('lists and downloads backups for admins only; can request an immediate backup', async () => {
+    const fs = await import('node:fs');
+    const dir = process.env.BACKUP_DIR!;
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(`${dir}/eplus-backup-2026-01-01_020000.tar`, 'backup-bytes');
+    fs.writeFileSync(`${dir}/secret.txt`, 'not a backup');
+
+    const list = await admin.get('/api/backups');
+    expect(list.body.enabled).toBe(true);
+    expect(list.body.items.map((i: { name: string }) => i.name)).toEqual(['eplus-backup-2026-01-01_020000.tar']);
+    expect((await reception.get('/api/backups')).status).toBe(403);
+
+    const dl = await admin.get('/api/backups/eplus-backup-2026-01-01_020000.tar/download');
+    expect(dl.status).toBe(200);
+    expect((await admin.get('/api/backups/secret.txt/download')).status).toBe(404);
+    expect((await admin.get('/api/backups/..%2Fsecret.txt/download')).status).toBe(404);
+
+    expect((await admin.post('/api/backups/run')).status).toBe(202);
+    expect(fs.existsSync(`${dir}/.request`)).toBe(true);
+    expect((await admin.get('/api/backups')).body.pending).toBe(true);
+  });
+
+  it('reports what is still missing before go-live', async () => {
+    const res = await admin.get('/api/dashboard/setup');
+    expect(res.status).toBe(200);
+    const byKey = Object.fromEntries(res.body.items.map((i: { key: string; done: boolean }) => [i.key, i.done]));
+    expect(byKey.doctors).toBe(true); // demo data has doctors
+    expect(byKey.backup).toBe(true); // fresh backup file from the previous test
+    expect((await reception.get('/api/dashboard/setup')).status).toBe(403);
+  });
+});

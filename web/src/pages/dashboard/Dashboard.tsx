@@ -7,6 +7,7 @@ import { fmtDateTime, fmtTime, money, qty } from '@/lib/format';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, PageHeader, PageLoader, StatCard } from '@/components/ui';
 import { BarsChart, ShareBars } from '@/components/shared/charts';
 import type { FinanceSummary } from '../billing/Cashier';
+import { SetupChecklist } from './SetupChecklist';
 
 interface Dash {
   patientsToday: number; newPatientsToday: number; visitsToday: number; waiting: number; completedToday: number; statusCounts: Record<string, number>;
@@ -29,6 +30,7 @@ export default function Dashboard() {
   return (
     <div>
       <PageHeader title={t('dashboard.title')} subtitle={t('dashboard.subtitle')} />
+      <SetupChecklist />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label={t('dashboard.patientsToday')} value={d.patientsToday} hint={`${t('dashboard.newPatients')}: ${d.newPatientsToday}`} icon={<Users className="h-5 w-5" />} onClick={() => nav('/queue')} />
         <StatCard label={t('dashboard.waiting')} value={d.waiting} hint={`${t('dashboard.visitsToday')}: ${d.visitsToday} · ${t('dashboard.completed')}: ${d.completedToday}`} tone="warning" icon={<ClipboardList className="h-5 w-5" />} onClick={() => nav('/queue')} />

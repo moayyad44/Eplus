@@ -84,27 +84,45 @@ Useful scripts:
 
 ## Running with Docker
 
-**Try it (demo data included):** make sure Docker Desktop is running, then double-click `start-demo.bat` (Windows) or `start-demo.command` (macOS), or run:
+There are two separate installations, each with its own data:
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
-```
+| | Real clinic | Demo / training |
+|---|---|---|
+| Start (Windows / macOS) | `start.bat` / `start.command` | `start-demo.bat` / `start-demo.command` |
+| Stop | `stop.bat` / `stop.command` | `stop-demo.bat` / `stop-demo.command` |
+| Address | http://localhost:4080 | http://localhost:4090 |
+| Data | empty: the clinic's own data | sample staff, prices, patients |
+| Compose project | `eplus-clinic` | `emergencyplus` |
 
-Then open **http://localhost:4080**. Demo logins: `admin` / `Admin@12345`, and `dr.ahmad`, `nurse.sara`, `reception` / `Test@12345`. To stop it, use `stop.bat` / `stop.command` or `docker compose stop`. Data is kept in Docker volumes between restarts.
+**Real clinic (`start.bat`).** The first run creates a private `.env` with a random database password, then builds and starts everything. The first admin signs in with `admin` / `Admin@12345` and must set a new password right away. After that, the admin dashboard shows a **go-live checklist** (clinic details, prices, doctors, staff, backups). Do not lose `.env`: it holds the database password. Settings are listed in `.env.production.example`.
 
-**Real clinic use (no demo data):** `docker compose up -d --build`. The first admin signs in with `admin` / `Admin@12345` and must set a new password right away. Optional settings (port, database password, …) go in a `.env` file; see `.env.production.example`.
+Without the scripts: `docker compose up -d --build` (real clinic) or `APP_PORT=4090 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build` (demo).
 
-Every start of the container applies pending migrations (`prisma migrate deploy`) and runs the idempotent bootstrap, which never touches clinical or financial data. If `JWT_SECRET` is not set, one is generated once and kept in the data volume.
+Every start applies pending migrations (`prisma migrate deploy`) and runs the idempotent bootstrap, which never touches clinical or financial data. If `JWT_SECRET` is not set, one is generated once and kept in the data volume.
 
-- **Other devices on the clinic network** can open `http://<this-computer's-IP>:4080`. The default (`SECURE_COOKIES=false`) allows plain http inside a private network.
+### Backups
+
+The `backup` service (`docker/backup.sh`) writes `eplus-backup-YYYY-MM-DD_HHMMSS.tar` into `BACKUP_DIR` (default `./backups`). Each file holds `db.dump` (pg_dump custom format) and `uploads/`.
+
+- **When:** every day at `BACKUP_TIME` (default 02:00). If the computer was off at that time, the backup runs as soon as it is back on.
+- **Retention:** backups are kept for `BACKUP_KEEP_DAYS` (default 30). Old backups are pruned only after a new backup succeeds.
+- **In the app:** *Settings → Backups* (permission `backups.manage`) shows the status and the last error, can trigger a backup now, and downloads files. Downloads are recorded in the audit log.
+- **Back up now:** `backup-now.bat`, or `docker compose run --rm backup now`.
+- **Restore:** `restore.bat`, or `docker compose stop app && docker compose run --rm backup restore <file> && docker compose start app`. The current data is saved as a new backup before it is replaced.
+- **Update:** `update.bat` takes a backup, runs `git pull`, then `docker compose up -d --build`.
+- **Off-machine copies:** set `BACKUP_DIR` to an external disk or a OneDrive / Google Drive folder (e.g. `BACKUP_DIR=D:/EmergencyPlus-Backups`) so a copy survives a disk failure. The files contain all patient data, so store them securely.
+
+### Network and HTTPS
+
+- **Other devices on the clinic network** (Ethernet or Wi-Fi) open `http://<server-IP>:4080`. Give the server computer a fixed IP (a DHCP reservation in the router) and allow port 4080 in Windows Firewall. `SECURE_COOKIES=false` (the default) allows plain http inside a private network.
 - **Anything reachable from the internet must use HTTPS:** put it behind a TLS reverse proxy (nginx or Caddy) and set `SECURE_COOKIES=true` and `TRUST_PROXY=1`. This enables HTTPS-only cookies, HSTS and upgrade-insecure-requests.
-- Back up both Docker volumes: `emergencyplus_pgdata` (database, via `pg_dump`) and `emergencyplus_appdata` (attachments).
+- **Server computer:** enable *Start Docker Desktop when you sign in*, and turn off sleep. Containers use `restart: unless-stopped`, so the system comes back after a reboot. Logs are rotated (10 MB × 5 per container).
 
 ## Roles & permissions
 
 Permissions are enforced **on every API route** (`requirePerm`), not just by hiding buttons. The UI hides what the user can't use, and the API rejects it regardless. On every request the server re-reads the session, the user and the effective permissions, so logout, deactivation and permission changes apply immediately.
 
-- **Roles are editable** in *Settings → Roles & Permissions* (57 permission keys grouped by module).
+- **Roles are editable** in *Settings → Roles & Permissions* (58 permission keys grouped by module).
 - **Per-user overrides** (grant or deny) sit on top of the role. For example, one doctor can be allowed to record stock movements (*Staff → Permissions*).
 
 Default roles (bootstrap):

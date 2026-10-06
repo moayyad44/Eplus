@@ -1,8 +1,27 @@
-# Demo overlay — adds demo staff, prices, lab tests, drugs, stock and a few patients.
-#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+# Demo / training copy — a separate installation with its own data (never mixed with the real clinic data).
+# Adds demo staff, prices, lab tests, drugs, stock and a few patients.
+#   Windows: start-demo.bat  ·  or:  APP_PORT=4090 docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
 # Demo logins: admin / Admin@12345 · dr.ahmad, nurse.sara, reception / Test@12345
+name: emergencyplus
+
 services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: eplus-local-db
   app:
     environment:
+      DATABASE_URL: postgresql://eplus:eplus-local-db@db:5432/eplus?schema=public
       DEMO_DATA: "true"
       ADMIN_FORCE_CHANGE: "false"
+    volumes:
+      - demobackups:/backups
+  backup:
+    # No automatic backups for the demo.
+    profiles: ["demo-backup"]
+    environment:
+      POSTGRES_PASSWORD: eplus-local-db
+    volumes:
+      - demobackups:/backups
+
+volumes:
+  demobackups:

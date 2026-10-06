@@ -9,6 +9,8 @@ const schema = z.object({
   ACCESS_TOKEN_TTL_MIN: z.coerce.number().default(15),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().default(7),
   UPLOAD_DIR: z.string().default('./uploads'),
+  /** Folder shared with the backup container (docker-compose). Unset → backups are not managed by the app. */
+  BACKUP_DIR: z.string().optional(),
   MAX_UPLOAD_MB: z.coerce.number().default(15),
   CORS_ORIGIN: z.string().optional(),
   TZ: z.string().default('Asia/Amman'),
