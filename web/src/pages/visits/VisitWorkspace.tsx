@@ -17,7 +17,7 @@ import { allowedTargets } from '@/components/shared/visitFlow';
 import { ConsultationTab, VitalsTab, NursingTab, PrescriptionTab, LabTab, ReportTab, HistoryTab } from './tabs';
 
 export interface VisitDetail {
-  id: string; visitNumber: string; status: VisitStatus; priority: string; queueNumber: number; arrivedAt: string; chiefComplaint?: string | null; notes: string | null;
+  id: string; visitNumber: string; status: VisitStatus; priority: string; queueNumber: number | null; isDirect: boolean; arrivedAt: string; chiefComplaint?: string | null; notes: string | null;
   patient: Patient; doctor: { id: string; fullName: string; specialty: string | null } | null; visitType: { name: string } | null;
   statusLogs: { id: string; fromStatus: string | null; toStatus: string; userId: string | null; note: string | null; createdAt: string }[];
   invoices: { id: string; invoiceNumber: string | null; status: string; total: number; balance: number }[];
@@ -50,7 +50,7 @@ export default function VisitWorkspace() {
   const p = v.patient;
   const closed = ['CANCELLED', 'NO_SHOW'].includes(v.status);
   const refresh = () => qc.invalidateQueries({ queryKey: ['visit', id] });
-  const targets = allowedTargets(v.status, canAny, can).filter((x) => !['CANCELLED', 'NO_SHOW'].includes(x.status));
+  const targets = allowedTargets(v.status, canAny, can).filter((x) => !['CANCELLED', 'NO_SHOW'].includes(x.status) && !(v.isDirect && ['WAITING', 'CALLED'].includes(x.status)));
   const latestVitals = v.vitalSigns?.[0];
 
   const tabs = [
@@ -72,7 +72,7 @@ export default function VisitWorkspace() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary-50 text-lg font-extrabold text-primary-700">{v.queueNumber}</span>
+              {v.isDirect ? <Badge tone="violet" dot={false}>{t('visit.direct.badge')}</Badge> : <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary-50 text-lg font-extrabold text-primary-700">{v.queueNumber}</span>}
               <Link to={`/patients/${p.id}`} className="text-xl font-bold hover:text-primary-700">{p.fullName}</Link>
               <StatusBadge enumName="VisitStatus" value={v.status} />
               {v.priority !== 'NORMAL' && <StatusBadge enumName="Priority" value={v.priority} dot={false} />}

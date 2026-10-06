@@ -459,8 +459,10 @@ model Visit {
   chiefComplaint  String?
   notes           String?
   queueDate       DateTime    @db.Date
-  queueNumber     Int
-  queuePosition   Float
+  /// Null for direct visits (opened straight to the doctor, never in the waiting queue).
+  queueNumber     Int?
+  queuePosition   Float?
+  isDirect        Boolean     @default(false)
   arrivedAt       DateTime    @default(now())
   calledAt        DateTime?
   nurseStartedAt  DateTime?

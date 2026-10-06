@@ -13,18 +13,30 @@ export function Dialog({
 }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode; size?: keyof typeof sizes; dismissable?: boolean }) {
   const { t } = useTranslation();
   const panel = useRef<HTMLDivElement>(null);
+  // Keep the latest handlers in refs so typing (which re-renders the parent and recreates
+  // inline callbacks) never re-runs the open/focus effect below.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const dismissableRef = useRef(dismissable);
+  dismissableRef.current = dismissable;
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && dismissable && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && dismissableRef.current && onCloseRef.current();
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    setTimeout(() => panel.current?.querySelector<HTMLElement>('input:not([type=hidden]),select,textarea')?.focus(), 30);
+    // Focus the first field once, when the dialog opens — never while the user is typing.
+    const id = setTimeout(() => {
+      if (!panel.current || panel.current.contains(document.activeElement)) return;
+      panel.current.querySelector<HTMLElement>('input:not([type=hidden]):not([disabled]),select,textarea')?.focus();
+    }, 30);
     return () => {
+      clearTimeout(id);
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose, dismissable]);
+  }, [open]);
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">

@@ -15,16 +15,17 @@ const PRIORITY_RANK: Record<Priority, number> = { EMERGENCY: 3, URGENT: 2, NORMA
  */
 export async function positionFor(tx: Tx, queueDate: Date, branchId: string | null, priority: Priority, excludeId?: string) {
   const waiting = await tx.visit.findMany({
-    where: { queueDate, branchId, status: { in: ACTIVE_STATUSES }, ...(excludeId && { id: { not: excludeId } }) },
+    where: { queueDate, branchId, isDirect: false, status: { in: ACTIVE_STATUSES }, ...(excludeId && { id: { not: excludeId } }) },
     select: { priority: true, queuePosition: true, status: true },
     orderBy: { queuePosition: 'asc' },
   });
   if (!waiting.length) return 1000;
   const rank = PRIORITY_RANK[priority];
   const idx = waiting.findIndex((w) => w.status === 'WAITING' && PRIORITY_RANK[w.priority] < rank);
-  if (idx === -1) return waiting[waiting.length - 1].queuePosition + 1000;
-  const prev = idx > 0 ? waiting[idx - 1].queuePosition : waiting[idx].queuePosition - 2000;
-  return (prev + waiting[idx].queuePosition) / 2;
+  const pos = (i: number) => waiting[i].queuePosition ?? 0;
+  if (idx === -1) return pos(waiting.length - 1) + 1000;
+  const prev = idx > 0 ? pos(idx - 1) : pos(idx) - 2000;
+  return (prev + pos(idx)) / 2;
 }
 
 export interface CreateVisitInput {
@@ -81,6 +82,63 @@ export async function createVisit(tx: Tx, ctx: Ctx, input: CreateVisitInput) {
   return visit;
 }
 
+export interface DirectVisitInput {
+  patientId: string;
+  doctorId?: string | null;
+  visitTypeId?: string | null;
+  chiefComplaint?: string | null;
+  notes?: string | null;
+  /** When the visit took place; defaults to now. Past dates allow recording an earlier visit. */
+  visitedAt?: Date | null;
+}
+
+/**
+ * A visit opened straight with the doctor: no queue number and never listed in the waiting queue.
+ * Everything else (vitals, diagnosis, prescription, labs, invoice, history) works exactly like a normal visit.
+ */
+export async function createDirectVisit(tx: Tx, ctx: Ctx, input: DirectVisitInput) {
+  const patient = await tx.patient.findFirst({ where: { id: input.patientId, deletedAt: null } });
+  if (!patient) throw notFound('المريض غير موجود');
+  const doctorId = input.doctorId ?? (ctx.staffType === 'DOCTOR' ? ctx.userId : null);
+  if (!doctorId) throw badRequest('اختر الطبيب');
+  const doc = await tx.user.findFirst({ where: { id: doctorId, isActive: true, deletedAt: null, staffType: 'DOCTOR' } });
+  if (!doc) throw badRequest('الطبيب المحدد غير متاح');
+  const now = new Date();
+  const at = input.visitedAt ?? now;
+  if (at.getTime() > now.getTime() + 5 * 60_000) throw badRequest('لا يمكن فتح زيارة بتاريخ مستقبلي');
+  const visitSeq = await nextCounter(tx, 'visit');
+  const visit = await tx.visit.create({
+    data: {
+      visitNumber: `V-${pad(visitSeq, 7)}`,
+      patientId: patient.id,
+      doctorId,
+      visitTypeId: input.visitTypeId ?? null,
+      branchId: ctx.branchId,
+      status: 'WITH_DOCTOR',
+      isDirect: true,
+      chiefComplaint: input.chiefComplaint ?? null,
+      notes: input.notes ?? null,
+      queueDate: dateOnly(at),
+      queueNumber: null,
+      queuePosition: null,
+      arrivedAt: at,
+      doctorStartedAt: at,
+      createdById: ctx.userId,
+      statusLogs: { create: { toStatus: 'WITH_DOCTOR', userId: ctx.userId, note: 'زيارة مباشرة' } },
+    },
+  });
+  await tx.patient.update({
+    where: { id: patient.id },
+    data: {
+      visitCount: { increment: 1 },
+      ...(!patient.lastVisitAt || patient.lastVisitAt < at ? { lastVisitAt: at } : {}),
+      ...(!patient.firstVisitAt || patient.firstVisitAt > at ? { firstVisitAt: at } : {}),
+    },
+  });
+  await audit(tx, ctx, { action: 'visit.create_direct', entityType: 'visit', entityId: visit.id, summary: `زيارة مباشرة ${visit.visitNumber} للمريض ${patient.fullName} مع ${doc.fullName}`, after: visit });
+  return visit;
+}
+
 const STATUS_TIMESTAMP: Partial<Record<VisitStatus, 'calledAt' | 'nurseStartedAt' | 'doctorStartedAt' | 'completedAt'>> = {
   CALLED: 'calledAt',
   WITH_NURSE: 'nurseStartedAt',
@@ -96,6 +154,7 @@ export async function changeVisitStatus(tx: Tx, ctx: Ctx, visitId: string, to: V
     const check = checkTransition(visit.status, to, ctx.perms);
     if (!check.ok) throw badRequest(check.reason);
   }
+  if (visit.isDirect && (to === 'WAITING' || to === 'CALLED' || to === 'NO_SHOW')) throw badRequest('الزيارة المباشرة ليست ضمن قائمة الانتظار');
   if ((to === 'CANCELLED' || to === 'NO_SHOW') && !note && !opts.system) throw badRequest('يرجى ذكر سبب الإلغاء');
 
   const stamp = STATUS_TIMESTAMP[to];

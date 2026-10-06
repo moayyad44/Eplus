@@ -97,7 +97,7 @@ dashboardRouter.get(
     const mineOnly = !can(ctx, 'queue.view_all');
     const [queue, labs, appts, results] = await Promise.all([
       can(ctx, 'queue.view')
-        ? prisma.visit.groupBy({ by: ['status'], where: { queueDate: today, ...(mineOnly && { OR: [{ doctorId: ctx.userId }, { doctorId: null }] }) }, _count: true })
+        ? prisma.visit.groupBy({ by: ['status'], where: { queueDate: today, isDirect: false, ...(mineOnly && { OR: [{ doctorId: ctx.userId }, { doctorId: null }] }) }, _count: true })
         : [],
       can(ctx, 'lab.process') ? prisma.labOrder.count({ where: { status: { in: ['REQUESTED', 'SAMPLE_COLLECTED', 'PROCESSING'] } } }) : null,
       can(ctx, 'appointments.view')

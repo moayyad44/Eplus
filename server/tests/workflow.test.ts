@@ -337,6 +337,39 @@ describe('inventory is transaction-based', () => {
   });
 });
 
+describe('direct visits', () => {
+  it('opens a visit straight with the doctor, outside the waiting queue', async () => {
+    const p = await prisma.patient.findFirstOrThrow({ where: { fullName: 'يوسف خالد العمري' } });
+    const res = await doctor.post('/api/visits/direct', { patientId: p.id, chiefComplaint: 'متابعة ضغط' });
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('WITH_DOCTOR');
+    expect(res.body.isDirect).toBe(true);
+    expect(res.body.queueNumber).toBeNull();
+    expect(res.body.doctorId).toBe(doctorId); // the doctor opening it is assigned
+
+    const q = await reception.get('/api/visits/queue');
+    expect(q.body.items.some((v: { id: string }) => v.id === res.body.id)).toBe(false);
+    expect(q.body.direct.some((v: { id: string }) => v.id === res.body.id)).toBe(true);
+
+    // works like any visit: diagnosis + finish → waiting for payment
+    expect((await doctor.post(`/api/visits/${res.body.id}/diagnoses`, { description: 'ارتفاع ضغط الدم', icd10Code: 'I10' })).status).toBe(201);
+    expect((await doctor.post(`/api/visits/${res.body.id}/finish`)).body.status).toBe('WAITING_PAYMENT');
+  });
+
+  it('records a past visit; rejects future dates and roles without permission', async () => {
+    const p = await prisma.patient.findFirstOrThrow({ where: { fullName: 'يوسف خالد العمري' } });
+    const past = new Date(Date.now() - 3 * 86_400_000);
+    const ok = await reception.post('/api/visits/direct', { patientId: p.id, doctorId, visitedAt: past.toISOString() });
+    expect(ok.status).toBe(201);
+    expect(new Date(ok.body.arrivedAt).getTime()).toBe(past.getTime());
+    // a direct visit can't be pushed back into the waiting queue
+    expect((await doctor.post(`/api/visits/${ok.body.id}/status`, { status: 'WAITING' })).status).toBe(400);
+    expect((await reception.post('/api/visits/direct', { patientId: p.id, doctorId, visitedAt: new Date(Date.now() + 86_400_000).toISOString() })).status).toBe(400);
+    expect((await reception.post('/api/visits/direct', { patientId: p.id })).status).toBe(400); // reception must choose a doctor
+    expect((await nurse.post('/api/visits/direct', { patientId: p.id, doctorId })).status).toBe(403);
+  });
+});
+
 describe('settings lists', () => {
   it('delete removes an unused entry, but only hides one that old records use', async () => {
     const created = await admin.post('/api/settings/drugs', { name: 'Test Drug 1mg' });

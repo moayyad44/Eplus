@@ -42,7 +42,7 @@ export default function Queue() {
 
   const q = useQuery({
     queryKey: ['queue', date, doctorId],
-    queryFn: () => api.get<{ items: QueueVisit[]; counts: Record<string, number> }>('/visits/queue', { date, doctorId: doctorId || undefined }),
+    queryFn: () => api.get<{ items: QueueVisit[]; counts: Record<string, number>; direct: { id: string; visitNumber: string; status: VisitStatus; arrivedAt: string; patient: { id: string; fullName: string; phone: string }; doctor: { id: string; fullName: string } | null; invoices: { id: string; status: string; balance: number }[] }[] }>('/visits/queue', { date, doctorId: doctorId || undefined }),
     refetchInterval: 15_000,
   });
   const items = useMemo(() => {
@@ -129,6 +129,25 @@ export default function Queue() {
           </>
         }
       />
+      {!!q.data?.direct.length && (
+        <Card className="mb-4 border-violet-100 bg-violet-50/40">
+          <p className="mb-2 flex items-center gap-2 text-sm font-bold text-violet-700"><Stethoscope className="h-4 w-4" />{t('visit.direct.openList')} <span className="text-xs font-normal text-ink-muted">— {t('visit.direct.openListHint')}</span></p>
+          <ul className="grid gap-2 md:grid-cols-2">
+            {q.data.direct.map((v) => (
+              <li key={v.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-white p-2.5 ring-1 ring-line">
+                <button onClick={() => nav(`/visits/${v.id}`)} className="min-w-0 flex-1 text-start">
+                  <span className="block truncate text-sm font-semibold">{v.patient.fullName}</span>
+                  <span className="block text-xs text-ink-muted">{v.doctor?.fullName} · {fmtTime(v.arrivedAt)}</span>
+                </button>
+                <StatusBadge enumName="VisitStatus" value={v.status} />
+                {v.status === 'WAITING_PAYMENT' && (v.invoices[0]
+                  ? can('invoices.view') && <Button size="sm" variant="secondary" onClick={() => nav(`/billing/invoices/${v.invoices[0].id}`)}>{money(v.invoices[0].balance)}</Button>
+                  : can('invoices.create') && <Button size="sm" onClick={() => nav(`/billing/invoices/new?visitId=${v.id}`)}>{t('queue.createInvoice')}</Button>)}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       <Card padded={false}>
         <div className="px-4 pt-2"><Tabs items={tabs} value={tab} onChange={setTab} /></div>
         <div className="p-3 sm:p-4">

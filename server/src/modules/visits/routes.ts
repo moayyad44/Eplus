@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { Priority, Prisma, VisitStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
-import { ah, nullableStr, pageQuery, paged, paginate } from '../../lib/http';
+import { ah, nullableStr, optionalDate, pageQuery, paged, paginate } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { audit } from '../../lib/audit';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
@@ -11,7 +11,7 @@ import { dateOnly, rangeFromQuery } from '../../lib/dates';
 import { ageFrom } from '../../lib/dates';
 import { can } from '../../auth/context';
 import { ACTIVE_STATUSES } from './stateMachine';
-import { changeVisitStatus, createVisit, positionFor } from './service';
+import { changeVisitStatus, createDirectVisit, createVisit, positionFor } from './service';
 
 export const visitsRouter = Router();
 
@@ -36,6 +36,27 @@ visitsRouter.post(
   }),
 );
 
+/** Direct visit: opened straight with the doctor, bypassing the waiting queue. */
+visitsRouter.post(
+  '/direct',
+  requireAnyPerm('queue.manage', 'consultation.manage'),
+  ah(async (req, res) => {
+    const body = parse(
+      z.object({
+        patientId: z.string().uuid(),
+        doctorId: z.string().uuid().nullable().optional(),
+        visitTypeId: z.string().uuid().nullable().optional(),
+        chiefComplaint: nullableStr(500),
+        notes: nullableStr(1000),
+        visitedAt: optionalDate,
+      }),
+      req.body,
+    );
+    const visit = await prisma.$transaction((tx) => createDirectVisit(tx, req.ctx, body));
+    res.status(201).json(visit);
+  }),
+);
+
 /** Queue board: visits of a day, ordered by queue position. Doctors see only their own patients. */
 visitsRouter.get(
   '/queue',
@@ -53,6 +74,7 @@ visitsRouter.get(
     if (!can(req.ctx, 'queue.view_all')) doctorId = req.ctx.userId;
     const where: Prisma.VisitWhereInput = {
       queueDate: dateOnly(q.date ?? new Date()),
+      isDirect: false,
       ...(req.ctx.branchId && { branchId: req.ctx.branchId }),
       ...(doctorId && (can(req.ctx, 'queue.view_all') ? { doctorId } : { OR: [{ doctorId }, { doctorId: null }] })),
       ...(q.status === 'ACTIVE' ? { status: { in: ACTIVE_STATUSES } } : q.status !== 'ALL' ? { status: q.status } : {}),
@@ -73,7 +95,18 @@ visitsRouter.get(
     });
     const items = visits.map((v) => ({ ...v, patient: { ...v.patient, age: ageFrom(v.patient.dateOfBirth) } }));
     const counts = await prisma.visit.groupBy({ by: ['status'], where: { ...where, status: undefined }, _count: true });
-    res.json({ items, counts: Object.fromEntries(counts.map((c) => [c.status, c._count])) });
+    // Open direct visits are not part of the waiting line, but are listed separately so they are never lost.
+    const direct = await prisma.visit.findMany({
+      where: { ...where, isDirect: true, status: { in: ACTIVE_STATUSES } },
+      orderBy: { arrivedAt: 'desc' },
+      select: {
+        id: true, visitNumber: true, status: true, arrivedAt: true,
+        patient: { select: { id: true, fullName: true, phone: true } },
+        doctor: { select: { id: true, fullName: true } },
+        invoices: { where: { status: { not: 'CANCELLED' } }, select: { id: true, status: true, balance: true } },
+      },
+    });
+    res.json({ items, counts: Object.fromEntries(counts.map((c) => [c.status, c._count])), direct });
   }),
 );
 
@@ -187,14 +220,15 @@ visitsRouter.post(
       const v = await tx.visit.findUnique({ where: { id: req.params.id } });
       if (!v) throw notFound();
       if (!ACTIVE_STATUSES.includes(v.status)) throw badRequest('لا يمكن تحريك زيارة منتهية');
+      if (v.isDirect) throw badRequest('الزيارة المباشرة ليست في قائمة الانتظار');
       const list = await tx.visit.findMany({
-        where: { queueDate: v.queueDate, branchId: v.branchId, status: { in: ACTIVE_STATUSES } },
+        where: { queueDate: v.queueDate, branchId: v.branchId, isDirect: false, status: { in: ACTIVE_STATUSES } },
         orderBy: { queuePosition: 'asc' },
         select: { id: true, queuePosition: true },
       });
       const i = list.findIndex((x) => x.id === v.id);
       if (direction === 'top') {
-        if (i > 0) await tx.visit.update({ where: { id: v.id }, data: { queuePosition: list[0].queuePosition - 1000 } });
+        if (i > 0) await tx.visit.update({ where: { id: v.id }, data: { queuePosition: (list[0].queuePosition ?? 0) - 1000 } });
       } else {
         const j = direction === 'up' ? i - 1 : i + 1;
         if (j < 0 || j >= list.length) return;

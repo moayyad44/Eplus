@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Archive, ArrowRight, CalendarPlus, FilePlus2, ListPlus, Pencil, Plus, Printer, Trash2, UserRound } from 'lucide-react';
+import { AlertTriangle, Archive, ArrowRight, CalendarPlus, FilePlus2, ListPlus, Pencil, Plus, Printer, Stethoscope, Trash2, UserRound } from 'lucide-react';
 import { api, type Paged } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
@@ -15,18 +15,20 @@ import { VisitQueueForm } from '@/components/shared/VisitQueueForm';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { VisitTimelineItem } from '@/components/shared/VisitTimeline';
 import { AttachmentsPanel } from '@/components/shared/Attachments';
+import { DirectVisitDialog } from '@/components/shared/DirectVisitDialog';
 
 type Tab = 'overview' | 'history' | 'timeline' | 'labs' | 'invoices' | 'attachments' | 'reports';
 
 export default function PatientProfile() {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
-  const { can } = useAuth();
+  const { can, canAny } = useAuth();
   const nav = useNavigate();
   const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>('overview');
   const [editing, setEditing] = useState(false);
   const [queueing, setQueueing] = useState(false);
+  const [direct, setDirect] = useState(false);
   const q = useQuery({ queryKey: ['patient', id], queryFn: () => api.get<Patient>(`/patients/${id}`) });
   const archive = useApiMutation(() => api.del(`/patients/${id}`), { invalidate: [['patients']], success: t('patients.archived'), onSuccess: () => nav('/patients') });
 
@@ -69,6 +71,7 @@ export default function PatientProfile() {
           </div>
           <div className="flex flex-wrap gap-2 print:hidden">
             {can('queue.manage') && <Button icon={<ListPlus className="h-4 w-4" />} onClick={() => setQueueing(true)}>{t('patients.addToQueue')}</Button>}
+            {canAny('queue.manage', 'consultation.manage') && <Button variant={can('queue.manage') ? 'outline' : 'primary'} icon={<Stethoscope className="h-4 w-4" />} onClick={() => setDirect(true)}>{t('visit.direct.open')}</Button>}
             {can('appointments.manage') && <Button variant="outline" icon={<CalendarPlus className="h-4 w-4" />} onClick={() => nav(`/appointments?patientId=${p.id}&new=1`)}>{t('patients.bookAppointment')}</Button>}
             {can('invoices.create') && <Button variant="outline" icon={<FilePlus2 className="h-4 w-4" />} onClick={() => nav(`/billing/invoices/new?patientId=${p.id}`)}>{t('patients.newInvoice')}</Button>}
             {medical && <Button variant="outline" icon={<Printer className="h-4 w-4" />} onClick={() => window.open(`/print/patient/${p.id}`, '_blank')}>{t('patients.patientReport')}</Button>}
@@ -93,6 +96,7 @@ export default function PatientProfile() {
       {tab === 'attachments' && <Card><AttachmentsPanel patientId={p.id} /></Card>}
 
       {editing && <PatientFormDialog open patient={p} onClose={() => setEditing(false)} />}
+      {direct && <DirectVisitDialog patient={p} onClose={() => setDirect(false)} />}
       <Dialog open={queueing} onClose={() => setQueueing(false)} title={t('reception.newVisit')} subtitle={p.fullName}>
         <VisitQueueForm patient={p} onDone={() => setQueueing(false)} />
       </Dialog>
