@@ -12,6 +12,7 @@ import { PrismaClient } from '@prisma/client';
 import { DEFAULT_ROLES, PERMISSIONS } from '../src/auth/permissions';
 import { settingSchemas } from '../src/lib/settings';
 import { ICD10_COMMON } from './data/icd10';
+import { LAB_PACKAGES, LAB_TESTS, patientPrice } from './data/lab-catalog';
 
 const prisma = new PrismaClient();
 
@@ -114,7 +115,34 @@ async function main() {
   }
   // Staff created before branches existed get the main branch.
   await prisma.user.updateMany({ where: { branchId: null }, data: { branchId: branch.id } });
+  await importLabCatalog();
   console.log('Bootstrap complete.');
+}
+
+/**
+ * One-time import of the referral-laboratory price list (prisma/data/lab-catalog.ts).
+ * Each test becomes a lab test (with the lab's price as labCost) linked to a billable service at the
+ * patient price. Tests that already exist by name only get their missing lab price; nothing is
+ * duplicated, and once done it never runs again, so later edits and deletions are kept.
+ */
+async function importLabCatalog() {
+  const marker = 'import:lab-catalog-2026-10';
+  if (await prisma.counter.findUnique({ where: { key: marker } })) return;
+  const rows: [string, string, number, string][] = [...LAB_TESTS, ...LAB_PACKAGES.map(([c, n, l]) => [c, n, l, 'باقات'] as [string, string, number, string])];
+  let created = 0, priced = 0;
+  for (const [code, name, lab, category] of rows) {
+    const existing = await prisma.labTest.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+    if (existing) {
+      if (existing.labCost == null) { await prisma.labTest.update({ where: { id: existing.id }, data: { labCost: lab } }); priced++; }
+      continue;
+    }
+    if (await prisma.labTest.findUnique({ where: { code } })) continue;
+    const service = await prisma.service.upsert({ where: { code }, create: { code, name, category: 'LAB', price: patientPrice(lab) }, update: {} });
+    await prisma.labTest.create({ data: { code, name, category, labCost: lab, serviceId: service.id } });
+    created++;
+  }
+  await prisma.counter.create({ data: { key: marker, value: 1 } });
+  console.log(`Lab price list imported: ${created} new tests, ${priced} existing tests priced.`);
 }
 
 main()

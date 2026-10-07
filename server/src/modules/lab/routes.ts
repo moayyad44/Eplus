@@ -53,7 +53,7 @@ labRouter.post(
           doctorId: req.ctx.userId,
           priority: body.priority,
           clinicalNotes: body.clinicalNotes,
-          items: { create: tests.map((t) => ({ labTestId: t.id, testName: t.name })) },
+          items: { create: tests.map((t) => ({ labTestId: t.id, testName: t.name, labCost: t.labCost })) },
         },
         include: orderInclude,
       });

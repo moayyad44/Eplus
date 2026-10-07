@@ -390,6 +390,8 @@ model LabTest {
   referenceRange String?
   /// Optional list of parameters for panel tests, e.g. [{"name":"WBC","unit":"10^3/uL","referenceRange":"4-11"}]
   parameters     Json?
+  /// What the external (referral) laboratory charges the clinic for this test. The patient price is the linked service's price.
+  labCost        Decimal? @db.Decimal(12, 3)
   serviceId      String?
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
@@ -699,10 +701,12 @@ model LabOrder {
 }
 
 model LabOrderItem {
-  id         String  @id @default(uuid())
+  id         String   @id @default(uuid())
   labOrderId String
   labTestId  String
   testName   String
+  /// Snapshot of the external lab's price when ordered (what the lab will claim for it).
+  labCost    Decimal? @db.Decimal(12, 3)
   notes      String?
 
   labOrder LabOrder    @relation(fields: [labOrderId], references: [id], onDelete: Cascade)

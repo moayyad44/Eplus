@@ -99,6 +99,49 @@ settingsRouter.use('/services', catalogRouter({
     insNotes: nullableStr(300),
   }),
 }));
+/**
+ * Price list from the referral lab (rows from a CSV/Excel sheet): updates each test's lab price by name,
+ * optionally re-prices the patient service, and adds tests that do not exist yet.
+ */
+settingsRouter.post(
+  '/lab-tests/import',
+  requirePerm('settings.manage'),
+  ah(async (req, res) => {
+    const body = parse(z.object({
+      rows: z.array(z.object({
+        name: z.string().trim().min(1).max(120),
+        labCost: z.coerce.number().min(0).max(100_000),
+        patientPrice: z.preprocess((v) => (v === '' || v == null ? null : v), z.coerce.number().min(0).max(100_000).nullable()),
+        category: nullableStr(60),
+      })).min(1).max(2000),
+      updatePatientPrice: z.boolean().default(true),
+    }), req.body);
+    const formula = (lab: number) => Math.round((lab + 1) * 2 * 1000) / 1000;
+    const result = await prisma.$transaction(async (tx) => {
+      let created = 0, updated = 0, repriced = 0;
+      const codes = (await tx.labTest.findMany({ where: { code: { startsWith: 'L' } }, select: { code: true } })).map((c) => Number(c.code.match(/^L(\d+)$/)?.[1] ?? 0));
+      let next = Math.max(0, ...codes) + 1;
+      for (const r of body.rows) {
+        const price = r.patientPrice ?? formula(r.labCost);
+        const t = await tx.labTest.findFirst({ where: { name: { equals: r.name, mode: 'insensitive' } }, include: { service: true } });
+        if (t) {
+          await tx.labTest.update({ where: { id: t.id }, data: { labCost: r.labCost, ...(r.category && { category: r.category }) } });
+          updated++;
+          if (body.updatePatientPrice && t.service && !t.service.price.eq(price)) { await tx.service.update({ where: { id: t.service.id }, data: { price } }); repriced++; }
+          continue;
+        }
+        let code = `L${String(next++).padStart(3, '0')}`;
+        while ((await tx.labTest.findUnique({ where: { code } })) || (await tx.service.findUnique({ where: { code } }))) code = `L${String(next++).padStart(3, '0')}`;
+        const service = await tx.service.create({ data: { code, name: r.name, category: 'LAB', price } });
+        await tx.labTest.create({ data: { code, name: r.name, category: r.category ?? null, labCost: r.labCost, serviceId: service.id } });
+        created++;
+      }
+      await audit(tx, req.ctx, { action: 'lab_test.import', entityType: 'lab_test', summary: `استيراد قائمة أسعار المختبر: ${created} جديد، ${updated} محدث، ${repriced} سعر مريض معدل`, after: { rows: body.rows.length, updatePatientPrice: body.updatePatientPrice } });
+      return { created, updated, repriced };
+    });
+    res.json(result);
+  }),
+);
 settingsRouter.use('/lab-tests', catalogRouter({
   model: 'labTest', entity: 'lab_test', orderBy: [{ category: 'asc' }, { name: 'asc' }], searchFields: ['name', 'code'],
   include: { service: { select: { id: true, name: true, price: true } } },
@@ -107,6 +150,7 @@ settingsRouter.use('/lab-tests', catalogRouter({
     sampleType: nullableStr(60), unit: nullableStr(30), referenceRange: nullableStr(120),
     parameters: z.array(z.object({ name: z.string().min(1).max(80), unit: z.string().max(30).optional(), referenceRange: z.string().max(120).optional() })).max(60).nullable().optional(),
     serviceId: z.string().uuid().nullable().optional(), isActive: z.boolean().optional(),
+    labCost: z.preprocess((v) => (v === '' || v === undefined ? null : v), z.coerce.number().min(0).max(100_000).nullable()),
   }),
 }));
 settingsRouter.use('/shifts', catalogRouter({

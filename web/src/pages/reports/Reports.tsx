@@ -12,7 +12,7 @@ import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useDoctors } from '@/components/shared/VisitQueueForm';
 import { InsuranceFigures, type FinanceSummary } from '../billing/Cashier';
 
-type Tab = 'patients' | 'doctors' | 'financial' | 'inventory' | 'attendance';
+type Tab = 'patients' | 'doctors' | 'financial' | 'lab-costs' | 'inventory' | 'attendance';
 
 function useReport<T>(name: Tab, params: Record<string, string | undefined>, enabled: boolean) {
   return useQuery({ queryKey: ['report', name, params], queryFn: () => api.get<T>(`/reports/${name}`, params), enabled });
@@ -38,6 +38,7 @@ export default function Reports() {
     { key: 'patients' as Tab, label: t('reports.tabs.patients'), hidden: !can('reports.patients') },
     { key: 'doctors' as Tab, label: t('reports.tabs.doctors'), hidden: !can('reports.doctors') },
     { key: 'financial' as Tab, label: t('reports.tabs.financial'), hidden: !can('reports.financial') },
+    { key: 'lab-costs' as Tab, label: t('reports.tabs.lab-costs'), hidden: !can('reports.financial') },
     { key: 'inventory' as Tab, label: t('reports.tabs.inventory'), hidden: !can('reports.inventory') },
     { key: 'attendance' as Tab, label: t('reports.tabs.attendance'), hidden: !can('reports.attendance') },
   ];
@@ -55,6 +56,7 @@ export default function Reports() {
       {tab === 'patients' && <PatientsReport range={range} />}
       {tab === 'doctors' && <DoctorsReport range={range} />}
       {tab === 'financial' && <FinancialReport range={range} />}
+      {tab === 'lab-costs' && <LabCostsReport range={range} />}
       {tab === 'inventory' && <InventoryReport range={range} />}
       {tab === 'attendance' && <AttendanceReport range={range} />}
     </div>
@@ -323,6 +325,60 @@ function AttendanceReport({ range }: { range: Range }) {
             { key: 'w', header: t('reports.workedHours'), cell: (x) => x.workedHours },
           ]} />
         </Card>
+      )}
+    </div>
+  );
+}
+
+interface LabCosts {
+  totals: { tests: number; orders: number; owedToLab: number; revenue: number; margin: number; unpriced: number };
+  tests: { labTestId: string; code: string; name: string; count: number; cost: number; unpriced: number; revenue: number; margin: number }[];
+  orders: { id: string; orderNumber: string; requestedAt: string; status: string; patient: { fullName: string; fileNumber: string }; tests: { name: string; cost: number | null }[]; cost: number }[];
+}
+
+/** What the referral lab will claim for the period (to check against its statement), and the margin on lab tests. */
+function LabCostsReport({ range }: { range: Range }) {
+  const { t } = useTranslation();
+  const r = useReport<LabCosts>('lab-costs', { ...range }, true);
+  if (r.error) return <ErrorState error={r.error} onRetry={() => r.refetch()} />;
+  const d = r.data;
+  return (
+    <div className="space-y-4">
+      <Toolbar onExport={d && (() => exportCsv('lab-claims', [
+        { header: t('reports.lab.order'), value: (x: LabCosts['orders'][number]) => x.orderNumber }, { header: t('common.date'), value: (x) => fmtDate(x.requestedAt) },
+        { header: t('common.patient'), value: (x) => x.patient.fullName }, { header: t('reports.lab.tests'), value: (x) => x.tests.map((i) => i.name).join(' + ') },
+        { header: t('reports.lab.owed'), value: (x) => x.cost },
+      ], d.orders))} />
+      {!d ? <PageLoader /> : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label={t('reports.lab.owed')} value={money(d.totals.owedToLab)} hint={`${t('reports.lab.tests')}: ${d.totals.tests} · ${t('reports.lab.orders')}: ${d.totals.orders}`} tone="warning" />
+            <StatCard label={t('reports.lab.revenue')} value={money(d.totals.revenue)} tone="primary" />
+            <StatCard label={t('reports.lab.margin')} value={money(d.totals.margin)} tone={d.totals.margin >= 0 ? 'success' : 'danger'} />
+            <StatCard label={t('reports.lab.unpriced')} value={d.totals.unpriced} tone={d.totals.unpriced ? 'danger' : 'neutral'} hint={t('reports.lab.unpricedHint')} />
+          </div>
+          <p className="text-xs text-ink-muted">{t('reports.lab.hint')}</p>
+          <Card>
+            <CardHeader title={t('reports.lab.byTest')} />
+            <DataTable dense rows={d.tests} rowKey={(x) => x.labTestId} empty={<EmptyState />} columns={[
+              { key: 'n', header: t('reports.lab.test'), cell: (x) => <><b dir="auto">{x.name}</b> <span className="font-mono text-[11px] text-ink-muted">{x.code}</span></> },
+              { key: 'c', header: t('reports.lab.count'), cell: (x) => x.count },
+              { key: 'o', header: t('reports.lab.owed'), cell: (x) => <b className="tabular-nums">{money(x.cost)}</b> },
+              { key: 'r', header: t('reports.lab.revenue'), cell: (x) => <span className="tabular-nums">{money(x.revenue)}</span> },
+              { key: 'm', header: t('reports.lab.margin'), cell: (x) => <span className={`tabular-nums ${x.margin >= 0 ? 'text-success-700' : 'text-danger-700'}`}>{money(x.margin)}</span> },
+            ]} />
+          </Card>
+          <Card>
+            <CardHeader title={t('reports.lab.byOrder')} />
+            <DataTable dense rows={d.orders} rowKey={(x) => x.id} empty={<EmptyState />} columns={[
+              { key: 'n', header: t('reports.lab.order'), cell: (x) => <span className="font-mono text-xs">{x.orderNumber}</span> },
+              { key: 'd', header: t('common.date'), cell: (x) => fmtDate(x.requestedAt) },
+              { key: 'p', header: t('common.patient'), cell: (x) => x.patient.fullName },
+              { key: 't', header: t('reports.lab.tests'), cell: (x) => <span className="text-xs" dir="auto">{x.tests.map((i) => i.name).join(' + ')}</span> },
+              { key: 'c', header: t('reports.lab.owed'), align: 'end', cell: (x) => <b className="tabular-nums">{money(x.cost)}</b> },
+            ]} />
+          </Card>
+        </>
       )}
     </div>
   );

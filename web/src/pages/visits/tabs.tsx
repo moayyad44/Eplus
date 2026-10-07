@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { api, type Paged } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
-import { fmtDateTime } from '@/lib/format';
+import { fmtDateTime, money, num } from '@/lib/format';
 import type { RxItem, TimelineVisit } from '@/lib/clinical';
-import { Badge, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Field, IconButton, Input, PageLoader, Pagination, Select, Textarea, useConfirm } from '@/components/ui';
+import { Badge, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Field, IconButton, Input, PageLoader, Pagination, SearchInput, Select, Textarea, useConfirm } from '@/components/ui';
 import { Autocomplete } from '@/components/shared/Autocomplete';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { VitalsStrip } from '@/components/shared/VitalsStrip';
@@ -267,6 +267,12 @@ export function LabTab({ visit, onSaved, readOnly }: TabProps) {
   const [notes, setNotes] = useState('');
   const [priority, setPriority] = useState('NORMAL');
   const tests = useQuery({ queryKey: ['catalog', 'lab-tests'], queryFn: () => api.get<LabTest[]>('/settings/lab-tests'), enabled: open });
+  const [search, setSearch] = useState('');
+  const [cat, setCat] = useState('');
+  const cats = [...new Set((tests.data ?? []).map((x) => x.category).filter(Boolean) as string[])].sort();
+  const needle = search.trim().toLowerCase();
+  const shown = (tests.data ?? []).filter((x) => (!cat || x.category === cat) && (!needle || x.name.toLowerCase().includes(needle) || x.code.toLowerCase().includes(needle)));
+  const selTotal = sel.reduce((tot, id) => tot + num(tests.data?.find((x) => x.id === id)?.service?.price), 0);
   const order = useApiMutation(() => api.post('/lab/orders', { visitId: visit.id, patientId: visit.patient.id, testIds: sel, clinicalNotes: notes || null, priority }), {
     success: t('visit.lab.ordered'),
     invalidate: [['lab']],
@@ -311,14 +317,28 @@ export function LabTab({ visit, onSaved, readOnly }: TabProps) {
       >
         {!tests.data ? <PageLoader /> : (
           <div className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-2">
-              {tests.data.map((x) => (
+            <div className="flex flex-wrap items-center gap-2">
+              <SearchInput value={search} onChange={setSearch} placeholder={t('visit.lab.search')} className="w-full sm:w-64" delay={0} autoFocus />
+              {cats.map((c) => (
+                <button key={c} type="button" onClick={() => setCat(cat === c ? '' : c)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${cat === c ? 'bg-primary-600 text-white ring-primary-600' : 'bg-white text-ink-soft ring-line hover:bg-surface-subtle'}`}>{c}</button>
+              ))}
+            </div>
+            {sel.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-primary-50 p-2 text-xs">
+                {sel.map((id) => { const x = tests.data!.find((y) => y.id === id); return x && <button key={id} type="button" onClick={() => setSel(sel.filter((s) => s !== id))} className="rounded-full bg-white px-2 py-0.5 font-semibold text-primary-800 ring-1 ring-primary-200">{x.name} ✕</button>; })}
+                <span className="ms-auto font-bold text-primary-800">{t('visit.lab.selectedTotal')}: <span className="tabular-nums">{money(selTotal)}</span></span>
+              </div>
+            )}
+            <div className="grid max-h-[45vh] gap-2 overflow-y-auto pe-1 sm:grid-cols-2">
+              {shown.map((x) => (
                 <label key={x.id} className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2.5 ${sel.includes(x.id) ? 'border-primary-400 bg-primary-50' : 'border-line'}`}>
                   <Checkbox label="" checked={sel.includes(x.id)} onChange={(e) => setSel(e.target.checked ? [...sel, x.id] : sel.filter((s) => s !== x.id))} />
-                  <span className="flex-1 text-sm font-semibold">{x.name}</span>
-                  <span className="font-mono text-[11px] text-ink-muted">{x.code}</span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold" dir="auto">{x.name}</span>{x.category && <span className="block text-[11px] text-ink-muted">{x.category}</span>}</span>
+                  {x.service && <span className="text-xs font-semibold tabular-nums text-ink-soft">{money(x.service.price)}</span>}
                 </label>
               ))}
+              {!shown.length && <p className="col-span-full py-6 text-center text-sm text-ink-muted">{t('common.noResults')}</p>}
             </div>
             <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
               <Field label={t('visit.lab.clinicalNotes')}><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>

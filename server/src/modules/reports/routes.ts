@@ -233,3 +233,45 @@ reportsRouter.get(
     res.json({ rows });
   }),
 );
+
+// ── External laboratory: what the referral lab will claim, against what patients were billed ──
+reportsRouter.get(
+  '/lab-costs',
+  requirePerm('reports.financial'),
+  ah(async (req, res) => {
+    const q = parse(rangeQuery, req.query);
+    const { from, to } = rangeFromQuery(q.from, q.to);
+    const orders = await prisma.labOrder.findMany({
+      where: { status: { not: 'CANCELLED' }, requestedAt: { gte: from, lte: to } },
+      orderBy: { requestedAt: 'asc' }, take: LIMIT,
+      select: {
+        id: true, orderNumber: true, requestedAt: true, status: true,
+        patient: { select: { id: true, fullName: true, fileNumber: true } },
+        items: { select: { id: true, testName: true, labCost: true, labTest: { select: { id: true, code: true, name: true, labCost: true, serviceId: true } } } },
+      },
+    });
+    // The price snapshotted when the test was ordered; older orders fall back to the current price.
+    const cost = (i: (typeof orders)[number]['items'][number]) => (i.labCost ?? i.labTest.labCost);
+    const byTest = new Map<string, { labTestId: string; code: string; name: string; count: number; cost: number; unpriced: number; serviceId: string | null; revenue: number }>();
+    for (const o of orders) for (const i of o.items) {
+      const r = byTest.get(i.labTest.id) ?? { labTestId: i.labTest.id, code: i.labTest.code, name: i.labTest.name, count: 0, cost: 0, unpriced: 0, serviceId: i.labTest.serviceId, revenue: 0 };
+      r.count += 1;
+      const c = cost(i);
+      if (c == null) r.unpriced += 1; else r.cost += num(c);
+      byTest.set(i.labTest.id, r);
+    }
+    const serviceIds = [...byTest.values()].map((r) => r.serviceId).filter(Boolean) as string[];
+    const billed = serviceIds.length ? await prisma.invoiceItem.groupBy({
+      by: ['serviceId'], where: { serviceId: { in: serviceIds }, invoice: { status: { notIn: ['DRAFT', 'CANCELLED'] }, issuedAt: { gte: from, lte: to } } }, _sum: { lineTotal: true },
+    }) : [];
+    for (const r of byTest.values()) r.revenue = num(billed.find((b) => b.serviceId === r.serviceId)?._sum.lineTotal);
+    const tests = [...byTest.values()].map(({ serviceId, ...r }) => ({ ...r, cost: Math.round(r.cost * 1000) / 1000, margin: Math.round((r.revenue - r.cost) * 1000) / 1000 })).sort((a, b) => b.cost - a.cost); // eslint-disable-line @typescript-eslint/no-unused-vars
+    const rows = orders.map((o) => ({
+      id: o.id, orderNumber: o.orderNumber, requestedAt: o.requestedAt, status: o.status, patient: o.patient,
+      tests: o.items.map((i) => ({ name: i.testName, cost: cost(i) == null ? null : num(cost(i)) })),
+      cost: Math.round(o.items.reduce((t, i) => t + num(cost(i)), 0) * 1000) / 1000,
+    }));
+    const sum = (k: 'count' | 'cost' | 'revenue' | 'unpriced') => Math.round(tests.reduce((t, r) => t + r[k], 0) * 1000) / 1000;
+    res.json({ totals: { tests: sum('count'), orders: orders.length, owedToLab: sum('cost'), revenue: sum('revenue'), margin: Math.round((sum('revenue') - sum('cost')) * 1000) / 1000, unpriced: sum('unpriced') }, tests, orders: rows });
+  }),
+);

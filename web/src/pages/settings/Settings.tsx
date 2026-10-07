@@ -192,6 +192,7 @@ function LabTests() {
     { key: 'code', label: t('settings.fields.code'), required: true, dir: 'ltr' }, { key: 'name', label: t('settings.fields.name'), required: true },
     { key: 'category', label: t('settings.fields.category') }, { key: 'sampleType', label: t('settings.fields.sampleType') },
     { key: 'unit', label: t('settings.fields.unit'), dir: 'ltr' }, { key: 'referenceRange', label: t('settings.fields.referenceRange'), dir: 'ltr' },
+    { key: 'labCost', label: t('settings.lab.labCost'), type: 'number' },
     { key: 'serviceId', label: t('settings.fields.service'), type: 'select', wide: true, options: (services.data ?? []).filter((s) => s.category === 'LAB').map((s) => ({ value: s.id, label: `${s.name} — ${money(s.price)}` })) },
     {
       key: 'parameters', label: t('settings.fields.parameters'), type: 'textarea', dir: 'ltr',
@@ -199,13 +200,74 @@ function LabTests() {
       toApi: (v) => { const rows = String(v).split('\n').map((l) => l.split('|').map((x) => x.trim())).filter((x) => x[0]); return rows.length ? rows.map(([name, unit, referenceRange]) => ({ name, unit: unit || undefined, referenceRange: referenceRange || undefined })) : null; },
     },
   ];
-  return <CatalogEditor path="lab-tests" searchable fields={f} columns={[
+  return <><LabPriceImport /><CatalogEditor path="lab-tests" searchable fields={f} columns={[
     { key: 'c', header: t('settings.fields.code'), cell: (r) => <span className="font-mono text-xs">{String(r.code)}</span> },
     { key: 'n', header: t('settings.fields.name'), cell: (r) => <b>{String(r.name)}</b> },
-    { key: 's', header: t('settings.fields.sampleType'), cell: (r) => String(r.sampleType ?? '—') },
-    { key: 'p', header: t('settings.fields.service'), cell: (r) => { const s = r.service as { name: string; price: number } | null; return s ? `${money(s.price)}` : '—'; } },
+    { key: 'cat', header: t('settings.fields.category'), hideOnMobile: true, cell: (r) => String(r.category ?? '—') },
+    { key: 'lc', header: t('settings.lab.labCost'), cell: (r) => (r.labCost == null ? '—' : <span className="tabular-nums">{money(r.labCost)}</span>) },
+    { key: 'p', header: t('settings.lab.patientPrice'), cell: (r) => { const s = r.service as { name: string; price: number } | null; return s ? <b className="tabular-nums">{money(s.price)}</b> : '—'; } },
+    { key: 'm', header: t('settings.lab.margin'), hideOnMobile: true, cell: (r) => { const s = r.service as { price: number } | null; return s && r.labCost != null ? <span className="tabular-nums text-success-700">{money(num(s.price) - num(r.labCost))}</span> : '—'; } },
     { key: 'pp', header: t('settings.fields.parameters'), hideOnMobile: true, cell: (r) => ((r.parameters as P[] | null)?.length ?? 0) || '—' },
-  ]} />;
+  ]} /></>;
+}
+
+/** Splits a CSV line, honouring quoted fields. Accepts comma, semicolon or tab separators (Excel exports). */
+function splitCsv(line: string, sep: string) {
+  const out: string[] = []; let cur = ''; let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (quoted && line[i + 1] === '"') { cur += '"'; i++; } else quoted = !quoted; }
+    else if (ch === sep && !quoted) { out.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+/** Imports the referral lab's price list: name, lab price, [patient price], [category]. */
+function LabPriceImport() {
+  const { t } = useTranslation();
+  const { can } = useAuth();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [reprice, setReprice] = useState(true);
+  const file = useRef<HTMLInputElement>(null);
+  const rows = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+    const sep = l.includes('\t') ? '\t' : l.includes(';') && !l.includes(',') ? ';' : ',';
+    const [name, lab, patient, category] = splitCsv(l, sep);
+    return { name, labCost: Number(lab), patientPrice: patient ? Number(patient) : null, category: category || null };
+  }).filter((r) => r.name && Number.isFinite(r.labCost));
+  const imp = useApiMutation(() => api.post<{ created: number; updated: number; repriced: number }>('/settings/lab-tests/import', { rows, updatePatientPrice: reprice }), {
+    success: false,
+    onSuccess: (r) => { toast.success(t('settings.lab.imported', r)); qc.invalidateQueries({ queryKey: ['catalog'] }); setOpen(false); setText(''); },
+  });
+  if (!can('settings.manage')) return null;
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary-100 bg-primary-50 px-4 py-3">
+      <p className="text-sm text-primary-900">{t('settings.lab.formula')}</p>
+      <Button size="sm" variant="outline" icon={<Upload className="h-4 w-4" />} onClick={() => setOpen(true)}>{t('settings.lab.import')}</Button>
+      <Dialog open={open} onClose={() => setOpen(false)} size="lg" title={t('settings.lab.import')}
+        footer={<><Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button><Button disabled={!rows.length} loading={imp.isPending} onClick={() => imp.mutate(undefined)}>{t('settings.lab.importN', { count: rows.length })}</Button></>}>
+        <p className="mb-2 text-sm leading-relaxed text-ink-soft">{t('settings.lab.importHint')}</p>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <input ref={file} type="file" accept=".csv,.txt" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setText(await f.text()); }} />
+          <Button size="sm" variant="secondary" icon={<Upload className="h-4 w-4" />} onClick={() => file.current?.click()}>{t('settings.lab.chooseFile')}</Button>
+          <span className="text-xs text-ink-muted">{t('settings.lab.orPaste')}</span>
+        </div>
+        <Textarea rows={8} dir="ltr" value={text} onChange={(e) => setText(e.target.value)} placeholder={'CBC, 2\nTSH, 2.5\nVitamin D Total D3, 6, 14'} />
+        <Checkbox className="mt-3" label={t('settings.lab.reprice')} checked={reprice} onChange={(e) => setReprice(e.target.checked)} />
+        {rows.length > 0 && (
+          <div className="mt-3 max-h-48 overflow-y-auto rounded-xl border border-line text-xs">
+            <table className="w-full">
+              <thead className="sticky top-0 bg-surface-subtle"><tr><th className="p-1.5 text-start">{t('settings.fields.name')}</th><th className="p-1.5">{t('settings.lab.labCost')}</th><th className="p-1.5">{t('settings.lab.patientPrice')}</th></tr></thead>
+              <tbody>{rows.slice(0, 200).map((r, i) => <tr key={i} className="border-t border-line"><td className="p-1.5" dir="auto">{r.name}</td><td className="p-1.5 text-center tabular-nums">{r.labCost}</td><td className="p-1.5 text-center tabular-nums">{r.patientPrice ?? Math.round((r.labCost + 1) * 2 * 1000) / 1000}</td></tr>)}</tbody>
+            </table>
+          </div>
+        )}
+      </Dialog>
+    </div>
+  );
 }
 
 function Diagnoses() {
