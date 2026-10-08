@@ -82,16 +82,19 @@ export default function Attendance() {
   );
 }
 
-function RecordDialog({ users, onClose }: { users: UserLite[]; onClose: () => void }) {
+/** Manual attendance entry; also used from the schedule to correct an automatic «غائب». */
+export function RecordDialog({ users, onClose, initial }: { users: UserLite[]; onClose: () => void; initial?: { userId: string; date: string; checkIn?: string; checkOut?: string } }) {
   const { t } = useTranslation();
-  const [v, setV] = useState({ userId: '', date: ymd(), status: '', checkIn: '', checkOut: '', notes: '' });
+  const [v, setV] = useState({ userId: initial?.userId ?? '', date: initial?.date ?? ymd(), status: '', checkIn: initial?.checkIn ?? '', checkOut: initial?.checkOut ?? '', notes: '' });
   const at = (hhmm: string) => (hhmm ? new Date(`${v.date}T${hhmm}:00`).toISOString() : null);
-  const save = useApiMutation(() => api.post('/staff/attendance', { userId: v.userId, date: v.date, status: v.status || undefined, checkIn: at(v.checkIn), checkOut: at(v.checkOut), notes: v.notes || null }), { invalidate: [['attendance'], ['schedule']], onSuccess: onClose });
+  // Overnight shifts: a leave time earlier than the arrival time belongs to the next day.
+  const out = () => { const o = at(v.checkOut); return o && v.checkIn && v.checkOut <= v.checkIn ? new Date(new Date(o).getTime() + 86_400_000).toISOString() : o; };
+  const save = useApiMutation(() => api.post('/staff/attendance', { userId: v.userId, date: v.date, status: v.status || undefined, checkIn: at(v.checkIn), checkOut: out(), notes: v.notes || null }), { invalidate: [['attendance'], ['schedule']], onSuccess: onClose });
   return (
     <Dialog open onClose={onClose} title={t('staff.record')} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label={t('staff.employee')} required error={save.fieldErrors.userId}><Select value={v.userId} onChange={(e) => setV({ ...v, userId: e.target.value })} placeholder={t('common.select')}>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</Select></Field>
-        <Field label={t('common.date')}><Input type="date" value={v.date} onChange={(e) => setV({ ...v, date: e.target.value })} /></Field>
+        <Field label={t('staff.employee')} required error={save.fieldErrors.userId}><Select value={v.userId} disabled={!!initial} onChange={(e) => setV({ ...v, userId: e.target.value })} placeholder={t('common.select')}>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</Select></Field>
+        <Field label={t('common.date')}><Input type="date" value={v.date} disabled={!!initial} onChange={(e) => setV({ ...v, date: e.target.value })} /></Field>
         <Field label={t('common.status')} hint="—">
           <Select value={v.status} onChange={(e) => setV({ ...v, status: e.target.value })}>
             <option value="">{t('enum.AttendanceStatus.PRESENT')}</option>

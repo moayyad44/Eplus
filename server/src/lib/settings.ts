@@ -36,6 +36,7 @@ export const settingSchemas = {
   }),
   attendance: z.object({
     graceMinutes: z.number().int().min(0).max(120).default(10),
+    autoAbsent: z.boolean().default(true),
   }),
 } as const;
 

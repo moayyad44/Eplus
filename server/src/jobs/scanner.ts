@@ -72,9 +72,10 @@ export async function runScan(now = new Date()) {
     await notifyUsers([a.userId], { type: 'SHIFT_ENDING', title: 'انتهى الشفت', body: 'لا تنسَ تسجيل المغادرة', link: '/staff/attendance', dedupeKey: `shiftend:${a.id}` });
   }
 
-  // 6. Yesterday's scheduled staff with no attendance record and no approved leave → ABSENT
+  // 6. Yesterday's scheduled staff with no attendance record and no approved leave → ABSENT (can be turned off in settings)
   const yesterday = addDays(today, -1);
-  const missing = await prisma.shiftAssignment.findMany({ where: { date: yesterday, attendance: { none: {} } }, select: { id: true, userId: true } });
+  const { autoAbsent } = await getSetting('attendance');
+  const missing = autoAbsent ? await prisma.shiftAssignment.findMany({ where: { date: yesterday, attendance: { none: {} } }, select: { id: true, userId: true } }) : [];
   for (const m of missing) {
     const onLeave = await prisma.leave.findFirst({ where: { userId: m.userId, status: 'APPROVED', startDate: { lte: yesterday }, endDate: { gte: yesterday } } });
     await prisma.attendance.upsert({

@@ -11,6 +11,7 @@ import { useCatalog } from '@/lib/catalogs';
 import { addDays, fmtDate, fmtMonth, startOfWeek, ymd } from '@/lib/format';
 import type { UserLite } from '@/lib/types';
 import { Button, Card, Checkbox, Dialog, EmptyState, Field, IconButton, Input, PageHeader, Segmented, Select, useConfirm } from '@/components/ui';
+import { RecordDialog } from './Attendance';
 
 interface Assignment { id: string; userId: string; date: string; startTime: string; endTime: string; user: { id: string; fullName: string; staffType: string }; shift: { id: string; name: string; type: string; color: string | null } }
 interface Leave { id: string; userId: string; startDate: string; endDate: string; type: string; user: { fullName: string } }
@@ -24,6 +25,7 @@ export default function Schedule() {
   const [anchor, setAnchor] = useState(new Date());
   const [staffType, setStaffType] = useState('');
   const [assigning, setAssigning] = useState(false);
+  const [fixing, setFixing] = useState<{ userId: string; date: string; checkIn?: string; checkOut?: string } | null>(null);
   const days = useMemo(() => {
     if (view === 'week') { const s = startOfWeek(anchor); return Array.from({ length: 7 }, (_, i) => addDays(s, i)); }
     const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -104,7 +106,17 @@ export default function Schedule() {
                               {a.shift.name}<span className="block font-normal" dir="ltr">{a.startTime}–{a.endTime}</span>
                             </button>
                           ))}
-                          {c.att && <span className={clsx('block text-center text-[10px] font-semibold', ['ABSENT', 'LATE_AND_EARLY'].includes(c.att.status) ? 'text-danger-600' : c.att.status === 'PRESENT' ? 'text-success-700' : 'text-warning-700')}>{t(`enum.AttendanceStatus.${c.att.status}`)}</span>}
+                          {c.att && (
+                            <button
+                              type="button"
+                              disabled={!can('attendance.manage')}
+                              onClick={() => setFixing({ userId: u.id, date: ymd(d), checkIn: c.as[0]?.startTime, checkOut: c.as[0]?.endTime })}
+                              title={can('attendance.manage') ? t('staff.fixAttendance') : undefined}
+                              className={clsx('block w-full rounded text-center text-[10px] font-semibold enabled:hover:bg-surface-sunken enabled:hover:underline', ['ABSENT', 'LATE_AND_EARLY'].includes(c.att.status) ? 'text-danger-600' : c.att.status === 'PRESENT' ? 'text-success-700' : 'text-warning-700')}
+                            >
+                              {t(`enum.AttendanceStatus.${c.att.status}`)}
+                            </button>
+                          )}
                         </td>
                       );
                     })}
@@ -115,6 +127,7 @@ export default function Schedule() {
           </div>
         )}
       </Card>
+      {fixing && <RecordDialog users={staff.data ?? []} initial={fixing} onClose={() => setFixing(null)} />}
       {assigning && <AssignDialog staff={staff.data ?? []} onClose={() => setAssigning(false)} defaultFrom={from} defaultTo={to} />}
     </div>
   );
