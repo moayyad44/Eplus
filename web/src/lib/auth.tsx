@@ -42,8 +42,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await api.post('/auth/logout').catch(() => undefined);
+    // A full reload to the login screen drops every cached query (patient data included) and the
+    // signed-in user in one go; clearing the cache in place left the old user visible to the router.
     qc.clear();
-    qc.setQueryData(['me'], null);
+    window.location.replace('/login');
   }, [qc]);
 
   const value = useMemo<AuthValue>(

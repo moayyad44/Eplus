@@ -118,7 +118,6 @@ function AttendanceButton() {
 function UserMenu() {
   const { t, i18n } = useTranslation();
   const { me, logout } = useAuth();
-  const nav = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useOutside(ref, () => setOpen(false));
@@ -155,7 +154,7 @@ function UserMenu() {
             ))}
           </div>
           <div className="my-1 border-t border-line" />
-          <button onClick={async () => { await logout(); nav('/login'); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-danger-700 hover:bg-danger-50">
+          <button onClick={() => logout()} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-danger-700 hover:bg-danger-50">
             <LogOut className="h-4 w-4" /> {t('nav.logout')}
           </button>
         </div>
