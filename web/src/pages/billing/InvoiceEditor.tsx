@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation, useDebounced } from '@/lib/hooks';
-import { money, num } from '@/lib/format';
+import { money, num, textMatch } from '@/lib/format';
 import type { Invoice, InvoiceTemplate } from '@/lib/billing';
 import type { PatientLite, Service } from '@/lib/types';
 import { Badge, Button, Card, CardHeader, Checkbox, EmptyState, Field, IconButton, Input, PageHeader, PageLoader, Select, Textarea } from '@/components/ui';
@@ -197,7 +197,7 @@ export default function InvoiceEditor() {
                 value={search}
                 onChange={setSearch}
                 onPick={addService}
-                fetcher={async (q) => (services.data ?? []).filter((s) => s.name.includes(q) || s.code.toLowerCase().includes(q.toLowerCase())).slice(0, 12)}
+                fetcher={async (q) => (services.data ?? []).filter((s) => textMatch(q, s.name, s.code)).slice(0, 12)}
                 queryKey="svc"
                 minChars={1}
                 placeholder={t('billing.itemSearch')}

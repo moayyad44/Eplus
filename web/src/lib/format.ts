@@ -40,3 +40,12 @@ export const toLocalInput = (v?: string | Date | null) => {
   const x = d(v);
   return `${ymd(x)}T${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
 };
+
+/** Normalises text for searching: case-insensitive, and treats أ/إ/آ/ا, ة/ه and ى/ي as the same letter, ignoring tashkeel. */
+export const searchKey = (s: string | null | undefined) =>
+  (s ?? '').toLowerCase().replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
+/** True when any of the fields contains the query (see searchKey). An empty query matches everything. */
+export const textMatch = (q: string, ...fields: (string | null | undefined)[]) => {
+  const n = searchKey(q);
+  return !n || fields.some((f) => searchKey(f).includes(n));
+};

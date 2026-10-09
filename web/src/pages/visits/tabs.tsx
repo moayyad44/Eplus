@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { api, type Paged } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
-import { fmtDateTime, money, num } from '@/lib/format';
+import { fmtDateTime, money, num, textMatch } from '@/lib/format';
 import type { RxItem, TimelineVisit } from '@/lib/clinical';
 import { Badge, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Field, IconButton, Input, PageLoader, Pagination, SearchInput, Select, Textarea, useConfirm } from '@/components/ui';
 import { Autocomplete } from '@/components/shared/Autocomplete';
@@ -270,8 +270,7 @@ export function LabTab({ visit, onSaved, readOnly }: TabProps) {
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('');
   const cats = [...new Set((tests.data ?? []).map((x) => x.category).filter(Boolean) as string[])].sort();
-  const needle = search.trim().toLowerCase();
-  const shown = (tests.data ?? []).filter((x) => (!cat || x.category === cat) && (!needle || x.name.toLowerCase().includes(needle) || x.code.toLowerCase().includes(needle)));
+  const shown = (tests.data ?? []).filter((x) => (!cat || x.category === cat) && textMatch(search, x.name, x.code));
   const selTotal = sel.reduce((tot, id) => tot + num(tests.data?.find((x) => x.id === id)?.service?.price), 0);
   const order = useApiMutation(() => api.post('/lab/orders', { visitId: visit.id, patientId: visit.patient.id, testIds: sel, clinicalNotes: notes || null, priority }), {
     success: t('visit.lab.ordered'),

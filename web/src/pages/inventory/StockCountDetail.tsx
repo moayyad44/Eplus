@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
-import { fmtDateTime, money, num, qty } from '@/lib/format';
+import { fmtDateTime, money, num, qty, textMatch } from '@/lib/format';
 import { Button, Card, ErrorState, Input, PageHeader, PageLoader, SearchInput, useConfirm } from '@/components/ui';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 
@@ -34,7 +34,7 @@ export default function StockCountDetail() {
     invalidate: [['stock-counts'], ['inventory']], success: false, onSuccess: (r) => toast.success(t('inventory.approved', { count: r.adjusted })),
   });
   const cancel = useApiMutation(() => api.post(`/inventory/stock-counts/${id}/cancel`), { invalidate: [['stock-counts']] });
-  const rows = useMemo(() => (q.data?.items ?? []).filter((i) => !search || i.item.name.includes(search) || i.item.sku.toLowerCase().includes(search.toLowerCase())), [q.data, search]);
+  const rows = useMemo(() => (q.data?.items ?? []).filter((i) => textMatch(search, i.item.name, i.item.sku)), [q.data, search]);
   if (q.isLoading) return <PageLoader />;
   if (q.error || !q.data) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const sc = q.data;
