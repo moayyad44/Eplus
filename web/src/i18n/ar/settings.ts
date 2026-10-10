@@ -13,6 +13,8 @@ export default {
     modules: { dashboard: 'لوحة التحكم', users: 'المستخدمون', patients: 'المرضى', medical: 'الملف الطبي', queue: 'قائمة الانتظار', appointments: 'المواعيد', lab: 'المختبر', billing: 'الفواتير والمدفوعات', expenses: 'المصروفات', inventory: 'المخزون', staff: 'الدوام', reports: 'التقارير', settings: 'النظام', insurance: 'التأمين الطبي' },
     add: 'إضافة', noEditPermission: 'لديك صلاحية عرض فقط', deleted: 'تم الحذف',
     deleteConfirm: 'حذف "{{name}}"؟ إذا كان مستخدماً في سجلات سابقة (فواتير، زيارات، مخزون…) سيتم إخفاؤه بدل حذفه حتى لا تتأثر السجلات القديمة.',
+    filteredCount: 'النتائج: {{n}}',
+    filter: { linked: 'مربوط بالمخزون', unlinked: 'غير مربوط بالمخزون', noPrice: 'بدون سعر (صفر)', editable: 'سعر قابل للتعديل', fixed: 'سعر ثابت' },
     deactivatedInstead: 'هذا العنصر مستخدم في سجلات سابقة، لذلك تم إخفاؤه من القوائم بدل حذفه. يمكنك إعادة تفعيله في أي وقت.',
     statusHint: 'اضغط على الحالة للتفعيل أو التعطيل',
     lab: {

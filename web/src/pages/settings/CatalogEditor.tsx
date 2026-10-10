@@ -24,13 +24,22 @@ export interface FieldDef {
 
 type Row = Record<string, unknown> & { isActive?: boolean };
 
+/** A drop-down filter above the list, applied on the loaded rows. */
+export interface FilterDef {
+  key: string;
+  label: string;
+  options: { value: string; label: string }[];
+  match: (row: Row, value: string) => boolean;
+}
+
 /** Generic settings list editor over /settings/<path>: list, search, add, edit, (de)activate. */
-export function CatalogEditor({ path, idKey = 'id', fields, columns, title, searchable }: { path: string; idKey?: string; fields: FieldDef[]; columns: Column<Row>[]; title?: ReactNode; searchable?: boolean }) {
+export function CatalogEditor({ path, idKey = 'id', fields, columns, title, searchable, filters = [] }: { path: string; idKey?: string; fields: FieldDef[]; columns: Column<Row>[]; title?: ReactNode; searchable?: boolean; filters?: FilterDef[] }) {
   const { t } = useTranslation();
   const { can } = useAuth();
   const editable = can('settings.manage');
   const [q, setQ] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const confirm = useConfirm();
   const list = useQuery({ queryKey: ['catalog', path, 'all', q], queryFn: () => api.get<Row[]>(`/settings/${path}`, { all: 'true', q: q || undefined, limit: 500 }) });
   const [edit, setEdit] = useState<Row | null>(null);
@@ -60,7 +69,7 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
   const askRemove = async (row: Row) => {
     if (await confirm({ message: t('settings.deleteConfirm', { name: String(row.name ?? row.code ?? '') }), danger: true, confirmLabel: t('common.delete') })) remove.mutate(row);
   };
-  const rows = list.data?.filter((r) => showInactive || r.isActive !== false);
+  const rows = list.data?.filter((r) => (showInactive || r.isActive !== false) && filters.every((f) => !filterValues[f.key] || f.match(r, filterValues[f.key])));
   const toggle = useApiMutation((row: Row) => api.put(`/settings/${path}/${encodeURIComponent(String(row[idKey]))}`, { isActive: !row.isActive }), { invalidate: [['catalog']], success: false });
 
   return (
@@ -68,7 +77,14 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {title && <h3 className="text-base font-bold">{title}</h3>}
         {searchable && <SearchInput value={q} onChange={setQ} placeholder={t('common.searchPlaceholder')} className="w-full sm:w-64" />}
+        {filters.map((f) => (
+          <Select key={f.key} value={filterValues[f.key] ?? ''} onChange={(e) => setFilterValues({ ...filterValues, [f.key]: e.target.value })} className="!h-9 w-auto">
+            <option value="">{f.label}: {t('common.all')}</option>
+            {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        ))}
         <Checkbox label={t('common.showInactive')} checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+        {rows && (filters.some((f) => filterValues[f.key]) || q) && <span className="text-xs text-ink-muted">{t('settings.filteredCount', { n: rows.length })}</span>}
         {editable && <Button className="ms-auto" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => open(null)}>{t('settings.add')}</Button>}
       </div>
       <DataTable

@@ -12,7 +12,7 @@ import type { Service } from '@/lib/types';
 import type { InvoiceTemplate } from '@/lib/billing';
 import { Badge, Button, Card, CardHeader, Checkbox, Dialog, Field, IconButton, Input, PageHeader, PageLoader, Select, Tabs, Textarea, useConfirm } from '@/components/ui';
 import { usePermissionCatalog, useRoles } from '../staff/Users';
-import { CatalogEditor, type FieldDef } from './CatalogEditor';
+import { CatalogEditor, type FieldDef, type FilterDef } from './CatalogEditor';
 import { Backups } from './Backups';
 
 type Tab = 'clinic' | 'financial' | 'paymentMethods' | 'templates' | 'services' | 'medical' | 'visitTypes' | 'labTests' | 'diagnoses' | 'drugs' | 'inventory' | 'expenses' | 'shifts' | 'roles' | 'backups';
@@ -163,7 +163,20 @@ function Services() {
     { key: 'insRequiresReport', label: t('settings.ins.requiresReport'), type: 'checkbox' },
     { key: 'insNotes', label: t('settings.ins.notes'), wide: true },
   ];
-  return <CatalogEditor path="services" searchable fields={f} columns={[
+  const filters: FilterDef[] = [
+    { key: 'category', label: t('settings.fields.category'), options: CATS.map((c) => ({ value: c, label: t(`enum.ServiceCategory.${c}`) })), match: (r, v) => r.category === v },
+    {
+      key: 'stock', label: t('settings.fields.inventoryItem'),
+      options: [{ value: 'linked', label: t('settings.filter.linked') }, { value: 'unlinked', label: t('settings.filter.unlinked') }],
+      match: (r, v) => (v === 'linked') === !!r.inventoryItemId,
+    },
+    {
+      key: 'price', label: t('settings.fields.price'),
+      options: [{ value: 'zero', label: t('settings.filter.noPrice') }, { value: 'editable', label: t('settings.filter.editable') }, { value: 'fixed', label: t('settings.filter.fixed') }],
+      match: (r, v) => (v === 'zero' ? num(r.price) === 0 : v === 'editable' ? !!r.allowPriceEdit : !r.allowPriceEdit && num(r.price) > 0),
+    },
+  ];
+  return <CatalogEditor path="services" searchable filters={filters} fields={f} columns={[
     { key: 'c', header: t('settings.fields.code'), cell: (r) => <span className="font-mono text-xs">{String(r.code)}</span> },
     { key: 'n', header: t('settings.fields.name'), cell: (r) => <b>{String(r.name)}</b> },
     { key: 'cat', header: t('settings.fields.category'), cell: (r) => <Badge dot={false}>{t(`enum.ServiceCategory.${r.category}`)}</Badge> },
