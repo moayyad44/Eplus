@@ -56,3 +56,30 @@ describe('referral lab price list', () => {
     expect((await reception.post('/api/settings/lab-tests/import', { rows: [{ name: 'Y', labCost: 1 }] })).status).toBe(403);
   });
 });
+
+describe('clinic stock & price list', () => {
+  it('creates categorised stock items and unlinked billable services, once', async () => {
+    const lasix = await prisma.inventoryItem.findUniqueOrThrow({ where: { sku: 'INV-002' }, include: { category: true, unit: true } });
+    expect(lasix.name).toBe('LASIX 20 mg');
+    expect(lasix.category?.name).toBe('أدوية حقن');
+    expect(Number(lasix.quantity)).toBe(0);
+    expect(Number(lasix.salePrice)).toBe(5);
+    const svc = await prisma.service.findUniqueOrThrow({ where: { code: 'INV-002' } });
+    expect([svc.category, Number(svc.price), svc.inventoryItemId, svc.allowPriceEdit]).toEqual(['MEDICATION', 5, null, false]);
+    // Unknown price → editable; free consumables → stock only.
+    expect((await prisma.service.findUniqueOrThrow({ where: { code: 'INV-005' } })).allowPriceEdit).toBe(true);
+    expect(await prisma.service.findUnique({ where: { code: 'INV-046' } })).toBeNull();
+    expect(Number((await prisma.service.findUniqueOrThrow({ where: { code: 'SRV-ECG' } })).price)).toBe(20);
+    expect(await prisma.inventoryItem.count({ where: { sku: { startsWith: 'INV-' } } })).toBe(68);
+    expect(await prisma.counter.findUnique({ where: { key: 'import:stock-catalog-2026-10' } })).not.toBeNull();
+  });
+
+  it('an imported item bills even with zero stock', async () => {
+    const p = await reception.post('/api/patients', { fullName: 'مراجع المخزون', phone: '0791112244', gender: 'MALE' });
+    const svc = await prisma.service.findUniqueOrThrow({ where: { code: 'INV-005' } }); // Feromax, price to be typed
+    const tpl = await prisma.invoiceTemplate.findFirstOrThrow({ where: { isDefault: false } });
+    const r = await reception.post('/api/billing/invoices', { patientId: p.body.id, templateId: tpl.id, items: [{ serviceId: svc.id, quantity: 1, unitPrice: 12 }], issue: true });
+    expect(r.status, JSON.stringify(r.body)).toBeLessThan(300);
+    expect(Number(r.body.total)).toBe(12);
+  });
+});

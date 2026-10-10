@@ -13,6 +13,7 @@ import { DEFAULT_ROLES, PERMISSIONS } from '../src/auth/permissions';
 import { settingSchemas } from '../src/lib/settings';
 import { ICD10_COMMON } from './data/icd10';
 import { LAB_PACKAGES, LAB_TESTS, patientPrice } from './data/lab-catalog';
+import { INV_CATEGORIES, SHEET_SERVICES, STOCK_ITEMS } from './data/inventory-catalog';
 
 const prisma = new PrismaClient();
 
@@ -116,6 +117,7 @@ async function main() {
   // Staff created before branches existed get the main branch.
   await prisma.user.updateMany({ where: { branchId: null }, data: { branchId: branch.id } });
   await importLabCatalog();
+  await importStockCatalog();
   console.log('Bootstrap complete.');
 }
 
@@ -143,6 +145,50 @@ async function importLabCatalog() {
   }
   await prisma.counter.create({ data: { key: marker, value: 1 } });
   console.log(`Lab price list imported: ${created} new tests, ${priced} existing tests priced.`);
+}
+
+/**
+ * One-time import of the clinic's stock & price list (prisma/data/inventory-catalog.ts).
+ * Stock items are created by category with quantity 0 (entered later by a stock count or receipt).
+ * Items with a price also get a billable service; it is NOT linked to the stock item, because a
+ * linked service cannot be invoiced while its stock is 0 — the link is made in Settings → Services
+ * after the opening count. Items without a known price get an editable-price service.
+ * Existing items/services with the same name are left alone; it never runs again once done.
+ */
+async function importStockCatalog() {
+  const marker = 'import:stock-catalog-2026-10';
+  if (await prisma.counter.findUnique({ where: { key: marker } })) return;
+  const catId = new Map<string, string>();
+  for (const name of Object.values(INV_CATEGORIES)) {
+    const c = (await prisma.inventoryCategory.findFirst({ where: { name } })) ?? (await prisma.inventoryCategory.create({ data: { name } }));
+    catId.set(name, c.id);
+  }
+  const unitId = new Map<string, string>();
+  for (const name of new Set(STOCK_ITEMS.map((r) => r[4]))) {
+    const u = (await prisma.unit.findFirst({ where: { name } })) ?? (await prisma.unit.create({ data: { name, symbol: name } }));
+    unitId.set(name, u.id);
+  }
+  const serviceExists = async (code: string, name: string) =>
+    !!(await prisma.service.findFirst({ where: { OR: [{ code }, { name: { equals: name, mode: 'insensitive' } }], deletedAt: null } }));
+  let items = 0, services = 0;
+  for (const [sku, name, price, category, unit] of STOCK_ITEMS) {
+    const exists = await prisma.inventoryItem.findFirst({ where: { OR: [{ sku }, { name: { equals: name, mode: 'insensitive' } }], deletedAt: null } });
+    if (!exists) {
+      await prisma.inventoryItem.create({ data: { sku, name, categoryId: catId.get(category), unitId: unitId.get(unit), salePrice: price || null } });
+      items++;
+    }
+    if (price === 0 || (await serviceExists(sku, name))) continue;
+    const medication = category === INV_CATEGORIES.meds || category === INV_CATEGORIES.fluids;
+    await prisma.service.create({ data: { code: sku, name, category: medication ? 'MEDICATION' : 'NURSING', price: price ?? 0, allowPriceEdit: price == null } });
+    services++;
+  }
+  for (const [code, name, price, category] of SHEET_SERVICES) {
+    if (await serviceExists(code, name)) continue;
+    await prisma.service.create({ data: { code, name, category, price: price ?? 0, allowPriceEdit: price == null } });
+    services++;
+  }
+  await prisma.counter.create({ data: { key: marker, value: 1 } });
+  console.log(`Stock list imported: ${items} items, ${services} billable services.`);
 }
 
 main()
