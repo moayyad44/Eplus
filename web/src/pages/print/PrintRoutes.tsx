@@ -12,7 +12,7 @@ import type { Patient } from '@/lib/types';
 import { bp, type LabOrder, type ReportFields, type RxItem, type TimelineVisit } from '@/lib/clinical';
 import { ErrorState, PageLoader } from '@/components/ui';
 
-type Settings = { clinic: { name: string; nameEn: string; address: string; phone: string; email: string; taxNumber: string; reportFooter: string; logoKey: string | null }; financial: { invoiceFooter: string }; medical: { prescriptionFooter: string } };
+type Settings = { clinic: { name: string; nameEn: string; address: string; phone: string; email: string; taxNumber: string; reportFooter: string; logoKey: string | null }; financial: { invoiceFooter: string }; medical: { prescriptionFooter: string; reportDoctorName?: string } };
 const useSettings = () => useQuery({ queryKey: ['settings-public'], queryFn: () => api.get<Settings>('/settings/public'), staleTime: 5 * 60_000 });
 
 /** Common A4 / thermal shell: clinic header, title, body, footer; opens the print dialog once data is ready. */
@@ -201,12 +201,13 @@ function PrescriptionPrint() {
 function MedicalReportPrint() {
   const { id } = useParams();
   const { t } = useTranslation();
+  const s = useSettings();
   const q = useQuery({ queryKey: ['medical-report', id], queryFn: () => api.get<{ title: string; content: string; fields: ReportFields | null; createdAt: string; doctor: { fullName: string; specialty: string | null; licenseNumber: string | null }; patient: { fullName: string; fileNumber: string; gender: string; age: number | null; nationalId: string | null }; visit: { visitNumber: string; arrivedAt: string } | null }>(`/medical-reports/${id}`) });
   const r = q.data;
   if (q.error) return <ErrorState error={q.error} />;
   return (
     <Shell title={r?.title ?? t('print.medicalReport')} ready={!!r}>
-      {r?.fields && <MedicalReportForm r={r as typeof r & { fields: ReportFields }} />}
+      {r?.fields && <MedicalReportForm r={r as typeof r & { fields: ReportFields }} doctorName={s.data?.medical.reportDoctorName} />}
       {r && !r.fields && (
         <>
           <div className="mb-5 grid grid-cols-2 gap-1">
@@ -230,7 +231,7 @@ function MedicalReportPrint() {
 }
 
 /** The clinic's "Medical Report" sheet, in English, filled from the structured form. Empty lines are left out. */
-function MedicalReportForm({ r }: { r: { title: string; fields: ReportFields; createdAt: string; doctor: { fullName: string }; patient: { fullName: string; gender: string; age: number | null } } }) {
+function MedicalReportForm({ r, doctorName }: { doctorName?: string; r: { title: string; fields: ReportFields; createdAt: string; doctor: { fullName: string }; patient: { fullName: string; gender: string; age: number | null } } }) {
   const f = r.fields;
   const lines: [string, string][] = [
     ['Patient came to our emergency department complaining of', f.complaint], ['Since', f.since], ['And was given', f.given],
@@ -246,7 +247,8 @@ function MedicalReportForm({ r }: { r: { title: string; fields: ReportFields; cr
       ))}
       <p className="mt-8">Patient was given this report upon {r.patient.gender === 'FEMALE' ? 'her' : 'his'} request.</p>
       <p>This report is not to be used for legal matters.</p>
-      <p className="mt-12 font-bold" dir="auto">Dr. {r.doctor.fullName}</p>
+      {/* The clinic's report always carries the same doctor's name (Settings → Medical), not the author's account name. */}
+      <p className="mt-12 font-bold" dir="auto">{doctorName || `Dr. ${r.doctor.fullName}`}</p>
       <p className="mt-6 text-xs">Signature: ____________</p>
     </div>
   );

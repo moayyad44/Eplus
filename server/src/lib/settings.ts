@@ -29,6 +29,8 @@ export const settingSchemas = {
   medical: z.object({
     defaultAppointmentMinutes: z.number().int().min(5).max(240).default(15),
     prescriptionFooter: z.string().max(500).default(''),
+    /** Doctor name printed at the end of every medical report form, whoever wrote it. */
+    reportDoctorName: z.string().max(120).default('Dr. Mus\u2019ab Odeh'),
   }),
   inventory: z.object({
     expiryAlertDays: z.number().int().min(1).max(365).default(60),

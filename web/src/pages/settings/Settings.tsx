@@ -36,7 +36,7 @@ export default function Settings() {
       {tab === 'services' && <Services />}
       {tab === 'medical' && (
         <div className="space-y-4">
-          <KeyValueForm settingKey="medical" fields={[['defaultAppointmentMinutes', 'number'], ['prescriptionFooter', 'textarea']]} ns="medicalS" />
+          <KeyValueForm settingKey="medical" fields={[['defaultAppointmentMinutes', 'number'], ['prescriptionFooter', 'textarea'], ['reportDoctorName', 'text']]} ns="medicalS" />
           <KeyValueForm settingKey="attendance" fields={[['graceMinutes', 'number'], ['autoAbsent', 'checkbox']]} ns="attendanceS" />
         </div>
       )}
