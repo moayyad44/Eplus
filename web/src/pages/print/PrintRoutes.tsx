@@ -228,6 +228,8 @@ function MedicalReportPrint() {
   );
 }
 
+const labCostOf = (i: object) => { const v = (i as { labCost?: string | number | null }).labCost; return v == null ? null : Number(v); };
+
 function LabPrint() {
   const { id } = useParams();
   const [p] = useSearchParams();
@@ -259,7 +261,22 @@ function LabPrint() {
               {i.notes && <p className="text-xs">{i.notes}</p>}
             </div>
           )) : (
-            <ol className="list-inside list-decimal space-y-1">{o.items.map((i) => <li key={i.id}><b>{i.testName}</b> {i.labTest?.sampleType && <span className="text-gray-600">({i.labTest.sampleType})</span>}</li>)}</ol>
+            <>
+              <ol className="list-inside list-decimal space-y-1">
+                {o.items.map((i) => (
+                  <li key={i.id}>
+                    <b>{i.testName}</b> {i.labTest?.sampleType && <span className="text-gray-600">({i.labTest.sampleType})</span>}
+                    <b className="float-left text-base tabular-nums">{labCostOf(i) == null ? '—' : money(labCostOf(i))}</b>
+                  </li>
+                ))}
+              </ol>
+              {/* What the referral lab charges the clinic for this patient (the lab price stored with the order). */}
+              <div className="mt-4 flex items-center justify-between rounded-lg border-2 border-gray-800 px-4 py-3">
+                <span className="text-lg font-bold">{t('print.labDue')}</span>
+                <span className="text-2xl font-extrabold tabular-nums">{money(o.items.reduce((sum, i) => sum + (labCostOf(i) ?? 0), 0))}</span>
+              </div>
+              {o.items.some((i) => labCostOf(i) == null) && <p className="mt-1 text-xs">{t('print.labDueMissing')}</p>}
+            </>
           )}
           <p className="mt-12 text-xs">{t('print.signature')}: ____________</p>
         </>
