@@ -230,8 +230,10 @@ function MedicalReportPrint() {
   );
 }
 
+const EnRow = ({ k, v }: { k: string; v: ReactNode }) => <div><span className="text-gray-500">{k}: </span><b>{v || '—'}</b></div>;
+
 /** The clinic's "Medical Report" sheet, in English, filled from the structured form. Empty lines are left out. */
-function MedicalReportForm({ r, doctorName }: { doctorName?: string; r: { title: string; fields: ReportFields; createdAt: string; doctor: { fullName: string }; patient: { fullName: string; gender: string; age: number | null } } }) {
+function MedicalReportForm({ r, doctorName }: { doctorName?: string; r: { title: string; fields: ReportFields; createdAt: string; doctor: { fullName: string }; patient: { fullName: string; fileNumber: string; gender: string; age: number | null; nationalId: string | null }; visit: { visitNumber: string; arrivedAt: string } | null } }) {
   const f = r.fields;
   const lines: [string, string][] = [
     ['Patient came to our emergency department complaining of', f.complaint], ['Since', f.since], ['And was given', f.given],
@@ -239,9 +241,17 @@ function MedicalReportForm({ r, doctorName }: { doctorName?: string; r: { title:
   ];
   return (
     <div dir="ltr" className="text-[15px] leading-relaxed">
-      <p><span className="inline-block w-14">Name:</span> <b dir="auto">{r.patient.fullName}</b></p>
-      <p><span className="inline-block w-14">Age:</span> <b>{r.patient.age ?? '—'}</b></p>
-      <p className="mb-5"><span className="inline-block w-14">Date:</span> <b>{new Date(r.createdAt).toLocaleDateString('en-GB')}</b></p>
+      {/* Patient & visit details, laid out like the invoice's info block. */}
+      <div className="mb-6 grid grid-cols-2 gap-x-6 gap-y-1 text-[13px]">
+        <EnRow k="Patient Name" v={<span dir="auto">{r.patient.fullName}</span>} />
+        <EnRow k="Date" v={new Date(r.createdAt).toLocaleDateString('en-GB')} />
+        <EnRow k="File No." v={r.patient.fileNumber} />
+        <EnRow k="Visit No." v={r.visit?.visitNumber} />
+        <EnRow k="Age" v={r.patient.age ?? undefined} />
+        <EnRow k="Gender" v={r.patient.gender === 'FEMALE' ? 'Female' : 'Male'} />
+        <EnRow k="National ID" v={r.patient.nationalId} />
+        <EnRow k="Visit Date" v={r.visit ? new Date(r.visit.arrivedAt).toLocaleDateString('en-GB') : undefined} />
+      </div>
       {lines.filter(([, v]) => v.trim()).map(([label, v]) => (
         <p key={label} className="mb-4 whitespace-pre-wrap">{label} <b dir="auto">{v}</b></p>
       ))}
