@@ -17,7 +17,7 @@ import { AuthorizationDialog, PayerPicker, type PayerValue } from '@/components/
 
 interface Line {
   serviceId: string; name: string; category: string; quantity: string; unitPrice: string; discount: string; taxRate: number; basePrice: number; allowPriceEdit: boolean;
-  mandatoryQty: number | null; priceEdited: boolean; overrideApproval: boolean; insuranceShare: string | null;
+  mandatoryQty: number | null; fromTemplate?: boolean; priceEdited: boolean; overrideApproval: boolean; insuranceShare: string | null;
 }
 interface Preview {
   total: number; subtotal: number; discountTotal: number; taxTotal: number; patientShare: number; insuranceShare: number; warnings: string[];
@@ -57,6 +57,9 @@ export default function InvoiceEditor() {
     serviceId: s.id, name: s.name, category: s.category, quantity: String(qty), unitPrice: String(num(s.price)), discount: '0', taxRate: num(s.taxRate),
     basePrice: num(s.price), allowPriceEdit: s.allowPriceEdit, mandatoryQty, priceEdited: false, overrideApproval: false, insuranceShare: null,
   });
+  /** A template's items: mandatory ones are locked, the others are added as removable suggestions. */
+  const templateLines = (tpl?: InvoiceTemplate) =>
+    (tpl?.items ?? []).map((i) => ({ ...toLine(i.service, num(i.quantity), i.isMandatory ? num(i.quantity) : null), fromTemplate: true }));
 
   // Initial state: edit a draft, or start from a visit / patient.
   useEffect(() => {
@@ -80,7 +83,7 @@ export default function InvoiceEditor() {
     if (visitId && (!visit.data || !suggest.data)) return;
     const def = templates.data.find((x) => x.isDefault) ?? templates.data[0];
     setTemplateId(def?.id ?? '');
-    const base = def ? def.items.filter((i) => i.isMandatory).map((i) => toLine(i.service, num(i.quantity), num(i.quantity))) : [];
+    const base = templateLines(def);
     const extra = (suggest.data?.items ?? []).map((i) => svcById.get(i.serviceId)).filter(Boolean).map((s) => toLine(s!));
     setLines([...base, ...extra.filter((e) => !base.some((b) => b.serviceId === e.serviceId))]);
     if (extra.length) toast.info(t('billing.suggestedLoaded'));
@@ -96,10 +99,10 @@ export default function InvoiceEditor() {
   const changeTemplate = (tid: string) => {
     setTemplateId(tid);
     const tpl = templates.data?.find((x) => x.id === tid);
-    const mandatory = tpl?.items.filter((i) => i.isMandatory) ?? [];
+    // The previous template's items go; lines the user added stay unless the new template brings them.
     setLines((ls) => {
-      const kept = ls.filter((l) => l.mandatoryQty === null && !mandatory.some((m) => m.serviceId === l.serviceId));
-      return [...mandatory.map((m) => toLine(m.service, num(m.quantity), num(m.quantity))), ...kept];
+      const kept = ls.filter((l) => l.mandatoryQty === null && !l.fromTemplate && !tpl?.items.some((m) => m.serviceId === l.serviceId));
+      return [...templateLines(tpl), ...kept];
     });
   };
   const addService = (s: Service) => {
