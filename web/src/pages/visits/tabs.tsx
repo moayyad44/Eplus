@@ -5,7 +5,7 @@ import { Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { api, type Paged } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
 import { fmtDateTime, money, num, textMatch } from '@/lib/format';
-import type { RxItem, TimelineVisit } from '@/lib/clinical';
+import type { ReportFields, RxItem, TimelineVisit } from '@/lib/clinical';
 import { Badge, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Field, IconButton, Input, PageLoader, Pagination, SearchInput, Select, Textarea, useConfirm } from '@/components/ui';
 import { Autocomplete } from '@/components/shared/Autocomplete';
 import { StatusBadge } from '@/components/shared/StatusBadge';
@@ -353,33 +353,58 @@ export function LabTab({ visit, onSaved, readOnly }: TabProps) {
 }
 
 // ── Medical report ──
+const REPORT_KEYS = ['complaint', 'since', 'given', 'advised', 'diagnosis'] as const;
+const emptyForm = (): ReportFields => ({ complaint: '', since: '', given: '', advised: '', diagnosis: '' });
+
 export function ReportTab({ visit, onSaved, readOnly }: TabProps) {
   const { t } = useTranslation();
-  const [edit, setEdit] = useState<{ id?: string; title: string; content: string } | null>(null);
+  // A report is the structured form (fields) or, for older reports, free text (content).
+  const [edit, setEdit] = useState<{ id?: string; title: string; content: string; fields: ReportFields | null } | null>(null);
   const save = useApiMutation(
-    () => (edit!.id ? api.put(`/medical-reports/${edit!.id}`, edit) : api.post(`/visits/${visit.id}/reports`, edit)),
+    () => {
+      const body = { title: edit!.title, ...(edit!.fields ? { fields: edit!.fields } : { content: edit!.content }) };
+      return edit!.id ? api.put(`/medical-reports/${edit!.id}`, body) : api.post(`/visits/${visit.id}/reports`, body);
+    },
     { onSuccess: () => { setEdit(null); onSaved(); } },
   );
-  const summary = () => {
+  /** Pre-fills the form from what was recorded in this visit; the doctor edits it freely. */
+  const fromVisit = (): ReportFields => {
     const c = visit.consultation;
-    const lines = [
-      c?.chiefComplaint && `${t('visit.chiefComplaint')}: ${c.chiefComplaint}`,
-      c?.examination && `${t('visit.examination')}: ${c.examination}`,
-      visit.diagnoses?.length && `${t('visit.diagnoses')}: ${visit.diagnoses.map((d) => `${d.description}${d.icd10Code ? ` (${d.icd10Code})` : ''}`).join('، ')}`,
-      c?.treatmentPlan && `${t('visit.treatmentPlan')}: ${c.treatmentPlan}`,
-    ].filter(Boolean);
-    return lines.join('\n');
+    const given = [
+      ...(visit.prescriptions ?? []).flatMap((rx) => rx.items.map((i) => [i.drugName, i.dose, i.route].filter(Boolean).join(' '))),
+      ...(visit.nursingNotes ?? []).map((n) => n.procedure),
+    ];
+    return {
+      complaint: c?.chiefComplaint ?? '',
+      since: '',
+      given: given.join(', '),
+      advised: c?.treatmentPlan ?? '',
+      diagnosis: (visit.diagnoses ?? []).map((d) => d.description).join(', '),
+    };
   };
+  const setField = (k: keyof ReportFields, v: string) => setEdit((e) => e && { ...e, fields: { ...(e.fields ?? emptyForm()), [k]: v } });
   return (
     <div className="space-y-4">
-      {!readOnly && !edit && <Button icon={<Plus className="h-4 w-4" />} onClick={() => setEdit({ title: t('visit.report.defaultTitle'), content: '' })}>{t('visit.report.new')}</Button>}
+      {!readOnly && !edit && <Button icon={<Plus className="h-4 w-4" />} onClick={() => setEdit({ title: 'Medical Report', content: '', fields: fromVisit() })}>{t('visit.report.new')}</Button>}
       {edit && (
         <Card>
           <div className="space-y-3">
-            <Field label={t('visit.report.titleLabel')} error={save.fieldErrors.title}><Input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} /></Field>
-            <Field label={t('visit.report.content')} error={save.fieldErrors.content}><Textarea rows={10} value={edit.content} onChange={(e) => setEdit({ ...edit, content: e.target.value })} /></Field>
+            <Field label={t('visit.report.titleLabel')} error={save.fieldErrors.title}><Input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} dir="auto" /></Field>
+            {edit.fields ? (
+              <div className="space-y-3" dir="ltr">
+                <p className="text-xs text-ink-muted" dir="rtl">{t('visit.report.formHint')}</p>
+                {REPORT_KEYS.map((k) => (
+                  <Field key={k} label={t(`visit.report.f.${k}`)} error={k === 'complaint' ? save.fieldErrors.fields : undefined}>
+                    <Textarea rows={k === 'since' ? 1 : 2} value={edit.fields![k]} onChange={(e) => setField(k, e.target.value)} dir="auto" />
+                  </Field>
+                ))}
+                <p className="rounded-xl bg-surface-subtle px-3 py-2 text-xs text-ink-muted">Patient was given this report upon {t('visit.report.his')} request. This report is not to be used for legal matters.</p>
+              </div>
+            ) : (
+              <Field label={t('visit.report.content')} error={save.fieldErrors.content}><Textarea rows={10} value={edit.content} onChange={(e) => setEdit({ ...edit, content: e.target.value })} /></Field>
+            )}
             <div className="flex flex-wrap justify-between gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setEdit({ ...edit, content: `${edit.content}${edit.content ? '\n' : ''}${summary()}` })}>{t('visit.report.template')}</Button>
+              {edit.fields ? <Button variant="ghost" size="sm" onClick={() => setEdit({ ...edit, fields: fromVisit() })}>{t('visit.report.refill')}</Button> : <span />}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setEdit(null)}>{t('common.cancel')}</Button>
                 <Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button>
@@ -395,12 +420,12 @@ export function ReportTab({ visit, onSaved, readOnly }: TabProps) {
             subtitle={fmtDateTime(r.createdAt)}
             actions={
               <>
-                {!readOnly && <IconButton label={t('common.edit')} onClick={() => setEdit({ id: r.id, title: r.title, content: r.content })}><Pencil className="h-4 w-4" /></IconButton>}
+                {!readOnly && <IconButton label={t('common.edit')} onClick={() => setEdit({ id: r.id, title: r.title, content: r.content ?? '', fields: r.fields ?? null })}><Pencil className="h-4 w-4" /></IconButton>}
                 <IconButton label={t('common.print')} onClick={() => window.open(`/print/medical-report/${r.id}`, '_blank')}><Printer className="h-4 w-4" /></IconButton>
               </>
             }
           />
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.content}</p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed" dir="auto">{r.content}</p>
         </Card>
       ))}
     </div>

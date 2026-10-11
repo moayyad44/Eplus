@@ -11,7 +11,8 @@ export interface LabOrderItem { id: string; testName: string; notes: string | nu
 export interface LabOrder { id: string; orderNumber: string; status: string; priority: string; clinicalNotes: string | null; requestedAt: string; completedAt: string | null; items: LabOrderItem[] }
 export interface Consultation { chiefComplaint: string | null; presentIllness: string | null; examination: string | null; clinicalNotes: string | null; treatmentPlan: string | null; followUpDate: string | null }
 export interface NursingNote { id: string; procedure: string; notes: string | null; performedAt: string }
-export interface MedicalReport { id: string; title: string; content?: string; createdAt: string }
+export interface ReportFields { complaint: string; since: string; given: string; advised: string; diagnosis: string }
+export interface MedicalReport { id: string; title: string; content?: string; fields?: ReportFields | null; createdAt: string }
 
 export interface TimelineVisit {
   id: string; visitNumber: string; status: string; arrivedAt: string; completedAt: string | null; chiefComplaint: string | null;

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { DiagnosisType } from '@prisma/client';
+import { DiagnosisType, Prisma } from '@prisma/client';
 import { prisma, type Tx } from '../../lib/prisma';
 import { ah, nullableStr, optionalDate } from '../../lib/http';
 import { parse } from '../../lib/validate';
@@ -214,7 +214,22 @@ clinicalRouter.get(
 );
 
 // ── Medical reports ──
-const reportBody = z.object({ title: z.string().trim().min(2).max(200), content: z.string().trim().min(5, 'محتوى التقرير مطلوب').max(20000) });
+const formText = z.string().trim().max(2000).optional().default('');
+const reportForm = z.object({ complaint: formText, since: formText, given: formText, advised: formText, diagnosis: formText });
+/** A report is either free text, or the structured "Medical Report" form (its text is then composed for lists and search). */
+const reportBody = z
+  .object({ title: z.string().trim().min(2).max(200), content: z.string().trim().max(20000).optional(), fields: reportForm.nullable().optional() })
+  .transform((b, ctx) => {
+    const f = b.fields;
+    const content = f
+      ? [
+          f.complaint && `Patient came to our emergency department complaining of ${f.complaint}`, f.since && `Since ${f.since}`,
+          f.given && `And was given ${f.given}`, f.advised && `And is advised to ${f.advised}`, f.diagnosis && `And was diagnosed with ${f.diagnosis}`,
+        ].filter(Boolean).join('\n')
+      : b.content ?? '';
+    if (content.length < 5) ctx.addIssue({ code: 'custom', path: [f ? 'fields' : 'content'], message: 'محتوى التقرير مطلوب' });
+    return { title: b.title, content, fields: f ?? Prisma.DbNull };
+  });
 
 clinicalRouter.post(
   '/visits/:id/reports',

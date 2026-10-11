@@ -750,6 +750,8 @@ model MedicalReport {
   doctorId  String
   title     String
   content   String
+  /// Structured "Medical Report" form (complaint, since, given, advised, diagnosis); null for free-text reports.
+  fields    Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

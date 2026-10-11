@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { fmtDate, fmtDateTime, money, num, qty } from '@/lib/format';
 import type { Invoice } from '@/lib/billing';
 import type { Patient } from '@/lib/types';
-import { bp, type LabOrder, type RxItem, type TimelineVisit } from '@/lib/clinical';
+import { bp, type LabOrder, type ReportFields, type RxItem, type TimelineVisit } from '@/lib/clinical';
 import { ErrorState, PageLoader } from '@/components/ui';
 
 type Settings = { clinic: { name: string; nameEn: string; address: string; phone: string; email: string; taxNumber: string; reportFooter: string; logoKey: string | null }; financial: { invoiceFooter: string }; medical: { prescriptionFooter: string } };
@@ -201,12 +201,13 @@ function PrescriptionPrint() {
 function MedicalReportPrint() {
   const { id } = useParams();
   const { t } = useTranslation();
-  const q = useQuery({ queryKey: ['medical-report', id], queryFn: () => api.get<{ title: string; content: string; createdAt: string; doctor: { fullName: string; specialty: string | null; licenseNumber: string | null }; patient: { fullName: string; fileNumber: string; gender: string; age: number | null; nationalId: string | null }; visit: { visitNumber: string; arrivedAt: string } | null }>(`/medical-reports/${id}`) });
+  const q = useQuery({ queryKey: ['medical-report', id], queryFn: () => api.get<{ title: string; content: string; fields: ReportFields | null; createdAt: string; doctor: { fullName: string; specialty: string | null; licenseNumber: string | null }; patient: { fullName: string; fileNumber: string; gender: string; age: number | null; nationalId: string | null }; visit: { visitNumber: string; arrivedAt: string } | null }>(`/medical-reports/${id}`) });
   const r = q.data;
   if (q.error) return <ErrorState error={q.error} />;
   return (
     <Shell title={r?.title ?? t('print.medicalReport')} ready={!!r}>
-      {r && (
+      {r?.fields && <MedicalReportForm r={r as typeof r & { fields: ReportFields }} />}
+      {r && !r.fields && (
         <>
           <div className="mb-5 grid grid-cols-2 gap-1">
             <Row k={t('print.patientName')} v={r.patient.fullName} />
@@ -225,6 +226,29 @@ function MedicalReportPrint() {
         </>
       )}
     </Shell>
+  );
+}
+
+/** The clinic's "Medical Report" sheet, in English, filled from the structured form. Empty lines are left out. */
+function MedicalReportForm({ r }: { r: { title: string; fields: ReportFields; createdAt: string; doctor: { fullName: string }; patient: { fullName: string; gender: string; age: number | null } } }) {
+  const f = r.fields;
+  const lines: [string, string][] = [
+    ['Patient came to our emergency department complaining of', f.complaint], ['Since', f.since], ['And was given', f.given],
+    ['And is advised to', f.advised], ['And was diagnosed with', f.diagnosis],
+  ];
+  return (
+    <div dir="ltr" className="text-[15px] leading-relaxed">
+      <p><span className="inline-block w-14">Name:</span> <b dir="auto">{r.patient.fullName}</b></p>
+      <p><span className="inline-block w-14">Age:</span> <b>{r.patient.age ?? '—'}</b></p>
+      <p className="mb-5"><span className="inline-block w-14">Date:</span> <b>{new Date(r.createdAt).toLocaleDateString('en-GB')}</b></p>
+      {lines.filter(([, v]) => v.trim()).map(([label, v]) => (
+        <p key={label} className="mb-4 whitespace-pre-wrap">{label} <b dir="auto">{v}</b></p>
+      ))}
+      <p className="mt-8">Patient was given this report upon {r.patient.gender === 'FEMALE' ? 'her' : 'his'} request.</p>
+      <p>This report is not to be used for legal matters.</p>
+      <p className="mt-12 font-bold" dir="auto">Dr. {r.doctor.fullName}</p>
+      <p className="mt-6 text-xs">Signature: ____________</p>
+    </div>
   );
 }
 
