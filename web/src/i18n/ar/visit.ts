@@ -9,7 +9,7 @@ export default {
       bp: 'ضغط الدم', systolic: 'الانقباضي', diastolic: 'الانبساطي', hr: 'النبض', temp: 'الحرارة', spo2: 'الأكسجين', rr: 'التنفس', weight: 'الوزن', height: 'الطول',
       bmi: 'BMI', glucose: 'السكر', pain: 'الألم', record: 'تسجيل العلامات الحيوية', history: 'القراءات السابقة', none: 'لا توجد قراءات بعد', recorded: 'تم تسجيل العلامات الحيوية',
     },
-    nursing: { procedure: 'الإجراء', add: 'تسجيل إجراء', none: 'لا توجد إجراءات مسجلة', presets: 'إجراءات شائعة' },
+    nursing: { procedure: 'الإجراء', add: 'تسجيل إجراء', none: 'لا توجد إجراءات مسجلة', presets: 'إجراءات شائعة', deleteConfirm: 'حذف الإجراء «{{name}}»؟ (يبقى مسجلاً في سجل العمليات)' },
     rx: {
       new: 'وصفة جديدة', drug: 'الدواء', dose: 'الجرعة', frequency: 'عدد المرات', duration: 'المدة', route: 'طريقة الاستخدام', instructions: 'ملاحظات', addDrug: 'إضافة دواء',
       save: 'حفظ الوصفة', none: 'لا توجد وصفات لهذه الزيارة', print: 'طباعة الوصفة', drugSearch: 'ابحث عن دواء أو اكتب اسمه', allergyWarning: 'تنبيه: المريض لديه حساسية من',

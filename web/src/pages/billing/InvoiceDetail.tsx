@@ -21,6 +21,8 @@ export default function InvoiceDetail() {
   const [params, setParams] = useSearchParams();
   const confirm = useConfirm();
   const [payMode, setPayMode] = useState<'PAYMENT' | 'REFUND' | null>(null);
+  // Opened straight after "issue & record payment": print the invoice itself rather than the receipt.
+  const [afterIssue, setAfterIssue] = useState(false);
   const q = useQuery({ queryKey: ['invoice', id], queryFn: () => api.get<Invoice>(`/billing/invoices/${id}`) });
   const issue = useApiMutation(() => api.post(`/billing/invoices/${id}/issue`), { invalidate: [['invoice', id], ['invoices']] });
   const cancel = useApiMutation((reason: string) => api.post(`/billing/invoices/${id}/cancel`, { reason }), { invalidate: [['invoice', id], ['invoices']], success: t('common.done') });
@@ -29,6 +31,7 @@ export default function InvoiceDetail() {
   useEffect(() => {
     if (params.get('pay') && q.data && num(q.data.balance) > 0 && can('payments.create')) {
       setPayMode('PAYMENT');
+      setAfterIssue(true);
       params.delete('pay');
       setParams(params, { replace: true });
     }
@@ -182,8 +185,8 @@ export default function InvoiceDetail() {
           invoiceId={inv.id}
           mode={payMode}
           max={payMode === 'REFUND' ? netPaid : num(inv.balance)}
-          onClose={() => setPayMode(null)}
-          onDone={(pid) => payMode === 'PAYMENT' && window.open(`/print/receipt/${pid}`, '_blank')}
+          onClose={() => { setPayMode(null); setAfterIssue(false); }}
+          onDone={(pid) => payMode === 'PAYMENT' && window.open(afterIssue ? `/print/invoice/${inv.id}` : `/print/receipt/${pid}`, '_blank')}
         />
       )}
     </div>

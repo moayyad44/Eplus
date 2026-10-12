@@ -73,6 +73,22 @@ clinicalRouter.post(
   }),
 );
 
+/** Removes a procedure recorded by mistake (kept in the audit log). */
+clinicalRouter.delete(
+  '/nursing-notes/:id',
+  requirePerm('nursing.record'),
+  ah(async (req, res) => {
+    await prisma.$transaction(async (tx) => {
+      const n = await tx.nursingNote.findUnique({ where: { id: req.params.id } });
+      if (!n) throw notFound();
+      const v = await loadVisit(tx, n.visitId);
+      await tx.nursingNote.delete({ where: { id: n.id } });
+      await audit(tx, req.ctx, { action: 'nursing_note.delete', entityType: 'visit', entityId: v.id, summary: n.procedure, before: n });
+    });
+    res.json({ ok: true });
+  }),
+);
+
 // ── Consultation (one per visit) ──
 clinicalRouter.put(
   '/visits/:id/consultation',

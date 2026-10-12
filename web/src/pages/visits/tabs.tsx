@@ -139,6 +139,8 @@ export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
   const { t } = useTranslation();
   const [v, setV] = useState({ procedure: '', notes: '' });
   const save = useApiMutation(() => api.post(`/visits/${visit.id}/nursing-notes`, v), { success: t('common.created'), onSuccess: () => { setV({ procedure: '', notes: '' }); onSaved(); } });
+  const confirm = useConfirm();
+  const remove = useApiMutation((id: string) => api.del(`/nursing-notes/${id}`), { success: t('common.done'), onSuccess: onSaved });
   return (
     <Card>
       {!readOnly && (
@@ -159,7 +161,12 @@ export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
           {visit.nursingNotes.map((n) => (
             <li key={n.id} className="flex gap-3 py-2.5 text-sm">
               <span className="w-32 shrink-0 text-xs tabular-nums text-ink-muted">{fmtDateTime(n.performedAt)}</span>
-              <span><b>{n.procedure}</b>{n.notes && <span className="text-ink-soft"> — {n.notes}</span>}</span>
+              <span className="flex-1"><b>{n.procedure}</b>{n.notes && <span className="text-ink-soft"> — {n.notes}</span>}</span>
+              {!readOnly && (
+                <IconButton size="sm" label={t('common.delete')} onClick={async () => (await confirm({ message: t('visit.nursing.deleteConfirm', { name: n.procedure }), danger: true, confirmLabel: t('common.delete') })) && remove.mutate(n.id)}>
+                  <Trash2 className="h-4 w-4 text-danger-600" />
+                </IconButton>
+              )}
             </li>
           ))}
         </ul>
