@@ -46,6 +46,7 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
   const [form, setForm] = useState<Record<string, string | boolean>>({});
   const open = (row: Row | null) => {
     setEdit(row ?? {});
+    setMissing([]);
     setForm(Object.fromEntries(fields.map((f) => {
       const raw = row?.[f.key];
       return [f.key, f.fromApi ? f.fromApi(raw) : f.type === 'checkbox' ? Boolean(raw ?? (f.key === 'isActive' ? true : false)) : raw == null ? '' : String(raw)];
@@ -61,6 +62,13 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
     }
     return isNew ? api.post(`/settings/${path}`, body) : api.put(`/settings/${path}/${encodeURIComponent(String(edit![idKey]))}`, body);
   }, { invalidate: [['catalog']], onSuccess: () => setEdit(null) });
+  // Required fields are checked here so the user gets a clear Arabic message instead of a validation error from the server.
+  const [missing, setMissing] = useState<string[]>([]);
+  const submit = () => {
+    const empty = fields.filter((f) => f.required && f.type !== 'checkbox' && !(f.lockOnEdit && !isNew) && String(form[f.key] ?? '').trim() === '').map((f) => f.key);
+    setMissing(empty);
+    if (!empty.length) save.mutate(undefined);
+  };
   const remove = useApiMutation((row: Row) => api.del<{ deleted: boolean }>(`/settings/${path}/${encodeURIComponent(String(row[idKey]))}`), {
     invalidate: [['catalog']],
     success: false,
@@ -105,17 +113,17 @@ export function CatalogEditor({ path, idKey = 'id', fields, columns, title, sear
           ) }] : []),
         ]}
       />
-      <Dialog open={!!edit} onClose={() => setEdit(null)} title={isNew ? t('settings.add') : t('common.edit')} footer={<><Button variant="outline" onClick={() => setEdit(null)}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
+      <Dialog open={!!edit} onClose={() => setEdit(null)} title={isNew ? t('settings.add') : t('common.edit')} footer={<><Button variant="outline" onClick={() => setEdit(null)}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={submit}>{t('common.save')}</Button></>}>
         <div className="grid gap-3 sm:grid-cols-2">
           {fields.map((f) => {
             const v = form[f.key];
-            const set = (x: string | boolean) => setForm({ ...form, [f.key]: x });
+            const set = (x: string | boolean) => { setForm({ ...form, [f.key]: x }); setMissing((m) => m.filter((k) => k !== f.key)); };
             const disabled = f.lockOnEdit && !isNew;
             if (f.type === 'checkbox') return <Checkbox key={f.key} label={f.label} checked={Boolean(v)} onChange={(e) => set(e.target.checked)} className="sm:col-span-2" />;
             return (
-              <Field key={f.key} label={f.label} required={f.required} error={save.fieldErrors[f.key]} className={f.wide || f.type === 'textarea' ? 'sm:col-span-2' : ''}>
+              <Field key={f.key} label={f.label} required={f.required} error={missing.includes(f.key) ? t('settings.requiredField') : save.fieldErrors[f.key]} className={f.wide || f.type === 'textarea' ? 'sm:col-span-2' : ''}>
                 {f.type === 'select' ? (
-                  <Select value={String(v ?? '')} onChange={(e) => set(e.target.value)} disabled={disabled} placeholder={f.required ? undefined : t('common.none')}>
+                  <Select value={String(v ?? '')} onChange={(e) => set(e.target.value)} disabled={disabled} placeholder={f.required ? t('common.select') : t('common.none')}>
                     {f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
                 ) : f.type === 'textarea' ? (
