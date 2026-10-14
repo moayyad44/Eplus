@@ -7,7 +7,7 @@ import { ah } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { AppError, badRequest, notFound, unauthorized } from '../../lib/errors';
 import { audit } from '../../lib/audit';
-import { env, secureTransport } from '../../config/env';
+import { env, isSecureRequest } from '../../config/env';
 import { hashToken, newRefreshToken, signAccessToken } from '../../auth/tokens';
 import { effectivePermissions } from '../../auth/access';
 import { ACCESS_COOKIE, REFRESH_COOKIE, authenticate, clientInfo } from '../../middleware/auth';
@@ -24,15 +24,17 @@ const MAX_FAILED = 5;
 const DUMMY_HASH = bcrypt.hashSync('timing-equalisation', 12);
 const LOCK_MINUTES = 15;
 
-const cookieBase: CookieOptions = { httpOnly: true, secure: secureTransport, sameSite: 'strict' };
+// HTTPS-only ("Secure") cookies when the request came over HTTPS (the domain); plain cookies on the clinic's
+// http IP address, where a Secure cookie would never be sent back and sign-in would fail.
+const cookieBase = (res: Response): CookieOptions => ({ httpOnly: true, secure: isSecureRequest(res.req), sameSite: 'strict' });
 
 function setAuthCookies(res: Response, access: string, refresh: string) {
-  res.cookie(ACCESS_COOKIE, access, { ...cookieBase, path: '/api', maxAge: env.ACCESS_TOKEN_TTL_MIN * 60_000 });
-  res.cookie(REFRESH_COOKIE, refresh, { ...cookieBase, path: '/api/auth', maxAge: env.REFRESH_TOKEN_TTL_DAYS * 86_400_000 });
+  res.cookie(ACCESS_COOKIE, access, { ...cookieBase(res), path: '/api', maxAge: env.ACCESS_TOKEN_TTL_MIN * 60_000 });
+  res.cookie(REFRESH_COOKIE, refresh, { ...cookieBase(res), path: '/api/auth', maxAge: env.REFRESH_TOKEN_TTL_DAYS * 86_400_000 });
 }
 function clearAuthCookies(res: Response) {
-  res.clearCookie(ACCESS_COOKIE, { ...cookieBase, path: '/api' });
-  res.clearCookie(REFRESH_COOKIE, { ...cookieBase, path: '/api/auth' });
+  res.clearCookie(ACCESS_COOKIE, { ...cookieBase(res), path: '/api' });
+  res.clearCookie(REFRESH_COOKIE, { ...cookieBase(res), path: '/api/auth' });
 }
 
 export async function loadMe(userId: string) {

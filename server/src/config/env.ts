@@ -15,9 +15,16 @@ const schema = z.object({
   CORS_ORIGIN: z.string().optional(),
   TZ: z.string().default('Asia/Amman'),
   WEB_DIST: z.string().optional(),
-  TRUST_PROXY: z.coerce.number().default(0),
-  /** HTTPS-only cookies + HSTS. Default: on in production. Set to false for a clinic LAN served over plain http. */
-  SECURE_COOKIES: z.enum(['true', 'false']).optional(),
+  /**
+   * Which reverse proxy to trust for X-Forwarded-* headers: 0 = none, a hop count, or (safest) the proxy's own
+   * address, e.g. the Caddy container's fixed IP — so a device calling the app directly cannot spoof them.
+   */
+  TRUST_PROXY: z.string().default('0').transform((v): number | string => (/^\d+$/.test(v.trim()) ? Number(v) : v.trim())),
+  /**
+   * HTTPS-only cookies + HSTS. "auto" (default) decides per request: on for HTTPS through the proxy (the domain),
+   * off for plain http on the clinic network (IP address), so both ways of reaching the app keep working.
+   */
+  SECURE_COOKIES: z.enum(['true', 'false', 'auto']).default('auto'),
   DISABLE_JOBS: z.enum(['true', 'false', '1', '0']).default('false').transform((v) => v === 'true' || v === '1'),
 });
 
@@ -35,4 +42,5 @@ process.env.TZ = parsed.data.TZ;
 
 export const env = parsed.data;
 export const isProd = env.NODE_ENV === 'production';
-export const secureTransport = env.SECURE_COOKIES ? env.SECURE_COOKIES === 'true' : isProd;
+/** Whether this request came over HTTPS (directly or via the trusted proxy), honouring the SECURE_COOKIES override. */
+export const isSecureRequest = (req: { secure: boolean }) => (env.SECURE_COOKIES === 'auto' ? req.secure : env.SECURE_COOKIES === 'true');

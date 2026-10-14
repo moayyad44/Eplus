@@ -57,6 +57,7 @@ echo  EmergencyPlus is running:  http://localhost:%APP_PORT%
 echo  Other devices on the clinic network open one of these:
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do for /f "tokens=*" %%b in ("%%a") do echo     http://%%b:%APP_PORT%
 echo  (use the address that starts with 192.168 or 10. - not the Docker/WSL ones)
+for /f "usebackq tokens=1,* delims==" %%a in (".env") do if "%%a"=="DOMAIN" echo  Secure address on the clinic domain:  https://%%b
 echo  First sign-in: admin / Admin@12345  (you will be asked to set a new password)
 echo  Daily backups are saved automatically (see BACKUP_DIR in .env).
 echo ============================================================

@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import { env, secureTransport } from './config/env';
+import { env, isSecureRequest } from './config/env';
 import { authenticate } from './middleware/auth';
 import { errorHandler } from './middleware/error';
 import { prisma } from './lib/prisma';
@@ -39,7 +39,9 @@ export function createApp() {
   app.disable('x-powered-by');
   if (env.TRUST_PROXY) app.set('trust proxy', env.TRUST_PROXY);
 
-  app.use(
+  // Security headers per request: HTTPS (the domain, via the proxy) gets HSTS and upgrade-insecure-requests;
+  // plain http on the clinic network (IP address) must not, or browsers would refuse to load the app there.
+  const securityHeaders = (https: boolean) =>
     helmet({
       contentSecurityPolicy: {
         directives: {
@@ -51,16 +53,18 @@ export function createApp() {
           connectSrc: ["'self'"],
           frameSrc: ["'self'", 'blob:'],
           objectSrc: ["'self'", 'blob:'],
-          // Only force https when the deployment actually serves https.
-          upgradeInsecureRequests: secureTransport ? [] : null,
+          upgradeInsecureRequests: https ? [] : null,
         },
       },
-      hsts: secureTransport,
+      // Only the domain itself: an IP address or other host names on the network are unaffected.
+      hsts: https ? { maxAge: 31_536_000, includeSubDomains: false } : false,
       // Browsers ignore (and warn about) these on plain-http origins such as a clinic LAN.
-      crossOriginOpenerPolicy: secureTransport ? undefined : false,
-      originAgentCluster: secureTransport,
-    }),
-  );
+      crossOriginOpenerPolicy: https ? undefined : false,
+      originAgentCluster: https,
+    });
+  const httpsHeaders = securityHeaders(true);
+  const httpHeaders = securityHeaders(false);
+  app.use((req, res, next) => (isSecureRequest(req) ? httpsHeaders : httpHeaders)(req, res, next));
   if (env.CORS_ORIGIN) app.use(cors({ origin: env.CORS_ORIGIN.split(','), credentials: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());

@@ -2,6 +2,8 @@
 # Works out of the box on one computer / clinic network (http). Every value below can be
 # overridden from a .env file next to this file (start.bat creates one; see .env.production.example).
 # The demo (docker-compose.demo.yml) is a separate installation with its own data.
+# Optional: HTTPS through the clinic's own domain (e.g. https://eplus.life) — the "domain" profile below,
+# switched on by domain-setup.bat. The database and files stay on this computer either way.
 name: eplus-clinic
 
 x-logging: &logging
@@ -40,9 +42,10 @@ services:
       TZ: ${TZ:-Asia/Amman}
       UPLOAD_DIR: /data/uploads
       BACKUP_DIR: /backups
-      # Set to true only when the app is served over HTTPS (reverse proxy with a certificate).
-      SECURE_COOKIES: ${SECURE_COOKIES:-false}
-      TRUST_PROXY: ${TRUST_PROXY:-0}
+      # auto: HTTPS-only cookies/HSTS for requests through the domain, plain cookies on the http IP address.
+      SECURE_COOKIES: ${SECURE_COOKIES:-auto}
+      # Forwarded headers are trusted only from the Caddy container's fixed address (never from other devices).
+      TRUST_PROXY: ${TRUST_PROXY:-172.31.250.10}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@12345}
       # The first admin must replace the initial password at first sign-in.
@@ -51,8 +54,12 @@ services:
     volumes:
       - appdata:/data
       - ${BACKUP_DIR:-./backups}:/backups
+    # Clinic network access by IP address (http://<this computer's IP>:4080) — unchanged.
     ports:
       - "${APP_PORT:-4080}:4000"
+    networks:
+      - default
+      - edge
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 30s
@@ -81,6 +88,41 @@ services:
       - ${BACKUP_DIR:-./backups}:/backups
     logging: *logging
 
+  # HTTPS for the clinic's domain (profile "domain", enabled by domain-setup.bat through COMPOSE_PROFILES in .env).
+  # Only port 443 is published, and only on this computer: it is reached from the clinic network and from
+  # devices joined to the clinic's private VPN (Tailscale) — no router port is opened to the internet.
+  caddy:
+    build: ./docker/caddy
+    profiles: ["domain"]
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      DNS_API_TOKEN: ${DNS_API_TOKEN:-}
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      # Certificates and their private keys stay on this computer.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge:
+        ipv4_address: 172.31.250.10
+    logging: *logging
+
+networks:
+  default:
+  # Private link between the proxy and the app. The database is not on it and is never published.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
 volumes:
   pgdata:
   appdata:
+  caddy_data:
+  caddy_config:

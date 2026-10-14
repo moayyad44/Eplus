@@ -6,6 +6,7 @@ server/uploads
 server/tests/.uploads
 .git
 .env
+.env.*
 backups
 *.bat
 *.command
