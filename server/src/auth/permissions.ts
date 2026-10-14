@@ -48,6 +48,7 @@ export const PERMISSIONS = {
   'payments.create': { module: 'billing', description: 'تسجيل المدفوعات' },
   'payments.refund': { module: 'billing', description: 'تسجيل المرتجعات' },
   'payments.void': { module: 'billing', description: 'إلغاء دفعة مسجلة' },
+  'payments.backdate': { module: 'billing', description: 'تحديد تاريخ القبض بأثر رجعي وتعديله بعد التسجيل' },
   'cashier.view': { module: 'billing', description: 'الصندوق والحسابات اليومية' },
   // Expenses
   'expenses.view': { module: 'expenses', description: 'عرض المصروفات' },

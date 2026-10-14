@@ -118,3 +118,59 @@ describe('invoice date (back-dating)', () => {
     expect(issued.body.invoiceNumber).toMatch(/\d{6}$/);
   });
 });
+
+describe('receipt date (back-dating payments and refunds)', () => {
+  const R1 = dayAgo(370), R2 = dayAgo(365), R3 = dayAgo(360);
+  const at = (day: string, h = 10) => new Date(`${day}T${String(h).padStart(2, '0')}:00:00`).toISOString();
+
+  it('recording a receipt with an earlier date needs payments.backdate; never in the future or before the invoice date', async () => {
+    const inv = (await newInvoice(admin, { invoiceDate: R1 })).body;
+    expect((await reception.post(`/api/billing/invoices/${inv.id}/payments`, { amount: 5, methodId: cashId, paidAt: at(R2) })).status).toBe(403);
+    expect((await admin.post(`/api/billing/invoices/${inv.id}/payments`, { amount: 5, methodId: cashId, paidAt: at(dayAgo(371)) })).status).toBe(400); // before the invoice
+    expect((await admin.post(`/api/billing/invoices/${inv.id}/payments`, { amount: 5, methodId: cashId, paidAt: at(dayAgo(-1)) })).status).toBe(400); // future
+    const ok = await admin.post(`/api/billing/invoices/${inv.id}/payments`, { amount: 5, methodId: cashId, paidAt: at(R2) });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    const onR2 = await admin.get(`/api/reports/financial?from=${R2}&to=${R2}`);
+    expect(onR2.body.summary.collected).toBe(5);
+  });
+
+  it('changing a receipt date moves the cash between days without touching the invoice; admin only; audited', async () => {
+    const inv = (await newInvoice(admin, { invoiceDate: R1 })).body;
+    const pay = (await admin.post(`/api/billing/invoices/${inv.id}/payments`, { amount: 7, methodId: cashId, paidAt: at(R2) })).body.payment;
+    const before = (await admin.get(`/api/billing/invoices/${inv.id}`)).body;
+
+    expect((await reception.put(`/api/billing/payments/${pay.id}/date`, { date: R3 })).status).toBe(403);
+    const r = await admin.put(`/api/billing/payments/${pay.id}/date`, { date: R3, reason: 'استلام متأخر' });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect([r.body.oldDate, r.body.newDate]).toEqual([R2, R3]);
+
+    const after = (await admin.get(`/api/billing/invoices/${inv.id}`)).body;
+    for (const k of ['issuedAt', 'total', 'paidAmount', 'balance', 'status']) expect(after[k]).toEqual(before[k]);
+    const p = after.payments.find((x: { id: string }) => x.id === pay.id);
+    expect([localDay(p.paidAt), p.amount, p.receiptNumber]).toEqual([R3, pay.amount, pay.receiptNumber]);
+    expect((await admin.get(`/api/reports/financial?from=${R3}&to=${R3}`)).body.summary.collected).toBe(7);
+
+    expect((await admin.put(`/api/billing/payments/${pay.id}/date`, { date: R3 })).status).toBe(400); // same day
+    expect((await admin.put(`/api/billing/payments/${pay.id}/date`, { date: dayAgo(375) })).status).toBe(400); // before the invoice date
+    expect((await admin.put(`/api/billing/payments/${pay.id}/date`, { date: dayAgo(-1) })).status).toBe(400); // future
+
+    const hist = (await admin.get(`/api/billing/invoices/${inv.id}/payment-date-history`)).body;
+    expect(hist).toHaveLength(1);
+    expect(hist[0]).toMatchObject({ receiptNumber: pay.receiptNumber, oldDate: R2, newDate: R3, reason: 'استلام متأخر' });
+    expect(hist[0].userName).toBeTruthy();
+    await expect(prisma.auditLog.delete({ where: { id: hist[0].id } })).rejects.toThrow();
+  });
+
+  it('keeps payments and refunds in order, and refuses voided receipts', async () => {
+    const inv = (await newInvoice(admin, { invoiceDate: R1 })).body;
+    const pay = (await admin.post(`/api/billing/invoices/${inv.id}/payments`, { amount: 10, methodId: cashId, paidAt: at(R2) })).body.payment;
+    expect((await admin.post(`/api/billing/invoices/${inv.id}/refunds`, { amount: 2, methodId: cashId, notes: 'إرجاع جزئي', paidAt: at(R1) })).status).toBe(400); // refund before the payment
+    const ref = (await admin.post(`/api/billing/invoices/${inv.id}/refunds`, { amount: 2, methodId: cashId, notes: 'إرجاع جزئي', paidAt: at(R3) })).body.payment;
+    expect((await admin.put(`/api/billing/payments/${pay.id}/date`, { date: dayAgo(355) })).status).toBe(400); // payment after its refund
+    expect((await admin.put(`/api/billing/payments/${ref.id}/date`, { date: R1 })).status).toBe(400); // refund before the payment
+
+    const p2 = (await admin.post(`/api/billing/invoices/${inv.id}/payments`, { amount: 1, methodId: cashId, paidAt: at(R3, 12) })).body.payment;
+    expect((await admin.post(`/api/billing/payments/${p2.id}/void`, { reason: 'خطأ إدخال' })).status).toBe(200);
+    expect((await admin.put(`/api/billing/payments/${p2.id}/date`, { date: R2 })).status).toBe(400);
+  });
+});

@@ -244,13 +244,15 @@ export async function addPayment(tx: Tx, ctx: Ctx, invoiceId: string, p: Payment
   if (amount.lte(0)) throw badRequest('المبلغ يجب أن يكون أكبر من صفر');
   if (type === 'PAYMENT' && amount.gt(inv.balance)) throw badRequest(`المبلغ أكبر من المتبقي (${D(inv.balance).toNumber()})`);
   if (type === 'REFUND' && amount.gt(D(inv.paidAmount).sub(inv.refundedAmount))) throw badRequest('مبلغ الإرجاع أكبر من المبلغ المدفوع');
+  const paidAt = p.paidAt ?? new Date();
+  if (p.paidAt) await checkPaidAt(tx, ctx, inv, paidAt, type);
 
   const fin = await getSetting('financial', tx);
   const n = await nextCounter(tx, 'receipt');
   const payment = await tx.payment.create({
     data: {
       receiptNumber: `${type === 'REFUND' ? 'RF-' : fin.receiptPrefix}${pad(n, 6)}`, invoiceId: inv.id, patientId: inv.patientId, type, amount,
-      methodId: method.id, reference: p.reference ?? null, notes: p.notes ?? null, paidAt: p.paidAt ?? new Date(), receivedById: ctx.userId,
+      methodId: method.id, reference: p.reference ?? null, notes: p.notes ?? null, paidAt, receivedById: ctx.userId,
     },
     include: { method: true },
   });
@@ -346,4 +348,50 @@ export async function changeInvoiceDate(tx: Tx, ctx: Ctx, invoiceId: string, day
     after: { invoiceNumber: inv.invoiceNumber, invoiceDate: day, reason },
   });
   return { oldDate: ymd(old), newDate: day };
+}
+
+// ── Receipt date (back-dating) ──
+
+/**
+ * Rules for the date money was received or refunded: never in the future; an earlier day needs payments.backdate;
+ * not before the invoice date; a refund not before the first payment, and (when moving a payment) a payment not
+ * after the first refund.
+ */
+async function checkPaidAt(
+  tx: Tx, ctx: Ctx, inv: { id: string; issuedAt: Date | null; createdAt: Date }, when: Date, type: 'PAYMENT' | 'REFUND', movingId?: string,
+) {
+  const day = ymd(when);
+  if (day > ymd(new Date())) throw badRequest('لا يمكن أن يكون تاريخ القبض في المستقبل');
+  if (day < ymd(new Date()) && !can(ctx, 'payments.backdate')) throw forbidden('لا تملك صلاحية تحديد تاريخ سابق للقبض');
+  const invDay = ymd(inv.issuedAt ?? inv.createdAt);
+  if (day < invDay) throw badRequest(`لا يمكن أن يكون تاريخ القبض قبل تاريخ الفاتورة (${invDay})`);
+  const other = await tx.payment.findFirst({
+    where: { invoiceId: inv.id, voidedAt: null, type: type === 'REFUND' ? 'PAYMENT' : 'REFUND', ...(movingId && { id: { not: movingId } }) },
+    orderBy: { paidAt: 'asc' }, select: { paidAt: true, receiptNumber: true },
+  });
+  if (!other) return;
+  if (type === 'REFUND' && day < ymd(other.paidAt)) throw badRequest(`لا يمكن أن يكون تاريخ الإرجاع قبل تاريخ أول دفعة (${ymd(other.paidAt)}، سند ${other.receiptNumber})`);
+  if (type === 'PAYMENT' && movingId && day > ymd(other.paidAt)) throw badRequest(`لا يمكن جعل تاريخ الدفعة بعد تاريخ الإرجاع ${other.receiptNumber} (${ymd(other.paidAt)})`);
+}
+
+/**
+ * Changes the date of a recorded receipt (payment or refund). Only the date moves — amount, method, invoice
+ * balances and status stay as they are; the cash summary follows the new date. Audited (append-only log).
+ */
+export async function changePaymentDate(tx: Tx, ctx: Ctx, paymentId: string, day: string, reason: string | null) {
+  if (!can(ctx, 'payments.backdate')) throw forbidden('لا تملك صلاحية تعديل تاريخ القبض');
+  const p = await tx.payment.findUnique({ where: { id: paymentId }, include: { invoice: { select: { id: true, invoiceNumber: true, issuedAt: true, createdAt: true } } } });
+  if (!p) throw notFound();
+  if (p.voidedAt) throw badRequest('لا يمكن تعديل تاريخ دفعة ملغاة');
+  const old = ymd(p.paidAt);
+  if (old === day) throw badRequest('التاريخ الجديد مطابق لتاريخ القبض الحالي');
+  const paidAt = onDay(day, p.paidAt);
+  await checkPaidAt(tx, ctx, p.invoice, paidAt, p.type, p.id);
+  await tx.payment.update({ where: { id: p.id }, data: { paidAt } });
+  await audit(tx, ctx, {
+    action: 'payment.date_change', entityType: 'payment', entityId: p.id,
+    summary: `تعديل تاريخ ${p.type === 'REFUND' ? 'الإرجاع' : 'الإيصال'} ${p.receiptNumber} (فاتورة ${p.invoice.invoiceNumber}) من ${old} إلى ${day}${reason ? ` — السبب: ${reason}` : ''}`,
+    before: { paidAt: old }, after: { paidAt: day, reason },
+  });
+  return { receiptNumber: p.receiptNumber, oldDate: old, newDate: day };
 }

@@ -6,6 +6,7 @@ import { audit } from '../../lib/audit';
 import { nextCounter, pad } from '../../lib/counters';
 import { AppError, badRequest, forbidden, notFound } from '../../lib/errors';
 import { D, r3 } from '../../lib/money';
+import { ymd } from '../../lib/dates';
 
 /*
  * A claim's money is a ledger: every decision, payment, transfer or write-off is an append-only event
@@ -296,6 +297,7 @@ export async function recordCompanyPayment(tx: Tx, ctx: Ctx, input: CompanyPayme
   const method = await tx.paymentMethod.findFirst({ where: { id: input.methodId, isActive: true } });
   if (!method) throw badRequest('طريقة الدفع غير متاحة');
   if (method.requiresReference && !input.reference) throw badRequest(`رقم العملية مطلوب للدفع عبر ${method.name}`);
+  checkCompanyPaidAt(ctx, input.paidAt);
   const lines = input.allocations.map((a) => ({ ...a, amount: r3(a.amount) })).filter((a) => a.amount.gt(0));
   if (!lines.length) throw badRequest('وزّع المبلغ على مطالبة واحدة على الأقل');
   if (new Set(lines.map((l) => l.claimId)).size !== lines.length) throw badRequest('المطالبة مكررة في التوزيع');
@@ -343,3 +345,11 @@ export async function voidCompanyPayment(tx: Tx, ctx: Ctx, paymentId: string, re
 }
 
 export { WORKFLOW };
+
+/** Date rule for money received from an insurance company: never in the future, an earlier day needs payments.backdate. */
+function checkCompanyPaidAt(ctx: Ctx, when: Date | null | undefined) {
+  if (!when) return;
+  const day = ymd(when);
+  if (day > ymd(new Date())) throw badRequest('لا يمكن أن يكون تاريخ القبض في المستقبل');
+  if (day < ymd(new Date()) && !can(ctx, 'payments.backdate')) throw forbidden('لا تملك صلاحية تحديد تاريخ سابق للقبض');
+}

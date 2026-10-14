@@ -68,6 +68,7 @@ export default function InsurancePayments() {
 /** Money from a company, spread over its open claims (oldest first by default). */
 export function NewPaymentDialog({ onClose, companyId: initialCompany }: { onClose: () => void; companyId?: string }) {
   const { t } = useTranslation();
+  const { can } = useAuth();
   const companies = useInsuranceCompanies();
   const methods = useQuery({ queryKey: ['catalog', 'payment-methods'], queryFn: () => api.get<PaymentMethod[]>('/settings/payment-methods') });
   const [companyId, setCompanyId] = useState(initialCompany ?? '');
@@ -108,7 +109,10 @@ export function NewPaymentDialog({ onClose, companyId: initialCompany }: { onClo
           <Select value={v.methodId} onChange={(e) => setV({ ...v, methodId: e.target.value })}>{methods.data?.filter((m) => m.isActive).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</Select>
         </Field>
         <Field label={t('ins.p.reference')} required={!!methods.data?.find((m) => m.id === v.methodId)?.requiresReference}><Input value={v.reference} onChange={(e) => setV({ ...v, reference: e.target.value })} dir="ltr" /></Field>
-        <Field label={t('ins.p.paidAt')}><Input type="datetime-local" value={v.paidAt} onChange={(e) => setV({ ...v, paidAt: e.target.value })} /></Field>
+        {/* An earlier receipt date needs payments.backdate (enforced by the API too). */}
+        <Field label={t('ins.p.paidAt')} hint={can('payments.backdate') ? undefined : t('billing.paidAtLocked')} error={save.fieldErrors.paidAt}>
+          <Input type="datetime-local" value={v.paidAt} max={toLocalInput(new Date())} disabled={!can('payments.backdate')} onChange={(e) => setV({ ...v, paidAt: e.target.value })} />
+        </Field>
         <Field label={t('ins.p.amount')} hint={t('ins.p.payAll')}>
           <div className="flex gap-2"><Input type="number" min={0} step="0.001" value={v.total} onChange={(e) => setV({ ...v, total: e.target.value })} dir="ltr" /><Button variant="outline" onClick={autoFill} disabled={!rows.length}>{t('ins.p.payAll')}</Button></div>
         </Field>

@@ -8,7 +8,7 @@ import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/errors';
 import { requireAnyPerm, requirePerm } from '../../middleware/auth';
 import { ageFrom, rangeFromQuery } from '../../lib/dates';
-import { addPayment, buildInvoice, cancelInvoice, changeInvoiceDate, issueInvoice, recomputeInvoice, requestedInvoiceDate } from './service';
+import { addPayment, buildInvoice, cancelInvoice, changeInvoiceDate, changePaymentDate, issueInvoice, recomputeInvoice, requestedInvoiceDate } from './service';
 
 export const billingRouter = Router();
 
@@ -287,6 +287,29 @@ billingRouter.post(
     const body = parse(paymentBody.extend({ notes: z.string().trim().min(3, 'يرجى ذكر سبب الإرجاع').max(300) }), req.body);
     const result = await prisma.$transaction((tx) => addPayment(tx, req.ctx, req.params.id, { ...body, paidAt: body.paidAt ?? undefined }, 'REFUND'));
     res.status(201).json(result);
+  }),
+);
+
+/** Changes the date of a recorded receipt (back-dating). Permission is enforced here, not just hidden in the UI. */
+billingRouter.put(
+  '/payments/:id/date',
+  requirePerm('payments.backdate'),
+  ah(async (req, res) => {
+    const body = parse(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'تاريخ غير صالح'), reason: nullableStr(300) }), req.body);
+    res.json(await prisma.$transaction((tx) => changePaymentDate(tx, req.ctx, req.params.id, body.date, body.reason ?? null)));
+  }),
+);
+
+/** Receipt date changes of one invoice's payments and refunds, from the append-only audit log. */
+billingRouter.get(
+  '/invoices/:id/payment-date-history',
+  requirePerm('invoices.view'),
+  ah(async (req, res) => {
+    const payments = await prisma.payment.findMany({ where: { invoiceId: req.params.id }, select: { id: true, receiptNumber: true } });
+    const receipt = new Map(payments.map((p) => [p.id, p.receiptNumber]));
+    const rows = await prisma.auditLog.findMany({ where: { entityType: 'payment', entityId: { in: [...receipt.keys()] }, action: 'payment.date_change' }, orderBy: { createdAt: 'desc' } });
+    const val = (v: unknown, k: string) => (v as Record<string, string | null> | null)?.[k] ?? null;
+    res.json(rows.map((r) => ({ id: r.id, at: r.createdAt, userName: r.userName, receiptNumber: receipt.get(r.entityId!) ?? null, oldDate: val(r.before, 'paidAt'), newDate: val(r.after, 'paidAt'), reason: val(r.after, 'reason') })));
   }),
 );
 

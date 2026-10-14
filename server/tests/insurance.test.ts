@@ -125,7 +125,8 @@ describe('insurance invoice split', () => {
   });
 
   it('issuing creates the claim: patient owes only their share, the rest is an insurance receivable', async () => {
-    const r = await reception.post('/api/billing/invoices', { patientId, visitId, templateId, items: items() });
+    // Dated yesterday (an admin may back-date) so this test's money stays out of other tests' "today" totals.
+    const r = await admin.post('/api/billing/invoices', { patientId, visitId, templateId, items: items(), invoiceDate: day(-1) });
     expect(r.status).toBe(201);
     invoiceId = r.body.id;
     expect(r.body.payerType).toBe('INSURANCE');
@@ -138,7 +139,9 @@ describe('insurance invoice split', () => {
     claimId = r.body.claim.id;
 
     // The patient pays their share → invoice PAID for the patient, receivable stays with the company.
-    const pay = await reception.post(`/api/billing/invoices/${invoiceId}/payments`, { amount: 55, methodId: cashId, paidAt: `${day(-1)}T10:00:00` });
+    // A receptionist may not back-date a receipt; the admin can.
+    expect((await reception.post(`/api/billing/invoices/${invoiceId}/payments`, { amount: 55, methodId: cashId, paidAt: `${day(-1)}T10:00:00` })).status).toBe(403);
+    const pay = await admin.post(`/api/billing/invoices/${invoiceId}/payments`, { amount: 55, methodId: cashId, paidAt: `${day(-1)}T10:00:00` });
     expect(pay.status).toBe(201);
     expect(pay.body.invoice.status).toBe('PAID');
     const claim = await admin.get(`/api/insurance/claims/${claimId}`);

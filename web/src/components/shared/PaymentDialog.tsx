@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
-import { money } from '@/lib/format';
+import { money, ymd } from '@/lib/format';
+import { useAuth } from '@/lib/auth';
 import type { PaymentMethod } from '@/lib/types';
 import { Button, Dialog, Field, Input, Textarea } from '@/components/ui';
 
@@ -14,10 +15,20 @@ export const usePaymentMethods = () => useQuery({ queryKey: ['catalog', 'payment
 export function PaymentDialog({ invoiceId, max, mode = 'PAYMENT', onClose, onDone }: { invoiceId: string; max: number; mode?: 'PAYMENT' | 'REFUND'; onClose: () => void; onDone?: (receiptId: string) => void }) {
   const { t } = useTranslation();
   const methods = usePaymentMethods();
+  const { can } = useAuth();
   const [v, setV] = useState({ amount: String(max), methodId: '', reference: '', notes: '' });
+  // Receipt date: today by default; an earlier day only with payments.backdate (the API enforces it too).
+  const [day, setDay] = useState(ymd());
+  const paidAt = () => {
+    if (day === ymd()) return undefined;
+    const d = new Date(`${day}T00:00:00`);
+    const now = new Date();
+    d.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), 0);
+    return d.toISOString();
+  };
   const method = methods.data?.find((m) => m.id === v.methodId);
   const save = useApiMutation(
-    () => api.post<{ payment: { id: string; receiptNumber: string } }>(`/billing/invoices/${invoiceId}/${mode === 'REFUND' ? 'refunds' : 'payments'}`, { ...v, amount: Number(v.amount), reference: v.reference || null, notes: v.notes || null }),
+    () => api.post<{ payment: { id: string; receiptNumber: string } }>(`/billing/invoices/${invoiceId}/${mode === 'REFUND' ? 'refunds' : 'payments'}`, { ...v, amount: Number(v.amount), reference: v.reference || null, notes: v.notes || null, paidAt: paidAt() }),
     {
       invalidate: [['invoice'], ['invoices'], ['queue'], ['cashier']],
       success: false,
@@ -52,6 +63,11 @@ export function PaymentDialog({ invoiceId, max, mode = 'PAYMENT', onClose, onDon
             ))}
           </div>
         </Field>
+        {can('payments.backdate') && (
+          <Field label={t('billing.paidAtLabel')} error={save.fieldErrors.paidAt}>
+            <Input type="date" value={day} max={ymd()} onChange={(e) => setDay(e.target.value || ymd())} />
+          </Field>
+        )}
         <Field label={t('billing.reference')} required={method?.requiresReference} error={save.fieldErrors.reference}>
           <Input value={v.reference} onChange={(e) => setV({ ...v, reference: e.target.value })} dir="ltr" />
         </Field>

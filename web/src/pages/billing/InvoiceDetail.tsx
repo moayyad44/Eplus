@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
 import { fmtDate, fmtDateTime, fmtDay, money, num, qty, ymd } from '@/lib/format';
 import type { Invoice } from '@/lib/billing';
-import { Badge, Button, Card, CardHeader, DataTable, Dialog, ErrorState, Field, Input, PageHeader, PageLoader, Textarea, useConfirm } from '@/components/ui';
+import { Badge, Button, Card, CardHeader, DataTable, Dialog, ErrorState, Field, IconButton, Input, PageHeader, PageLoader, Textarea, useConfirm } from '@/components/ui';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { PaymentDialog } from '@/components/shared/PaymentDialog';
 
@@ -22,6 +22,7 @@ export default function InvoiceDetail() {
   const [params, setParams] = useSearchParams();
   const confirm = useConfirm();
   const [payMode, setPayMode] = useState<'PAYMENT' | 'REFUND' | null>(null);
+  const [payDate, setPayDate] = useState<{ id: string; receiptNumber: string; current: string } | null>(null);
   // Opened straight after "issue & record payment": print the invoice itself rather than the receipt.
   const [afterIssue, setAfterIssue] = useState(false);
   const q = useQuery({ queryKey: ['invoice', id], queryFn: () => api.get<Invoice>(`/billing/invoices/${id}`) });
@@ -123,12 +124,14 @@ export default function InvoiceDetail() {
                   key: 'x', header: '', cell: (r) => (
                     <div className="flex gap-1">
                       {!r.voidedAt && <Button size="sm" variant="ghost" icon={<Printer className="h-3.5 w-3.5" />} onClick={() => window.open(`/print/receipt/${r.id}`, '_blank')}>{t('billing.receipt')}</Button>}
+                      {!r.voidedAt && can('payments.backdate') && <IconButton size="sm" label={t('billing.payDate.edit')} onClick={() => setPayDate({ id: r.id, receiptNumber: r.receiptNumber, current: ymd(new Date(r.paidAt)) })}><CalendarClock className="h-4 w-4" /></IconButton>}
                       {!r.voidedAt && can('payments.void') && <Button size="sm" variant="ghost" onClick={async () => { const reason = await confirm({ message: `${r.receiptNumber} — ${money(r.amount)}`, danger: true, reason: { label: t('billing.voidReason'), required: true } }); if (reason) voidPay.mutate({ id: r.id, reason }); }}>{t('billing.voidPayment')}</Button>}
                     </div>
                   ),
                 },
               ]}
             />
+            <PaymentDateHistory invoiceId={inv.id} />
           </Card>
         </div>
         <aside className="space-y-4">
@@ -182,6 +185,7 @@ export default function InvoiceDetail() {
           </Card>
         </aside>
       </div>
+      {payDate && <PaymentDateDialog invoiceId={inv.id} {...payDate} onClose={() => setPayDate(null)} />}
       {payMode && (
         <PaymentDialog
           invoiceId={inv.id}
@@ -258,5 +262,55 @@ function InvoiceDateCard({ inv }: { inv: Invoice }) {
         </Dialog>
       )}
     </Card>
+  );
+}
+
+/** A YYYY-MM-DD day shown like other dates, isolated so it reads correctly inside Arabic sentences. */
+const isoDay = (d: string | null) => (d ? `\u2068${fmtDay(`${d}T00:00:00Z`)}\u2069` : '—');
+
+/** Changes the date of a recorded receipt (payments.backdate, enforced by the API too), after a confirmation. */
+function PaymentDateDialog({ invoiceId, id, receiptNumber, current, onClose }: { invoiceId: string; id: string; receiptNumber: string; current: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const confirm = useConfirm();
+  const [v, setV] = useState({ date: current, reason: '' });
+  const change = useApiMutation(() => api.put<{ oldDate: string; newDate: string }>(`/billing/payments/${id}/date`, { date: v.date, reason: v.reason || null }), {
+    invalidate: [['invoice', invoiceId], ['invoices'], ['cashier'], ['payments']],
+    success: false,
+    onSuccess: (r) => { toast.success(t('billing.payDate.changed', { number: `\u2068${receiptNumber}\u2069`, from: isoDay(r.oldDate), to: isoDay(r.newDate) })); onClose(); },
+  });
+  const save = async () => {
+    if (await confirm({ message: t('billing.payDate.confirm', { number: `\u2068${receiptNumber}\u2069`, from: isoDay(current), to: isoDay(v.date) }), confirmLabel: t('billing.date.save') })) change.mutate(undefined);
+  };
+  return (
+    <Dialog open onClose={onClose} title={`${t('billing.payDate.edit')} — ${receiptNumber}`} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={change.isPending} disabled={!v.date || v.date === current} onClick={save}>{t('billing.date.save')}</Button></>}>
+      <div className="space-y-3">
+        <p className="rounded-xl bg-warning-50 px-3 py-2 text-xs text-warning-800">{t('billing.payDate.hint')}</p>
+        <Field label={t('billing.paidAtLabel')} required error={change.fieldErrors.date}><Input type="date" max={ymd()} value={v.date} onChange={(e) => setV({ ...v, date: e.target.value })} /></Field>
+        <Field label={t('common.reason')}><Textarea rows={2} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Receipt date changes on this invoice, from the append-only audit log. */
+function PaymentDateHistory({ invoiceId }: { invoiceId: string }) {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['invoice', invoiceId, 'payment-date-history'],
+    queryFn: () => api.get<{ id: string; at: string; userName: string | null; receiptNumber: string | null; oldDate: string | null; newDate: string | null; reason: string | null }[]>(`/billing/invoices/${invoiceId}/payment-date-history`),
+  });
+  if (!q.data?.length) return null;
+  return (
+    <div className="mt-3 border-t border-line pt-2">
+      <p className="mb-1 text-xs font-semibold text-ink-muted">{t('billing.payDate.history')}</p>
+      <ul className="space-y-1.5 text-xs">
+        {q.data.map((h) => (
+          <li key={h.id} className="rounded-lg bg-surface-subtle px-2 py-1.5">
+            <b className="font-mono">{h.receiptNumber}</b> · <span className="tabular-nums">{t('billing.date.fromTo', { from: isoDay(h.oldDate), to: isoDay(h.newDate) })}</span>
+            <span className="block text-ink-muted">{h.userName} · <bdi>{fmtDateTime(h.at)}</bdi>{h.reason && ` · ${h.reason}`}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
