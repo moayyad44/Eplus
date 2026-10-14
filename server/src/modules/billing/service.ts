@@ -7,7 +7,7 @@ import { nextCounter, pad } from '../../lib/counters';
 import { AppError, badRequest, forbidden, notFound } from '../../lib/errors';
 import { D, r3 } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
-import { addDays } from '../../lib/dates';
+import { addDays, ymd } from '../../lib/dates';
 import { recordMovement } from '../inventory/service';
 import { changeVisitStatus } from '../visits/service';
 import { computeCoverage, contractPrice, usableMembership, type MembershipWithContract } from '../insurance/coverage';
@@ -174,19 +174,22 @@ export async function issueInvoice(tx: Tx, ctx: Ctx, invoiceId: string) {
   if (inv.patientInsuranceId) await usableMembership(tx, inv.patientId, inv.patientInsuranceId);
   const fin = await getSetting('financial', tx);
   const n = await nextCounter(tx, 'invoice'); // single serial shared by all invoice templates
-  const issuedAt = new Date();
+  // The invoice date is the requested (back-dated) one kept on the draft, else now. The real issue moment is
+  // kept apart, and the due date runs from it so a back-dated invoice is not instantly overdue.
+  const recordedAt = new Date();
+  const issuedAt = inv.issuedAt ?? recordedAt;
   const invoiceNumber = `${fin.invoicePrefix}${pad(n, 6)}`;
   const updated = await tx.invoice.update({
     where: { id: inv.id },
     data: {
-      invoiceNumber, issuedAt, status: D(inv.patientShare).eq(0) ? 'PAID' : 'ISSUED',
-      dueDate: fin.invoiceDueDays > 0 ? addDays(issuedAt, fin.invoiceDueDays) : issuedAt,
+      invoiceNumber, issuedAt, issuedRecordedAt: recordedAt, status: D(inv.patientShare).eq(0) ? 'PAID' : 'ISSUED',
+      dueDate: fin.invoiceDueDays > 0 ? addDays(recordedAt, fin.invoiceDueDays) : recordedAt,
     },
   });
   await moveStockForInvoice(tx, ctx, inv.id, invoiceNumber, false);
   await audit(tx, ctx, {
     action: 'invoice.issue', entityType: 'invoice', entityId: inv.id,
-    summary: `إصدار الفاتورة ${invoiceNumber} بقيمة ${D(inv.total).toNumber()}${D(inv.insuranceShare).gt(0) ? ` (حصة التأمين ${D(inv.insuranceShare).toNumber()}، حصة المريض ${D(inv.patientShare).toNumber()})` : ''}`,
+    summary: `إصدار الفاتورة ${invoiceNumber} بقيمة ${D(inv.total).toNumber()}${ymd(issuedAt) !== ymd(recordedAt) ? ` بتاريخ ${ymd(issuedAt)}` : ''}${D(inv.insuranceShare).gt(0) ? ` (حصة التأمين ${D(inv.insuranceShare).toNumber()}، حصة المريض ${D(inv.patientShare).toNumber()})` : ''}`,
   });
   // The company's share becomes an insurance receivable through its claim.
   await createClaimForInvoice(tx, ctx, inv.id);
@@ -281,4 +284,66 @@ export async function cancelInvoice(tx: Tx, ctx: Ctx, invoiceId: string, reason:
   if (inv.invoiceNumber) await moveStockForInvoice(tx, ctx, inv.id, inv.invoiceNumber, true);
   await audit(tx, ctx, { action: 'invoice.cancel', entityType: 'invoice', entityId: inv.id, summary: `إلغاء الفاتورة ${inv.invoiceNumber ?? '(مسودة)'}: ${reason}`, before: { status: inv.status }, after: { status: 'CANCELLED', reason } });
   return updated;
+}
+
+// ── Invoice date (back-dating) ──
+
+/** The given day (YYYY-MM-DD, clinic time) at the time of day of `time`, so order within a day stays natural. */
+const onDay = (day: string, time: Date) => {
+  const d = new Date(`${day}T00:00:00`);
+  d.setHours(time.getHours(), time.getMinutes(), time.getSeconds(), 0);
+  return d;
+};
+
+/**
+ * Invoice date requested when creating or editing an invoice. Nothing or today → null (the moment of issue).
+ * An earlier day needs invoices.backdate; a future day is never allowed. `current` is the date the invoice
+ * already holds: keeping it needs no permission (e.g. a receptionist finishing a draft an admin back-dated).
+ */
+export function requestedInvoiceDate(ctx: Ctx, day: string | null | undefined, current: Date | null = null): Date | null {
+  if (!day) return current;
+  const today = ymd(new Date());
+  if (day > today) throw badRequest('لا يمكن أن يكون تاريخ الفاتورة في المستقبل');
+  if (current && ymd(current) === day) return current;
+  if (day === today) return null;
+  if (!can(ctx, 'invoices.backdate')) throw forbidden('لا تملك صلاحية تحديد تاريخ سابق للفاتورة');
+  return onDay(day, new Date());
+}
+
+/**
+ * Changes the approved date of an existing invoice. Only the date moves: amounts, lines, payments, status and
+ * due date stay as they are. Refused when it would contradict records that already depend on the date.
+ */
+export async function changeInvoiceDate(tx: Tx, ctx: Ctx, invoiceId: string, day: string, reason: string | null) {
+  if (!can(ctx, 'invoices.backdate')) throw forbidden('لا تملك صلاحية تعديل تاريخ الفاتورة');
+  const inv = await tx.invoice.findUnique({
+    where: { id: invoiceId },
+    include: {
+      claim: { select: { claimNumber: true, status: true } },
+      payments: { where: { voidedAt: null, type: 'PAYMENT' }, orderBy: { paidAt: 'asc' }, take: 1, select: { paidAt: true, receiptNumber: true } },
+    },
+  });
+  if (!inv) throw notFound();
+  if (inv.status === 'CANCELLED') throw badRequest('لا يمكن تعديل تاريخ فاتورة ملغاة');
+  if (day > ymd(new Date())) throw badRequest('لا يمكن أن يكون تاريخ الفاتورة في المستقبل');
+  const old = inv.issuedAt ?? inv.createdAt;
+  if (ymd(old) === day) throw badRequest('التاريخ الجديد مطابق لتاريخ الفاتورة الحالي');
+  // A claim already sent to the insurer carries this invoice's date: changing it here would contradict the claim.
+  if (inv.claim && !['DRAFT', 'READY', 'CANCELLED'].includes(inv.claim.status)) {
+    throw badRequest(`لا يمكن تعديل التاريخ: مطالبة التأمين ${inv.claim.claimNumber} أُرسلت لشركة التأمين. يجب معالجة المطالبة أولاً (إلغاء الفاتورة وإصدار فاتورة جديدة بالتاريخ الصحيح)`);
+  }
+  // Money cannot be received for an invoice before the invoice exists.
+  const first = inv.payments[0];
+  if (first && ymd(first.paidAt) < day) {
+    throw badRequest(`لا يمكن جعل تاريخ الفاتورة بعد تاريخ أول دفعة عليها (${ymd(first.paidAt)}، سند ${first.receiptNumber})`);
+  }
+  const issuedAt = onDay(day, old);
+  await tx.invoice.update({ where: { id: inv.id }, data: { issuedAt } });
+  await audit(tx, ctx, {
+    action: 'invoice.date_change', entityType: 'invoice', entityId: inv.id,
+    summary: `تعديل تاريخ الفاتورة ${inv.invoiceNumber ?? '(مسودة)'} من ${ymd(old)} إلى ${day}${reason ? ` — السبب: ${reason}` : ''}`,
+    before: { invoiceNumber: inv.invoiceNumber, invoiceDate: ymd(old) },
+    after: { invoiceNumber: inv.invoiceNumber, invoiceDate: day, reason },
+  });
+  return { oldDate: ymd(old), newDate: day };
 }

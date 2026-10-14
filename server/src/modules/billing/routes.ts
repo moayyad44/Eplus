@@ -8,7 +8,7 @@ import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/errors';
 import { requireAnyPerm, requirePerm } from '../../middleware/auth';
 import { ageFrom, rangeFromQuery } from '../../lib/dates';
-import { addPayment, buildInvoice, cancelInvoice, issueInvoice, recomputeInvoice } from './service';
+import { addPayment, buildInvoice, cancelInvoice, changeInvoiceDate, issueInvoice, recomputeInvoice, requestedInvoiceDate } from './service';
 
 export const billingRouter = Router();
 
@@ -30,6 +30,8 @@ const invoiceBody = z.object({
   items: z.array(itemSchema).max(100),
   invoiceDiscount: z.coerce.number().min(0).default(0),
   notes: nullableStr(1000),
+  /** Invoice date (YYYY-MM-DD). Omitted or today = the moment of issue; earlier needs invoices.backdate. */
+  invoiceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'تاريخ غير صالح').nullable().optional(),
   issue: z.boolean().default(true),
   payment: z
     .object({ amount: z.coerce.number().positive(), methodId: z.string().uuid(), reference: nullableStr(100), notes: nullableStr(300) })
@@ -86,7 +88,8 @@ billingRouter.get(
       ...(q.visitId && { visitId: q.visitId }),
       ...(q.payerType && { payerType: q.payerType }),
       ...(q.insuranceCompanyId && { insuranceCompanyId: q.insuranceCompanyId }),
-      ...(q.from && { createdAt: (({ from, to }) => ({ gte: from, lte: to }))(rangeFromQuery(q.from, q.to)) }),
+      // Period filter by invoice date (drafts without one by creation date).
+      ...(q.from && (({ from, to }) => ({ AND: [{ OR: [{ issuedAt: { gte: from, lte: to } }, { issuedAt: null, createdAt: { gte: from, lte: to } }] }] }))(rangeFromQuery(q.from, q.to))),
       ...(q.q && { OR: [{ invoiceNumber: { contains: q.q, mode: 'insensitive' } }, { patient: { fullName: { contains: q.q, mode: 'insensitive' } } }, { patient: { phone: { contains: q.q } } }, { patient: { fileNumber: q.q } }] }),
     };
     const [items, total, sums] = await Promise.all([
@@ -181,8 +184,9 @@ billingRouter.post(
     if (body.payment && !req.ctx.perms.has('payments.create')) throw badRequest('لا تملك صلاحية تسجيل الدفع');
     const id = await prisma.$transaction(async (tx) => {
       const built = await buildInvoice(tx, req.ctx, body);
+      const issuedAt = requestedInvoiceDate(req.ctx, body.invoiceDate);
       const inv = await tx.invoice.create({
-        data: { ...built.header, branchId: req.ctx.branchId, createdById: req.ctx.userId, items: { create: built.items } },
+        data: { ...built.header, issuedAt, branchId: req.ctx.branchId, createdById: req.ctx.userId, items: { create: built.items } },
       });
       await audit(tx, req.ctx, { action: 'invoice.create', entityType: 'invoice', entityId: inv.id, summary: `فاتورة جديدة بقيمة ${inv.total}`, after: { ...built.header, items: built.items.map((i) => ({ d: i.description, q: i.quantity, p: i.unitPrice, t: i.lineTotal })) } });
       if (body.issue) await issueInvoice(tx, req.ctx, inv.id);
@@ -204,7 +208,8 @@ billingRouter.put(
       if (before.status !== 'DRAFT') throw badRequest('لا يمكن تعديل فاتورة صادرة. يمكنك إلغاؤها وإصدار فاتورة جديدة');
       const built = await buildInvoice(tx, req.ctx, { ...body, excludeInvoiceId: before.id });
       await tx.invoiceItem.deleteMany({ where: { invoiceId: before.id } });
-      await tx.invoice.update({ where: { id: before.id }, data: { ...built.header, items: { create: built.items } } });
+      const issuedAt = requestedInvoiceDate(req.ctx, body.invoiceDate, before.issuedAt);
+      await tx.invoice.update({ where: { id: before.id }, data: { ...built.header, issuedAt, items: { create: built.items } } });
       await audit(tx, req.ctx, {
         action: 'invoice.update', entityType: 'invoice', entityId: before.id, summary: 'تعديل مسودة فاتورة',
         before: { total: before.total, items: before.items.map((i) => ({ d: i.description, q: i.quantity, p: i.unitPrice })) },
@@ -213,6 +218,34 @@ billingRouter.put(
       if (body.issue) await issueInvoice(tx, req.ctx, before.id);
     });
     res.json(await loadInvoice(req.params.id));
+  }),
+);
+
+/** Changes the approved date of an invoice (back-dating). Permission is enforced here, not just hidden in the UI. */
+billingRouter.put(
+  '/invoices/:id/date',
+  requirePerm('invoices.backdate'),
+  ah(async (req, res) => {
+    const body = parse(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'تاريخ غير صالح'), reason: nullableStr(300) }), req.body);
+    const r = await prisma.$transaction((tx) => changeInvoiceDate(tx, req.ctx, req.params.id, body.date, body.reason ?? null));
+    res.json({ ...r, invoice: await loadInvoice(req.params.id) });
+  }),
+);
+
+/** History of date changes of one invoice, from the append-only audit log. */
+billingRouter.get(
+  '/invoices/:id/date-history',
+  requirePerm('invoices.view'),
+  ah(async (req, res) => {
+    const [inv, rows] = await Promise.all([
+      prisma.invoice.findUnique({ where: { id: req.params.id }, select: { invoiceNumber: true } }),
+      prisma.auditLog.findMany({ where: { entityType: 'invoice', entityId: req.params.id, action: 'invoice.date_change' }, orderBy: { createdAt: 'desc' } }),
+    ]);
+    const day = (v: unknown) => (v as { invoiceDate?: string } | null)?.invoiceDate ?? null;
+    res.json(rows.map((r) => ({
+      id: r.id, at: r.createdAt, userName: r.userName, invoiceNumber: inv?.invoiceNumber ?? null, summary: r.summary,
+      oldDate: day(r.before), newDate: day(r.after), reason: (r.after as { reason?: string | null } | null)?.reason ?? null,
+    })));
   }),
 );
 

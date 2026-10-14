@@ -6,7 +6,7 @@ export interface InvoiceItem {
 }
 export interface Payment { id: string; receiptNumber: string; type: 'PAYMENT' | 'REFUND'; amount: number; method: { id: string; name: string; code: string }; reference: string | null; notes: string | null; paidAt: string; receivedById: string | null; voidedAt: string | null; voidReason: string | null; voidedById: string | null }
 export interface Invoice {
-  id: string; invoiceNumber: string | null; status: string; issuedAt: string | null; dueDate: string | null; createdAt: string; notes: string | null;
+  id: string; invoiceNumber: string | null; status: string; issuedAt: string | null; issuedRecordedAt?: string | null; dueDate: string | null; createdAt: string; notes: string | null;
   subtotal: number; itemsDiscount: number; invoiceDiscount: number; discountTotal: number; taxTotal: number; total: number; paidAmount: number; refundedAmount: number; balance: number;
   cancelReason: string | null; cancelledAt: string | null; cancelledById: string | null; createdById: string | null;
   patient: { id: string; fullName: string; fileNumber: string; phone: string; address: string | null; age: number | null; gender: string };

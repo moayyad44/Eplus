@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation, useDebounced } from '@/lib/hooks';
-import { money, num, textMatch } from '@/lib/format';
+import { money, num, textMatch, ymd } from '@/lib/format';
 import type { Invoice, InvoiceTemplate } from '@/lib/billing';
 import type { PatientLite, Service } from '@/lib/types';
 import { Badge, Button, Card, CardHeader, Checkbox, EmptyState, Field, IconButton, Input, PageHeader, PageLoader, Select, Textarea } from '@/components/ui';
@@ -38,6 +38,8 @@ export default function InvoiceEditor() {
   const [lines, setLines] = useState<Line[]>([]);
   const [invoiceDiscount, setInvoiceDiscount] = useState('0');
   const [notes, setNotes] = useState('');
+  // Invoice date: today by default; an earlier day only with invoices.backdate (the API enforces it too).
+  const [invoiceDate, setInvoiceDate] = useState(ymd());
   const [search, setSearch] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [payAfter, setPayAfter] = useState(true);
@@ -76,6 +78,7 @@ export default function InvoiceEditor() {
       }));
       setInvoiceDiscount(String(num(d.invoiceDiscount)));
       setNotes(d.notes ?? '');
+      if (d.issuedAt) setInvoiceDate(ymd(new Date(d.issuedAt)));
       setPayer({ payerType: d.payerType === 'INSURANCE' ? 'INSURANCE' : 'SELF_PAY', patientInsuranceId: d.patientInsurance?.id ?? null });
       setLoaded(true);
       return;
@@ -113,7 +116,7 @@ export default function InvoiceEditor() {
 
   const insured = payer?.payerType === 'INSURANCE' && !!payer.patientInsuranceId;
   const body = (issue: boolean) => ({
-    patientId: patient?.id, visitId: visitId ?? draft.data?.visit?.id ?? null, doctorId, templateId: templateId || null, issue, notes: notes || null,
+    patientId: patient?.id, visitId: visitId ?? draft.data?.visit?.id ?? null, doctorId, templateId: templateId || null, issue, notes: notes || null, invoiceDate,
     invoiceDiscount: num(invoiceDiscount),
     ...(payer ? { payerType: payer.payerType, patientInsuranceId: payer.patientInsuranceId } : {}),
     items: lines.map((l) => ({
@@ -179,6 +182,9 @@ export default function InvoiceEditor() {
                 <Select value={templateId} onChange={(e) => changeTemplate(e.target.value)}>
                   {templates.data?.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </Select>
+              </Field>
+              <Field label={t('billing.invoiceDate')} hint={can('invoices.backdate') ? undefined : t('billing.invoiceDateLocked')} error={save.fieldErrors.invoiceDate}>
+                <Input type="date" value={invoiceDate} max={ymd()} disabled={!can('invoices.backdate')} onChange={(e) => setInvoiceDate(e.target.value || ymd())} />
               </Field>
               {patient && insuranceUi && (
                 <Field group label={t('ins.payer.label')} className="md:col-span-2">

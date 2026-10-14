@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Ban, Pencil, Printer, Receipt, RotateCcw, Send, ShieldCheck, Wallet } from 'lucide-react';
+import { Ban, CalendarClock, Pencil, Printer, Receipt, RotateCcw, Send, ShieldCheck, Wallet } from 'lucide-react';
+import { toast } from 'sonner';
 import clsx from 'clsx';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
-import { fmtDate, fmtDateTime, money, num, qty } from '@/lib/format';
+import { fmtDate, fmtDateTime, fmtDay, money, num, qty, ymd } from '@/lib/format';
 import type { Invoice } from '@/lib/billing';
-import { Badge, Button, Card, CardHeader, DataTable, ErrorState, PageHeader, PageLoader, useConfirm } from '@/components/ui';
+import { Badge, Button, Card, CardHeader, DataTable, Dialog, ErrorState, Field, Input, PageHeader, PageLoader, Textarea, useConfirm } from '@/components/ui';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { PaymentDialog } from '@/components/shared/PaymentDialog';
 
@@ -48,7 +49,7 @@ export default function InvoiceDetail() {
     <div>
       <PageHeader
         title={<span className="flex flex-wrap items-center gap-2">{inv.invoiceNumber ?? t('enum.InvoiceStatus.DRAFT')} <StatusBadge enumName="InvoiceStatus" value={inv.status} /></span>}
-        subtitle={<>{inv.template?.name} · {t('billing.issuedAt')}: {fmtDateTime(inv.issuedAt ?? inv.createdAt)}{inv.dueDate && ` · ${t('billing.dueDate')}: ${fmtDate(inv.dueDate)}`}</>}
+        subtitle={<>{inv.template?.name} · {t('billing.invoiceDate')}: {fmtDate(inv.issuedAt ?? inv.createdAt)}{inv.dueDate && ` · ${t('billing.dueDate')}: ${fmtDate(inv.dueDate)}`}</>}
         actions={
           <>
             {inv.status === 'DRAFT' && can('invoices.update') && <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => nav(`/billing/invoices/${inv.id}/edit`)}>{t('common.edit')}</Button>}
@@ -131,6 +132,7 @@ export default function InvoiceDetail() {
           </Card>
         </div>
         <aside className="space-y-4">
+          <InvoiceDateCard inv={inv} />
           <Card>
             <CardHeader title={t('billing.patientInfo')} />
             <Link to={`/patients/${inv.patient.id}`} className="text-lg font-bold hover:text-primary-700">{inv.patient.fullName}</Link>
@@ -190,5 +192,71 @@ export default function InvoiceDetail() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Invoice date next to the real creation / issue times (kept for audit), the change-date action for users
+ * with invoices.backdate (also enforced by the API), and the history of date changes from the audit log.
+ */
+function InvoiceDateCard({ inv }: { inv: Invoice }) {
+  const { t } = useTranslation();
+  const { can } = useAuth();
+  const confirm = useConfirm();
+  const [edit, setEdit] = useState<{ date: string; reason: string } | null>(null);
+  const history = useQuery({
+    queryKey: ['invoice', inv.id, 'date-history'],
+    queryFn: () => api.get<{ id: string; at: string; userName: string | null; oldDate: string | null; newDate: string | null; reason: string | null }[]>(`/billing/invoices/${inv.id}/date-history`),
+  });
+  const change = useApiMutation((v: { date: string; reason: string }) => api.put<{ oldDate: string; newDate: string }>(`/billing/invoices/${inv.id}/date`, { date: v.date, reason: v.reason || null }), {
+    invalidate: [['invoice', inv.id], ['invoices']],
+    success: false,
+    onSuccess: (r) => { toast.success(t('billing.date.changed', { from: day(r.oldDate), to: day(r.newDate) })); setEdit(null); },
+  });
+  const current = ymd(new Date(inv.issuedAt ?? inv.createdAt));
+  // A YYYY-MM-DD day shown like other dates, isolated so it reads correctly inside Arabic sentences.
+  const day = (d: string | null) => (d ? `\u2068${fmtDay(`${d}T00:00:00Z`)}\u2069` : '—');
+  const save = async () => {
+    if (!edit) return;
+    if (await confirm({ message: t('billing.date.confirm', { number: `\u2068${inv.invoiceNumber ?? t('enum.InvoiceStatus.DRAFT')}\u2069`, from: day(current), to: day(edit.date) }), confirmLabel: t('billing.date.save') })) change.mutate(edit);
+  };
+  const row = (label: string, value: React.ReactNode, strong = false) => (
+    <div className="flex justify-between gap-2"><dt className="text-ink-muted">{label}</dt><dd className={strong ? 'font-bold' : 'tabular-nums'}>{value}</dd></div>
+  );
+  return (
+    <Card>
+      <CardHeader
+        title={t('billing.invoiceDate')}
+        icon={<CalendarClock className="h-5 w-5" />}
+        actions={inv.status !== 'CANCELLED' && can('invoices.backdate') && <Button size="sm" variant="outline" onClick={() => setEdit({ date: current, reason: '' })}>{t('billing.date.edit')}</Button>}
+      />
+      <dl className="space-y-2 text-sm">
+        {row(t('billing.invoiceDate'), <bdi>{inv.issuedAt ? fmtDate(inv.issuedAt) : t('billing.date.onIssue')}</bdi>, true)}
+        {row(t('billing.date.createdAt'), <bdi>{fmtDateTime(inv.createdAt)}</bdi>)}
+        {inv.issuedRecordedAt && row(t('billing.date.issuedRecordedAt'), <bdi>{fmtDateTime(inv.issuedRecordedAt)}</bdi>)}
+      </dl>
+      {!!history.data?.length && (
+        <div className="mt-3 border-t border-line pt-2">
+          <p className="mb-1 text-xs font-semibold text-ink-muted">{t('billing.date.history')}</p>
+          <ul className="space-y-1.5 text-xs">
+            {history.data.map((h) => (
+              <li key={h.id} className="rounded-lg bg-surface-subtle px-2 py-1.5">
+                <span className="tabular-nums">{t('billing.date.fromTo', { from: day(h.oldDate), to: day(h.newDate) })}</span>
+                <span className="block text-ink-muted">{h.userName} · <bdi>{fmtDateTime(h.at)}</bdi>{h.reason && ` · ${h.reason}`}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {edit && (
+        <Dialog open onClose={() => setEdit(null)} title={t('billing.date.edit')} footer={<><Button variant="outline" onClick={() => setEdit(null)}>{t('common.cancel')}</Button><Button loading={change.isPending} disabled={!edit.date || edit.date === current} onClick={save}>{t('billing.date.save')}</Button></>}>
+          <div className="space-y-3">
+            <p className="rounded-xl bg-warning-50 px-3 py-2 text-xs text-warning-800">{t('billing.date.hint')}</p>
+            <Field label={t('billing.invoiceDate')} required error={change.fieldErrors.date}><Input type="date" max={ymd()} value={edit.date} onChange={(e) => setEdit({ ...edit, date: e.target.value })} /></Field>
+            <Field label={t('common.reason')}><Textarea rows={2} value={edit.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} /></Field>
+          </div>
+        </Dialog>
+      )}
+    </Card>
   );
 }

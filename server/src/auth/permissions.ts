@@ -44,6 +44,7 @@ export const PERMISSIONS = {
   'invoices.discount': { module: 'billing', description: 'منح الخصومات' },
   'invoices.price_override': { module: 'billing', description: 'تعديل سعر البند' },
   'invoices.cancel': { module: 'billing', description: 'إلغاء الفواتير' },
+  'invoices.backdate': { module: 'billing', description: 'تحديد تاريخ الفاتورة بأثر رجعي وتعديله بعد الإصدار' },
   'payments.create': { module: 'billing', description: 'تسجيل المدفوعات' },
   'payments.refund': { module: 'billing', description: 'تسجيل المرتجعات' },
   'payments.void': { module: 'billing', description: 'إلغاء دفعة مسجلة' },

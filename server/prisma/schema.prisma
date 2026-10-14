@@ -867,7 +867,12 @@ model Invoice {
   doctorId                 String?
   branchId                 String?
   status                   InvoiceStatus @default(DRAFT)
+  /// The approved invoice date used by lists, prints and all financial reports. Normally the moment of
+  /// issue; may be set earlier (back-dated) or changed later only with the invoices.backdate permission.
+  /// On a draft it holds a requested date (null = the day it is issued).
   issuedAt                 DateTime?
+  /// When the invoice was actually issued in the system (never changes; for audit next to createdAt).
+  issuedRecordedAt         DateTime?
   dueDate                  DateTime?
   subtotal                 Decimal       @default(0) @db.Decimal(12, 3)
   itemsDiscount            Decimal       @default(0) @db.Decimal(12, 3)

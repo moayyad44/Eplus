@@ -70,7 +70,7 @@ export default function Invoices() {
           onSort={list.setSort}
           columns={[
             { key: 'invoiceNumber', header: t('billing.invoiceNumber'), sortable: true, cell: (r) => <span className="font-mono text-xs font-semibold">{r.invoiceNumber ?? t('enum.InvoiceStatus.DRAFT')}</span> },
-            { key: 'createdAt', header: t('common.date'), sortable: true, cell: (r) => fmtDate(r.issuedAt ?? r.createdAt) },
+            { key: 'issuedAt', header: t('billing.invoiceDate'), sortable: true, cell: (r) => fmtDate(r.issuedAt ?? r.createdAt) },
             { key: 'p', header: t('common.patient'), cell: (r) => <b>{r.patient.fullName}</b> },
             { key: 'doc', header: t('common.doctor'), hideOnMobile: true, cell: (r) => r.doctor?.fullName ?? '—' },
             { key: 'total', header: t('common.total'), sortable: true, cell: (r) => <span className="tabular-nums">{money(r.total)}</span> },
