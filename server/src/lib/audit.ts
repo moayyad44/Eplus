@@ -2,7 +2,7 @@ import type { Ctx } from '../auth/context';
 import type { Db } from './prisma';
 import { prisma } from './prisma';
 
-const SECRET_KEYS = new Set(['passwordHash', 'password', 'refreshTokenHash']);
+const SECRET_KEYS = new Set(['passwordHash', 'password', 'refreshTokenHash', 'clientId', 'secretKey', 'clientIdEnc', 'secretKeyEnc']);
 
 const clean = (v: unknown): unknown => {
   if (v === undefined) return undefined;

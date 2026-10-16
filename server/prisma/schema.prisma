@@ -902,6 +902,7 @@ model Invoice {
   insuranceCompany  InsuranceCompany?  @relation(fields: [insuranceCompanyId], references: [id])
   insuranceContract InsuranceContract? @relation(fields: [insuranceContractId], references: [id])
   claim             InsuranceClaim?
+  einvoices         EInvoice[]
 
   @@index([status, issuedAt])
   @@index([insuranceCompanyId, issuedAt])
@@ -1057,8 +1058,8 @@ enum ClaimEventType {
 }
 
 model InsuranceCompany {
-  id             String    @id @default(uuid())
-  code           String    @unique
+  id             String                @id @default(uuid())
+  code           String                @unique
   nameAr         String
   nameEn         String?
   phone          String?
@@ -1066,14 +1067,18 @@ model InsuranceCompany {
   address        String?
   contactPerson  String?
   contractNumber String?
-  contractStart  DateTime? @db.Date
-  contractEnd    DateTime? @db.Date
+  contractStart  DateTime?             @db.Date
+  contractEnd    DateTime?             @db.Date
   /// Amount owed by the company before the system was used (company account statement).
-  openingBalance Decimal   @default(0) @db.Decimal(12, 3)
-  isActive       Boolean   @default(true)
+  openingBalance Decimal               @default(0) @db.Decimal(12, 3)
+  /// Company tax number, sent as the buyer's TN on its own national invoice (JoFotara) when it has one.
+  taxNumber      String?
+  /// What the national invoicing system (JoFotara) receives for this company's insurance invoices.
+  einvoiceMode   EInvoiceInsuranceMode @default(PATIENT_SHARE)
+  isActive       Boolean               @default(true)
   notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
   contracts      InsuranceContract[]
   memberships    PatientInsurance[]
@@ -1811,4 +1816,118 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ── National e-invoicing (JoFotara, ISTD technical guide v1.5) ──
+
+/// What goes to the national system for an insurance invoice of a company.
+enum EInvoiceInsuranceMode {
+  /// Only the share the patient pays (cash invoice to the patient). Default.
+  PATIENT_SHARE
+  /// The whole invoice amount as one cash invoice to the patient.
+  FULL_TO_PATIENT
+  /// Patient share to the patient (cash) + company share to the company (receivable).
+  PATIENT_AND_COMPANY
+}
+
+enum EInvoiceKind {
+  SALE
+  RETURN
+}
+
+enum EInvoiceParty {
+  PATIENT
+  COMPANY
+}
+
+enum EInvoiceStatus {
+  /// Prepared, not sent yet.
+  PENDING
+  /// A send is in progress.
+  SENDING
+  /// Accepted by the national system (SUBMITTED / ALREADY_SUBMITTED with a QR code).
+  SUBMITTED
+  /// Refused with validation errors (NOT_SUBMITTED / HTTP 400). Never accepted.
+  REJECTED
+  /// Refused before validation (credentials 403, tax number / income source 500, local checks). Never accepted.
+  FAILED
+  /// No answer (timeout, network, gateway): may or may not have been accepted. Resent with the same ID+UUID.
+  UNKNOWN
+  /// Never accepted and no longer needed (its invoice was cancelled).
+  VOID
+}
+
+/// One document sent to the national system: a sale invoice (388) or a return invoice (381).
+/// docNumber + uuid are its primary key at the national system and never change once created.
+model EInvoice {
+  id            String         @id @default(uuid())
+  invoiceId     String
+  kind          EInvoiceKind
+  party         EInvoiceParty
+  /// cbc:ID
+  docNumber     String         @unique
+  /// cbc:UUID
+  uuid          String         @unique
+  /// Invoice counter (ICV), sequential from 1. Given on the first real send, so documents voided before they
+  /// were ever sent leave no gap; kept unchanged on every resend.
+  icv           Int?           @unique
+  /// InvoiceTypeCode name: 012 (cash, local) or 022 (receivable, local).
+  typeName      String
+  issueDate     DateTime       @db.Date
+  /// Return documents: the sale document they return from.
+  originalId    String?
+  reason        String?
+  total         Decimal        @db.Decimal(12, 3)
+  taxTotal      Decimal        @default(0) @db.Decimal(12, 3)
+  /// Lines as sent: [{ lineId, itemId, name, quantity, unitPrice, discount, taxPercent, taxCategory }]
+  lines         Json
+  /// Buyer block as sent (returns repeat their sale's buyer).
+  buyer         Json
+  /// The exact XML last sent (resent byte-for-byte while the outcome is unknown).
+  xml           String
+  status        EInvoiceStatus @default(PENDING)
+  attempts      Int            @default(0)
+  lastAttemptAt DateTime?
+  nextAttemptAt DateTime?
+  submittedAt   DateTime?
+  qr            String?
+  signedInvoice String?
+  einvNum       String?
+  einvUuid      String?
+  /// Short message for the user; details are in the attempts.
+  lastError     String?
+  createdById   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  invoice     Invoice           @relation(fields: [invoiceId], references: [id])
+  original    EInvoice?         @relation("EInvoiceReturns", fields: [originalId], references: [id])
+  returns     EInvoice[]        @relation("EInvoiceReturns")
+  attemptsLog EInvoiceAttempt[]
+
+  @@index([invoiceId])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+  @@map("einvoices")
+}
+
+/// Every send and its answer (audit trail). Never holds credentials.
+model EInvoiceAttempt {
+  id         String   @id @default(uuid())
+  eInvoiceId String
+  at         DateTime @default(now())
+  httpStatus Int?
+  einvStatus String?
+  /// SUBMITTED / REJECTED / FAILED / UNKNOWN
+  outcome    String
+  message    String?
+  errors     Json?
+  durationMs Int?
+  /// null = automatic (issue / background retry)
+  userId     String?
+
+  eInvoice EInvoice @relation(fields: [eInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([eInvoiceId, at])
+  @@map("einvoice_attempts")
 }

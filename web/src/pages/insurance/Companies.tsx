@@ -7,7 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
 import { fmtDate, money } from '@/lib/format';
 import { useInsuranceCompanies, type Company } from '@/lib/insurance';
-import { Badge, Button, Card, Checkbox, DataTable, Dialog, Field, Input, PageHeader, Textarea } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, Select, DataTable, Dialog, Field, Input, PageHeader, Textarea } from '@/components/ui';
 
 export default function Companies() {
   const { t } = useTranslation();
@@ -47,6 +47,7 @@ export function CompanyDialog({ company, onClose }: { company: Company | null; o
     code: company?.code ?? '', nameAr: company?.nameAr ?? '', nameEn: company?.nameEn ?? '', phone: company?.phone ?? '', email: company?.email ?? '', address: company?.address ?? '',
     contactPerson: company?.contactPerson ?? '', contractNumber: company?.contractNumber ?? '', contractStart: company?.contractStart?.slice(0, 10) ?? '', contractEnd: company?.contractEnd?.slice(0, 10) ?? '',
     openingBalance: String(company?.openingBalance ?? 0), isActive: company?.isActive ?? true, notes: company?.notes ?? '',
+    taxNumber: company?.taxNumber ?? '', einvoiceMode: company?.einvoiceMode ?? 'PATIENT_SHARE',
   });
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV({ ...v, [k]: e.target.value });
   const save = useApiMutation(
@@ -72,6 +73,12 @@ export function CompanyDialog({ company, onClose }: { company: Company | null; o
         <Field label={t('ins.f.openingBalance')}><Input type="number" min={0} step="0.001" value={v.openingBalance} onChange={set('openingBalance')} dir="ltr" /></Field>
         <Field label={t('ins.f.contractStart')}><Input type="date" value={v.contractStart} onChange={set('contractStart')} /></Field>
         <Field label={t('ins.f.contractEnd')}><Input type="date" value={v.contractEnd} onChange={set('contractEnd')} /></Field>
+        <Field label={t('einv.mode.label')} className="sm:col-span-2">
+          <Select value={v.einvoiceMode} onChange={set('einvoiceMode')}>
+            {(['PATIENT_SHARE', 'FULL_TO_PATIENT', 'PATIENT_AND_COMPANY'] as const).map((m) => <option key={m} value={m}>{t(`einv.mode.${m}`)}</option>)}
+          </Select>
+        </Field>
+        <Field label={t('einv.mode.taxNumber')} error={fe.taxNumber}><Input value={v.taxNumber} onChange={set('taxNumber')} dir="ltr" inputMode="numeric" /></Field>
         <Field label={t('ins.f.notes')} className="sm:col-span-2"><Textarea rows={2} value={v.notes} onChange={set('notes')} /></Field>
         <Checkbox label={t('ins.f.isActive')} checked={v.isActive} onChange={(e) => setV({ ...v, isActive: e.target.checked })} />
       </div>

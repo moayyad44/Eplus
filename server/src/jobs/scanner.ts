@@ -5,6 +5,7 @@ import { getSetting } from '../lib/settings';
 import { notifyPermission, notifyUsers, usersWithPermission } from '../lib/notify';
 import { num } from '../lib/money';
 import { shiftWindow } from '../modules/staff/attendance';
+import { processQueue } from '../modules/einvoice/service';
 
 /**
  * Periodic scanner that turns data conditions into notifications and keeps time-based states current.
@@ -105,5 +106,8 @@ export async function runScan(now = new Date()) {
 export function startJobs() {
   const tick = () => runScan().catch((e) => console.error('[scanner]', e));
   setTimeout(tick, 10_000);
-  return setInterval(tick, 10 * 60_000);
+  const scan = setInterval(tick, 10 * 60_000);
+  // National e-invoicing: send what is pending and retry unknown outcomes (same ID+UUID) every minute.
+  const einv = setInterval(() => processQueue().catch((e) => console.error('[einvoice]', (e as Error)?.message)), 60_000);
+  return { scan, einv };
 }

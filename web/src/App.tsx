@@ -47,6 +47,7 @@ const InsurancePayments = p(() => import('./pages/insurance/Payments'));
 const InsuranceCompanies = p(() => import('./pages/insurance/Companies'));
 const InsuranceCompanyDetail = p(() => import('./pages/insurance/CompanyDetail'));
 const InsuranceReports = p(() => import('./pages/insurance/Reports'));
+const EInvoicePage = p(() => import('./pages/einvoice/EInvoicePage'));
 const Notifications = p(() => import('./pages/system/Notifications'));
 const AuditLogs = p(() => import('./pages/system/AuditLogs'));
 const Settings = p(() => import('./pages/settings/Settings'));
@@ -110,6 +111,7 @@ export default function App() {
         <Route path="billing/outstanding" element={<Guard any={['invoices.view']}><Outstanding /></Guard>} />
         <Route path="billing/cashier" element={<Guard any={['cashier.view']}><Cashier /></Guard>} />
         <Route path="billing/payments" element={<Guard any={['cashier.view', 'payments.create']}><Payments /></Guard>} />
+        <Route path="einvoice" element={<Guard any={['einvoice.view', 'einvoice.settings']}><EInvoicePage /></Guard>} />
         <Route path="expenses" element={<Guard any={['expenses.view']}><Expenses /></Guard>} />
         <Route path="insurance" element={<Guard any={['insurance.report.view']}><InsuranceDashboard /></Guard>} />
         <Route path="insurance/claims" element={<Guard any={['insurance.view']}><InsuranceClaims /></Guard>} />

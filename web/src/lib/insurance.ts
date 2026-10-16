@@ -11,6 +11,7 @@ export interface ContractLite { id: string; name: string; contractNumber: string
 export interface Company {
   id: string; code: string; nameAr: string; nameEn: string | null; phone: string | null; email: string | null; address: string | null; contactPerson: string | null;
   contractNumber: string | null; contractStart: string | null; contractEnd: string | null; openingBalance: number; isActive: boolean; notes: string | null;
+  taxNumber: string | null; einvoiceMode: 'PATIENT_SHARE' | 'FULL_TO_PATIENT' | 'PATIENT_AND_COMPANY';
   contracts: ContractLite[]; _count?: { memberships: number; claims: number }; outstanding?: number;
 }
 export interface Rule {

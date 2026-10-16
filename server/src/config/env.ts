@@ -25,6 +25,16 @@ const schema = z.object({
    * off for plain http on the clinic network (IP address), so both ways of reaching the app keep working.
    */
   SECURE_COOKIES: z.enum(['true', 'false', 'auto']).default('auto'),
+  /**
+   * Key that encrypts stored credentials (JoFotara Client ID / Secret Key). Unset → derived from JWT_SECRET.
+   * Changing it (or JWT_SECRET when unset) means the credentials must be entered again in Settings.
+   */
+  SECRETS_KEY: z.string().min(32).optional(),
+  /**
+   * JoFotara endpoint override, for a local mock only. The official endpoint is used only in production:
+   * development and tests must point here, so no test invoice can ever reach the real national system.
+   */
+  JOFOTARA_API_URL: z.string().url().optional(),
   DISABLE_JOBS: z.enum(['true', 'false', '1', '0']).default('false').transform((v) => v === 'true' || v === '1'),
 });
 

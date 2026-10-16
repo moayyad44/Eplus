@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Activity, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardCheck, ConciergeBell, FileClock, FileText, FlaskConical, History,
-  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart,
+  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -40,6 +40,7 @@ export const NAV: NavSection[] = [
       { to: '/billing/cashier', label: 'nav.cashier', icon: i(Wallet), any: ['cashier.view'] },
       { to: '/billing/payments', label: 'nav.payments', icon: i(CreditCard), any: ['cashier.view', 'payments.create'] },
       { to: '/expenses', label: 'nav.expenses', icon: i(Receipt), any: ['expenses.view'] },
+      { to: '/einvoice', label: 'nav.einvoice', icon: i(QrCode), any: ['einvoice.view', 'einvoice.settings'] },
     ],
   },
   {

@@ -32,6 +32,7 @@ import { reportsRouter } from './modules/reports/routes';
 import { auditRouter, notificationsRouter, searchRouter } from './modules/system/routes';
 import { backupsRouter } from './modules/system/backups';
 import { insuranceRouter } from './modules/insurance/routes';
+import { einvoiceRouter } from './modules/einvoice/routes';
 import { claimsRouter, insurancePaymentsRouter, insuranceReportsRouter } from './modules/insurance/claimRoutes';
 
 export function createApp() {
@@ -106,6 +107,7 @@ export function createApp() {
   api.use('/appointments', appointmentsRouter);
   api.use('/attachments', attachmentsRouter);
   api.use('/billing', billingRouter);
+  api.use('/einvoice', einvoiceRouter);
   api.use('/cashier', cashierRouter);
   api.use('/expenses', expensesRouter);
   api.use('/inventory', inventoryRouter);

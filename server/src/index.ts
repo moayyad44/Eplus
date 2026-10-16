@@ -9,7 +9,7 @@ async function main() {
   const server = app.listen(env.PORT, () => console.log(`EmergencyPlus API listening on :${env.PORT} (${env.NODE_ENV}, TZ=${env.TZ})`));
   const timer = env.DISABLE_JOBS ? null : startJobs();
   const shutdown = async () => {
-    if (timer) clearInterval(timer);
+    if (timer) { clearInterval(timer.scan); clearInterval(timer.einv); }
     server.close();
     await prisma.$disconnect();
     process.exit(0);

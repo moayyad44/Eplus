@@ -8,6 +8,7 @@ import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/errors';
 import { requireAnyPerm, requirePerm } from '../../middleware/auth';
 import { ageFrom, rangeFromQuery } from '../../lib/dates';
+import { flushInvoice } from '../einvoice/service';
 import { addPayment, buildInvoice, cancelInvoice, changeInvoiceDate, changePaymentDate, issueInvoice, recomputeInvoice, requestedInvoiceDate } from './service';
 
 export const billingRouter = Router();
@@ -193,6 +194,7 @@ billingRouter.post(
       if (body.payment) await addPayment(tx, req.ctx, inv.id, body.payment);
       return inv.id;
     });
+    if (body.issue) await flushInvoice(id);
     res.status(201).json(await loadInvoice(id));
   }),
 );
@@ -217,6 +219,7 @@ billingRouter.put(
       });
       if (body.issue) await issueInvoice(tx, req.ctx, before.id);
     });
+    if (body.issue) await flushInvoice(req.params.id);
     res.json(await loadInvoice(req.params.id));
   }),
 );
@@ -254,6 +257,7 @@ billingRouter.post(
   requirePerm('invoices.create'),
   ah(async (req, res) => {
     await prisma.$transaction((tx) => issueInvoice(tx, req.ctx, req.params.id));
+    await flushInvoice(req.params.id);
     res.json(await loadInvoice(req.params.id));
   }),
 );
@@ -264,6 +268,7 @@ billingRouter.post(
   ah(async (req, res) => {
     const { reason } = parse(z.object({ reason: z.string().trim().min(3, 'يرجى ذكر سبب الإلغاء').max(300) }), req.body);
     await prisma.$transaction((tx) => cancelInvoice(tx, req.ctx, req.params.id, reason));
+    await flushInvoice(req.params.id); // return invoices for what the national system had accepted
     res.json(await loadInvoice(req.params.id));
   }),
 );

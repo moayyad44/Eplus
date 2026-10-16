@@ -13,6 +13,7 @@ import type { Invoice } from '@/lib/billing';
 import { Badge, Button, Card, CardHeader, DataTable, Dialog, ErrorState, Field, IconButton, Input, PageHeader, PageLoader, Textarea, useConfirm } from '@/components/ui';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { PaymentDialog } from '@/components/shared/PaymentDialog';
+import { EInvoiceCard } from '@/components/shared/EInvoiceCard';
 
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
@@ -26,8 +27,8 @@ export default function InvoiceDetail() {
   // Opened straight after "issue & record payment": print the invoice itself rather than the receipt.
   const [afterIssue, setAfterIssue] = useState(false);
   const q = useQuery({ queryKey: ['invoice', id], queryFn: () => api.get<Invoice>(`/billing/invoices/${id}`) });
-  const issue = useApiMutation(() => api.post(`/billing/invoices/${id}/issue`), { invalidate: [['invoice', id], ['invoices']] });
-  const cancel = useApiMutation((reason: string) => api.post(`/billing/invoices/${id}/cancel`, { reason }), { invalidate: [['invoice', id], ['invoices']], success: t('common.done') });
+  const issue = useApiMutation(() => api.post(`/billing/invoices/${id}/issue`), { invalidate: [['invoice', id], ['invoices'], ['einvoice']] });
+  const cancel = useApiMutation((reason: string) => api.post(`/billing/invoices/${id}/cancel`, { reason }), { invalidate: [['invoice', id], ['invoices'], ['einvoice']], success: t('common.done') });
   const voidPay = useApiMutation((v: { id: string; reason: string }) => api.post(`/billing/payments/${v.id}/void`, { reason: v.reason }), { invalidate: [['invoice', id], ['invoices']], success: t('common.done') });
 
   useEffect(() => {
@@ -136,6 +137,7 @@ export default function InvoiceDetail() {
         </div>
         <aside className="space-y-4">
           <InvoiceDateCard inv={inv} />
+          {inv.status !== 'DRAFT' && <EInvoiceCard invoiceId={inv.id} />}
           <Card>
             <CardHeader title={t('billing.patientInfo')} />
             <Link to={`/patients/${inv.patient.id}`} className="text-lg font-bold hover:text-primary-700">{inv.patient.fullName}</Link>

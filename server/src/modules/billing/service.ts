@@ -12,6 +12,7 @@ import { recordMovement } from '../inventory/service';
 import { changeVisitStatus } from '../visits/service';
 import { computeCoverage, contractPrice, usableMembership, type MembershipWithContract } from '../insurance/coverage';
 import { cancelClaimWithInvoice, createClaimForInvoice } from '../insurance/claims';
+import { onInvoiceCancel, onInvoiceDateChange, prepareSaleDocs } from '../einvoice/service';
 
 export interface InvoiceItemInput {
   serviceId: string;
@@ -193,6 +194,8 @@ export async function issueInvoice(tx: Tx, ctx: Ctx, invoiceId: string) {
   });
   // The company's share becomes an insurance receivable through its claim.
   await createClaimForInvoice(tx, ctx, inv.id);
+  // National e-invoicing: documents prepared now (fixed number + UUID), sent once this transaction commits.
+  await prepareSaleDocs(tx, ctx, inv.id);
   // Nothing left for the patient to pay (e.g. fully covered) → the visit is done.
   if (updated.status === 'PAID' && inv.visitId) {
     const visit = await tx.visit.findUnique({ where: { id: inv.visitId }, select: { status: true } });
@@ -278,6 +281,9 @@ export async function cancelInvoice(tx: Tx, ctx: Ctx, invoiceId: string, reason:
   if (inv.status === 'CANCELLED') throw badRequest('الفاتورة ملغاة مسبقاً');
   const netPaid = D(inv.paidAmount).sub(inv.refundedAmount);
   if (netPaid.gt(0)) throw new AppError(409, 'HAS_PAYMENTS', 'لا يمكن إلغاء فاتورة عليها مدفوعات. قم بإرجاع المبلغ أولاً');
+  // Before anything changes: refused while a national submission's outcome is unknown; otherwise accepted national
+  // documents get a return invoice and unsent ones are voided.
+  await onInvoiceCancel(tx, ctx, inv.id, reason);
   await cancelClaimWithInvoice(tx, ctx, inv.id, reason);
   const updated = await tx.invoice.update({
     where: { id: inv.id },
@@ -339,6 +345,8 @@ export async function changeInvoiceDate(tx: Tx, ctx: Ctx, invoiceId: string, day
   if (first && ymd(first.paidAt) < day) {
     throw badRequest(`لا يمكن جعل تاريخ الفاتورة بعد تاريخ أول دفعة عليها (${ymd(first.paidAt)}، سند ${first.receiptNumber})`);
   }
+  // An invoice already accepted by the national system keeps the date it was reported with.
+  await onInvoiceDateChange(tx, inv.id, day);
   const issuedAt = onDay(day, old);
   await tx.invoice.update({ where: { id: inv.id }, data: { issuedAt } });
   await audit(tx, ctx, {

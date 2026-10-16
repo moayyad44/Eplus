@@ -6,6 +6,7 @@ export default {
     },
     Priority: { NORMAL: 'عادي', URGENT: 'مستعجل', EMERGENCY: 'طارئ' },
     Gender: { MALE: 'ذكر', FEMALE: 'أنثى' },
+    EInvoiceStatus: { PENDING: 'بانتظار الإرسال', SENDING: 'جارٍ الإرسال', SUBMITTED: 'معتمدة', REJECTED: 'مرفوضة', FAILED: 'لم تُرسل', UNKNOWN: 'النتيجة غير معروفة', VOID: 'ملغاة (لم تُعتمد)' },
     InvoiceStatus: { DRAFT: 'مسودة', ISSUED: 'صادرة', PARTIALLY_PAID: 'مدفوعة جزئياً', PAID: 'مدفوعة', OVERDUE: 'متأخرة', CANCELLED: 'ملغاة', REFUNDED: 'مستردة' },
     LabOrderStatus: { REQUESTED: 'مطلوب', SAMPLE_COLLECTED: 'تم سحب العينة', PROCESSING: 'قيد التحليل', COMPLETED: 'مكتمل', CANCELLED: 'ملغى' },
     AppointmentStatus: { SCHEDULED: 'مجدول', CONFIRMED: 'مؤكد', ARRIVED: 'حضر', COMPLETED: 'مكتمل', CANCELLED: 'ملغى', NO_SHOW: 'لم يحضر' },

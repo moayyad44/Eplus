@@ -17,6 +17,7 @@ const TONES: Record<string, Record<string, Tone>> = {
   AuthorizationStatus: { PENDING: 'neutral', SUBMITTED: 'info', APPROVED: 'success', PARTIALLY_APPROVED: 'warning', REJECTED: 'danger', EXPIRED: 'danger', CANCELLED: 'neutral' },
   InsuranceStatus: { ACTIVE: 'success', SUSPENDED: 'danger', EXPIRED: 'danger', NOT_STARTED: 'warning', ARCHIVED: 'neutral' },
   PayerType: { SELF_PAY: 'neutral', INSURANCE: 'primary', CORPORATE: 'violet', GOVERNMENT: 'info', OTHER: 'neutral' },
+  EInvoiceStatus: { PENDING: 'warning', SENDING: 'info', SUBMITTED: 'success', REJECTED: 'danger', FAILED: 'danger', UNKNOWN: 'warning', VOID: 'neutral' },
   InventoryTxnType: { PURCHASE: 'success', RECEIPT: 'success', RETURN: 'success', SALE_REVERSAL: 'success', ISSUE: 'warning', CONSUMPTION: 'warning', SALE: 'info', ADJUSTMENT: 'violet', STOCK_COUNT: 'violet' },
 };
 

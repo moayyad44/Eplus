@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { EInvoiceQr, useEInvoiceDocs } from '@/components/shared/EInvoiceCard';
 import { Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -72,10 +73,14 @@ function InvoicePrint() {
   const s = useSettings();
   const thermal = !!p.get('thermal');
   const q = useQuery({ queryKey: ['invoice', id], queryFn: () => api.get<Invoice>(`/billing/invoices/${id}`) });
+  // National e-invoicing: the patient's accepted document carries the official QR printed on the invoice.
+  const einv = useEInvoiceDocs(id!, !!q.data && q.data.status !== 'DRAFT');
   if (q.error) return <ErrorState error={q.error} />;
   const inv = q.data;
+  const national = einv.data?.find((d) => d.kind === 'SALE' && d.party === 'PATIENT' && d.status !== 'VOID');
+  const ready = !!inv && (inv.status === 'DRAFT' || !einv.isLoading);
   return (
-    <Shell title={`${t('print.invoice')} ${inv?.invoiceNumber ?? ''}`} ready={!!inv} thermal={thermal} footer={s.data?.financial.invoiceFooter}>
+    <Shell title={`${t('print.invoice')} ${inv?.invoiceNumber ?? ''}`} ready={ready} thermal={thermal} footer={s.data?.financial.invoiceFooter}>
       {inv && (
         <>
           <div className={clsx('mb-4 grid gap-1', thermal ? 'grid-cols-1' : 'grid-cols-2')}>
@@ -119,6 +124,20 @@ function InvoicePrint() {
             <div className="mt-4 text-xs">
               <p className="mb-1 font-bold">{t('billing.payments')}</p>
               {inv.payments.filter((x) => !x.voidedAt).map((x) => <p key={x.id}>{x.receiptNumber} · {fmtDate(x.paidAt)} · {x.method.name} · {x.type === 'REFUND' ? '-' : ''}{money(x.amount)}</p>)}
+            </div>
+          )}
+          {national && (
+            <div className={clsx('mt-4 flex items-center gap-3 border-t border-gray-300 pt-3 text-xs', thermal && 'flex-col text-center')}>
+              {national.status === 'SUBMITTED' && national.qrSvg ? (
+                <>
+                  <EInvoiceQr svg={national.qrSvg} size={thermal ? 110 : 104} />
+                  <div>
+                    <p className="font-bold">{t('print.einvoice.submitted')}</p>
+                    <p>{t('print.einvoice.number')}: <span dir="ltr" className="font-mono">{national.docNumber}</span></p>
+                    {national.party === 'PATIENT' && inv.payerType === 'INSURANCE' && Math.abs(national.total - num(inv.total)) > 0.0005 && <p>{t('print.einvoice.amount')}: {money(national.total)}</p>}
+                  </div>
+                </>
+              ) : <p className="text-gray-600">{t('print.einvoice.notYet')}</p>}
             </div>
           )}
           {!thermal && <div className="mt-12 flex justify-between text-xs"><span>{t('print.signature')}: ____________</span><span>{t('print.stamp')}: ____________</span></div>}

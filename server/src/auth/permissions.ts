@@ -50,6 +50,11 @@ export const PERMISSIONS = {
   'payments.void': { module: 'billing', description: 'إلغاء دفعة مسجلة' },
   'payments.backdate': { module: 'billing', description: 'تحديد تاريخ القبض بأثر رجعي وتعديله بعد التسجيل' },
   'cashier.view': { module: 'billing', description: 'الصندوق والحسابات اليومية' },
+  // National e-invoicing (JoFotara)
+  'einvoice.view': { module: 'einvoice', description: 'عرض حالة الفواتير في نظام الفوترة الوطني ولوحة المتابعة' },
+  'einvoice.send': { module: 'einvoice', description: 'إعادة إرسال فاتورة لنظام الفوترة الوطني بعد فشل أو رفض' },
+  'einvoice.return': { module: 'einvoice', description: 'إصدار فاتورة إرجاع (إشعار دائن) في نظام الفوترة الوطني' },
+  'einvoice.settings': { module: 'einvoice', description: 'إعدادات الربط مع نظام الفوترة الوطني وبيانات الاعتماد' },
   // Expenses
   'expenses.view': { module: 'expenses', description: 'عرض المصروفات' },
   'expenses.manage': { module: 'expenses', description: 'تسجيل وإلغاء المصروفات' },

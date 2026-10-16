@@ -1,5 +1,6 @@
 export default {
   print: {
+    einvoice: { submitted: 'فاتورة معتمدة في نظام الفوترة الوطني', number: 'الرقم في نظام الفوترة', amount: 'المبلغ المعتمد في نظام الفوترة', notYet: 'لم تُعتمد هذه الفاتورة بعد في نظام الفوترة الوطني' },
     print: 'طباعة', close: 'إغلاق', invoice: 'فاتورة', receipt: 'إيصال دفع', refundReceipt: 'إيصال إرجاع', prescription: 'وصفة طبية', medicalReport: 'تقرير طبي',
     labRequest: 'طلب تحاليل مخبرية', labDue: 'المبلغ المستحق للمختبر', labDueMissing: '— : تحليل بدون سعر مختبر في الإعدادات، غير محسوب في المجموع', labResult: 'نتائج التحاليل المخبرية', patientReport: 'تقرير المريض الشامل', receivedFrom: 'استلمنا من', amountOf: 'مبلغ وقدره',
     forInvoice: 'عن الفاتورة', signature: 'التوقيع', doctorSignature: 'توقيع وختم الطبيب', stamp: 'الختم', remainingOnInvoice: 'المتبقي على الفاتورة',
