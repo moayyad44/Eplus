@@ -75,7 +75,7 @@ export function CompanyDialog({ company, onClose }: { company: Company | null; o
         <Field label={t('ins.f.contractEnd')}><Input type="date" value={v.contractEnd} onChange={set('contractEnd')} /></Field>
         <Field label={t('einv.mode.label')} className="sm:col-span-2">
           <Select value={v.einvoiceMode} onChange={set('einvoiceMode')}>
-            {(['PATIENT_SHARE', 'FULL_TO_PATIENT', 'PATIENT_AND_COMPANY'] as const).map((m) => <option key={m} value={m}>{t(`einv.mode.${m}`)}</option>)}
+            {(['PATIENT_SHARE', 'FULL_TO_PATIENT', 'PATIENT_AND_COMPANY', 'NONE'] as const).map((m) => <option key={m} value={m}>{t(`einv.mode.${m}`)}</option>)}
           </Select>
         </Field>
         <Field label={t('einv.mode.taxNumber')} error={fe.taxNumber}><Input value={v.taxNumber} onChange={set('taxNumber')} dir="ltr" inputMode="numeric" /></Field>

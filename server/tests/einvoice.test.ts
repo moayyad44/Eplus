@@ -293,6 +293,20 @@ describe('insurance invoices, per company setting', () => {
     expect(xml).not.toContain('مؤمَّن الفوترة');
   });
 
+  it('none: nothing at all goes to the national system for this company', async () => {
+    const c = (await admin.get(`/api/insurance/companies/${companyId}`)).body;
+    expect((await admin.put(`/api/insurance/companies/${companyId}`, { ...c, einvoiceMode: 'NONE' })).status).toBe(200);
+    const before = received.length;
+    const inv = await insInvoice();
+    expect(inv.status).toBe(201);
+    expect(await docsOf(inv.body.id)).toEqual([]);
+    await processQueue();
+    expect(received.length).toBe(before);
+    // and cancelling such an invoice needs no national return
+    expect((await admin.post(`/api/billing/invoices/${inv.body.id}/cancel`, { reason: 'تجربة' })).status).toBe(200);
+    expect(await docsOf(inv.body.id)).toEqual([]);
+  });
+
   it('full amount to the patient', async () => {
     const c = (await admin.get(`/api/insurance/companies/${companyId}`)).body;
     await admin.put(`/api/insurance/companies/${companyId}`, { ...c, einvoiceMode: 'FULL_TO_PATIENT' });

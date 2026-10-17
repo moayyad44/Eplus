@@ -256,7 +256,7 @@ function SettingsForm() {
             {companies.data?.map((co) => (
               <li key={co.id} className="flex items-start justify-between gap-2">
                 <Link to={`/insurance/companies/${co.id}`} className="font-semibold hover:text-primary-700">{co.nameAr}</Link>
-                <Badge dot={false} tone={co.einvoiceMode === 'PATIENT_SHARE' ? 'neutral' : 'primary'} className="text-end">{t(`einv.mode.${co.einvoiceMode}`)}</Badge>
+                <Badge dot={false} tone={co.einvoiceMode === 'NONE' ? 'warning' : co.einvoiceMode === 'PATIENT_SHARE' ? 'neutral' : 'primary'} className="text-end">{t(`einv.mode.${co.einvoiceMode}`)}</Badge>
               </li>
             ))}
           </ul>

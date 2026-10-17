@@ -1828,6 +1828,8 @@ enum EInvoiceInsuranceMode {
   FULL_TO_PATIENT
   /// Patient share to the patient (cash) + company share to the company (receivable).
   PATIENT_AND_COMPANY
+  /// Nothing goes to the national system for this company's invoices (neither the patient's nor the company's share).
+  NONE
 }
 
 enum EInvoiceKind {

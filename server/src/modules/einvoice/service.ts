@@ -108,6 +108,7 @@ export async function prepareSaleDocs(tx: Tx, ctx: Ctx, invoiceId: string): Prom
   if (inv.payerType !== 'INSURANCE' || !inv.insuranceCompany) parts.push({ party: 'PATIENT', part: 'FULL' });
   else {
     const mode = inv.insuranceCompany.einvoiceMode;
+    if (mode === 'NONE') return []; // this company's invoices are not sent at all
     parts.push({ party: 'PATIENT', part: mode === 'FULL_TO_PATIENT' ? 'FULL' : 'PATIENT_SHARE' });
     if (mode === 'PATIENT_AND_COMPANY') parts.push({ party: 'COMPANY', part: 'COMPANY_SHARE' });
   }

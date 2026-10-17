@@ -37,7 +37,7 @@ const companyBody = z.object({
   openingBalance: money().default(0),
   taxNumber: z.string().trim().regex(/^\d{0,20}$/, 'الرقم الضريبي: أرقام فقط').nullish().transform((v) => v || null),
   /** National e-invoicing: what is sent for this company's invoices. */
-  einvoiceMode: z.enum(['PATIENT_SHARE', 'FULL_TO_PATIENT', 'PATIENT_AND_COMPANY']).default('PATIENT_SHARE'),
+  einvoiceMode: z.enum(['PATIENT_SHARE', 'FULL_TO_PATIENT', 'PATIENT_AND_COMPANY', 'NONE']).default('PATIENT_SHARE'),
   isActive: z.boolean().default(true),
   notes: nullableStr(1000),
 });
