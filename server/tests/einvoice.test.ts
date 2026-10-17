@@ -12,7 +12,7 @@ import { login, type Client } from './helpers';
  * No test ever reaches the real system (the official URL is refused outside production).
  */
 
-type Mode = 'ok' | 'lost' | 'reject' | 'forbidden';
+type Mode = 'ok' | 'lost' | 'reject' | 'forbidden' | 'incomeOnly';
 let mode: Mode = 'ok';
 const received: { clientId: string; secret: string; xml: string; id: string; uuid: string }[] = [];
 const accepted = new Map<string, string>(); // `${ID}|${UUID}` → QR
@@ -34,6 +34,10 @@ const mock = http.createServer((req, res) => {
       EINV_QR: accepted.get(key), EINV_NUM: id, EINV_INV_UUID: uuid,
     });
     if (accepted.has(key)) return ok('ALREADY_SUBMITTED');
+    // A taxpayer registered for income invoices only (guide p. 101)
+    if (mode === 'incomeOnly' && !/<cbc:InvoiceTypeCode name="0[12]1">/.test(xml)) {
+      return send(400, { EINV_RESULTS: { status: 'ERROR', INFO: [], WARNINGS: [], ERRORS: [{ type: 'ERROR', status: 'ERROR', EINV_CODE: 'invoiceType', EINV_CATEGORY: 'invoice', EINV_MESSAGE: 'This user is not authorized to submit this type of invoice.' }] }, EINV_STATUS: 'NOT_SUBMITTED', EINV_QR: null });
+    }
     if (mode === 'reject') {
       return send(400, { EINV_RESULTS: { status: 'ERROR', INFO: [], WARNINGS: [], ERRORS: [{ type: 'ERROR', status: 'ERROR', EINV_CODE: 'totalGeneralTaxesAmount', EINV_CATEGORY: 'invoice', EINV_MESSAGE: 'Total General Amount is Not Correct' }] }, EINV_STATUS: 'NOT_SUBMITTED', EINV_QR: null });
     }
@@ -324,6 +328,36 @@ describe('insurance invoices, per company setting', () => {
   });
 });
 
+describe('income invoices (taxpayer not registered in general sales tax)', () => {
+  it('a 012 refused as "not authorized" is resent as an income invoice 011 after the setting is changed, same ID+UUID', async () => {
+    mode = 'incomeOnly';
+    const inv = await invoice();
+    const [d] = await docsOf(inv.body.id);
+    expect(d.status).toBe('REJECTED');
+    expect(d.lastError).toContain('not authorized');
+    const cfg = await admin.put('/api/einvoice/config', { scheme: 'INCOME' });
+    expect(cfg.body.scheme).toBe('INCOME');
+    expect((await admin.post(`/api/einvoice/documents/${d.id}/send`)).body.status).toBe('SUBMITTED');
+    const [after] = await docsOf(inv.body.id);
+    expect([after.typeName, after.uuid, after.docNumber]).toEqual(['011', d.uuid, d.docNumber]);
+    const xml = lastXml();
+    expect(xml).toContain('<cbc:InvoiceTypeCode name="011">388</cbc:InvoiceTypeCode>');
+    expect(xml).not.toContain('TaxTotal');
+    expect(xml).not.toContain('TaxCategory');
+    expect(xml).toContain('<cbc:TaxInclusiveAmount currencyID="JO">42.000</cbc:TaxInclusiveAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="JO">42.000</cbc:PayableAmount>');
+    // New invoices go straight out as income invoices; their returns keep 011
+    const inv2 = await invoice();
+    const [d2] = await docsOf(inv2.body.id);
+    expect([d2.typeName, d2.status]).toEqual(['011', 'SUBMITTED']);
+    const r = await admin.post(`/api/einvoice/documents/${d2.id}/returns`, { reason: 'إرجاع', lines: [{ lineId: 2, quantity: 1 }] });
+    expect(r.body.status).toBe('SUBMITTED');
+    expect(lastXml()).toContain('<cbc:InvoiceTypeCode name="011">381</cbc:InvoiceTypeCode>');
+    mode = 'ok';
+    await admin.put('/api/einvoice/config', { scheme: 'SALES' });
+  });
+});
+
 describe('invoice counter (ICV)', () => {
   it('is given on the first real send: unique and sequential from 1, unchanged by resends', async () => {
     const docs = await prisma.eInvoice.findMany({ where: { icv: { not: null } }, select: { icv: true, docNumber: true } });
@@ -352,6 +386,14 @@ describe('UBL builder and response handling (unit)', () => {
     const xml = buildXml(base);
     expect(xml).toContain('<cbc:LineExtensionAmount currencyID="JO">64.000</cbc:LineExtensionAmount>');
     expect(xml).toContain('<cbc:RoundingAmount currencyID="JO">68.480</cbc:RoundingAmount>');
+  });
+  it('income invoice (pp. 18-21): no tax elements, payable = lines after discount', () => {
+    const lines = [{ ...base.lines[0], taxPercent: '0', taxCategory: 'Z' as const, discount: '2' }, { ...base.lines[1], discount: '5' }];
+    const xml = buildXml({ ...base, typeName: '011', lines });
+    expect(xml).not.toContain('TaxTotal');
+    expect(xml).toContain('<cbc:TaxExclusiveAmount currencyID="JO">116.000</cbc:TaxExclusiveAmount>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="JO">109.000</cbc:PayableAmount>');
+    expect(validate({ ...base, typeName: '011' }).join()).toContain('فاتورة الدخل لا تحمل ضريبة');
   });
   it('flags what the national system would reject', () => {
     expect(validate({ ...base, typeName: '022' })).toContain('اسم المشتري إجباري في فاتورة الذمم');

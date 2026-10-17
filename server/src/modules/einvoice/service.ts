@@ -11,7 +11,7 @@ import { D, r3 } from '../../lib/money';
 import { dateOnly, dateOnlyStr } from '../../lib/dates';
 import { notifyPermission } from '../../lib/notify';
 import { credentials, endpoint, loadStored, missing, type StoredConfig } from './config';
-import { buildXml, totals, validate, type Buyer, type DocInput, type DocLine } from './ubl';
+import { buildXml, isReceivable, totals, typeCode, validate, type Buyer, type DocInput, type DocLine, type TypeCode } from './ubl';
 import { postInvoice, type SendResult } from './client';
 
 /**
@@ -71,7 +71,7 @@ function buildLines(inv: InvoiceForDocs, part: Part, zero: 'Z' | 'O'): { lines: 
 
 function docInput(cfg: StoredConfig, d: Pick<EInvoice, 'docNumber' | 'uuid' | 'icv' | 'issueDate' | 'typeName' | 'kind' | 'reason'>, buyer: Buyer, lines: DocLine[], original?: DocInput['original']): DocInput {
   return {
-    docNumber: d.docNumber, uuid: d.uuid, icv: d.icv ?? 0, issueDate: dateOnlyStr(d.issueDate), typeName: d.typeName as '012' | '022', kind: d.kind,
+    docNumber: d.docNumber, uuid: d.uuid, icv: d.icv ?? 0, issueDate: dateOnlyStr(d.issueDate), typeName: d.typeName as TypeCode, kind: d.kind,
     seller: { taxNumber: cfg.taxNumber, name: cfg.sellerName.trim(), incomeSourceSeq: cfg.incomeSourceSeq }, buyer, lines, original, reason: d.reason,
   };
 }
@@ -125,7 +125,7 @@ export async function prepareSaleDocs(tx: Tx, ctx: Ctx, invoiceId: string): Prom
     const doc = await tx.eInvoice.create({
       data: {
         invoiceId: inv.id, kind: 'SALE', party, docNumber: sealedNumber(inv.invoiceNumber, party), uuid: randomUUID(),
-        typeName: party === 'COMPANY' ? '022' : '012', issueDate: dateOnly(inv.issuedAt),
+        typeName: typeCode(cfg.scheme, party === 'COMPANY'), issueDate: dateOnly(inv.issuedAt),
         total: t.payable, taxTotal: t.tax, lines: lines as unknown as Prisma.InputJsonValue, buyer: buyer as Prisma.InputJsonValue,
         xml: '', status: 'PENDING', createdById: ctx.userId,
       },
@@ -196,6 +196,15 @@ export async function sendDocument(id: string, opts: { userId?: string | null; m
     if (!creds) return await local('بيانات الربط (Client ID / Secret Key) غير محفوظة أو تحتاج إعادة إدخال');
     let xml = doc.xml;
     if (doc.status !== 'UNKNOWN' || !xml) {
+      // Never accepted: it follows the current registration setting (income 011/021 or sales 012/022).
+      // A return keeps the type of the sale it returns (guide p. 47).
+      if (doc.kind === 'SALE') {
+        const want = typeCode(cfg.scheme, isReceivable(doc.typeName));
+        if (want !== doc.typeName) {
+          doc.typeName = want;
+          await prisma.eInvoice.update({ where: { id }, data: { typeName: want } });
+        }
+      }
       const r = await render(prisma, cfg, doc);
       if (r.errors.length) return await local(r.errors.join(' — '));
       // First real send: take the next invoice counter (kept for every later resend of this document).

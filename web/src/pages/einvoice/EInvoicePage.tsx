@@ -190,7 +190,7 @@ function DocDialog({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 interface Config {
-  enabled: boolean; taxNumber: string; sellerName: string; incomeSourceSeq: string; zeroCategory: 'Z' | 'O'; timeoutSec: number;
+  enabled: boolean; taxNumber: string; sellerName: string; incomeSourceSeq: string; scheme: 'INCOME' | 'SALES'; zeroCategory: 'Z' | 'O'; timeoutSec: number;
   hasClientId: boolean; hasSecretKey: boolean; clientIdHint: string; credentialsReadable: boolean; credentialsUpdatedAt: string | null;
   endpoint: string | null; official: boolean; missing: string[];
 }
@@ -208,7 +208,7 @@ function SettingsForm() {
   if (q.isLoading || !q.data) return <PageLoader />;
   const c = q.data;
   const submit = () => save.mutate({
-    enabled: f.enabled, taxNumber: f.taxNumber, sellerName: f.sellerName, incomeSourceSeq: f.incomeSourceSeq, zeroCategory: f.zeroCategory, timeoutSec: Number(f.timeoutSec),
+    enabled: f.enabled, taxNumber: f.taxNumber, sellerName: f.sellerName, incomeSourceSeq: f.incomeSourceSeq, scheme: f.scheme, zeroCategory: f.zeroCategory, timeoutSec: Number(f.timeoutSec),
     ...(f.clientId && { clientId: f.clientId }), ...(f.secretKey && { secretKey: f.secretKey }),
   });
   return (
@@ -226,12 +226,18 @@ function SettingsForm() {
           <Field label={t('einv.s.secretKey')} required hint={c.hasSecretKey ? t('einv.s.storedHint', { hint: '••••' }) : t('einv.s.notStored')}>
             <Input dir="ltr" type="password" autoComplete="new-password" placeholder={c.hasSecretKey ? '••••••••' : ''} value={f.secretKey ?? ''} onChange={(e) => setF({ ...f, secretKey: e.target.value })} />
           </Field>
-          <Field label={t('einv.s.zeroCategory')} hint={t('einv.s.noTax')}>
+          <Field label={t('einv.s.scheme')} required hint={t('einv.s.schemeHint')} className="sm:col-span-2">
+            <Select value={f.scheme ?? 'SALES'} onChange={(e) => setF({ ...f, scheme: e.target.value as 'INCOME' | 'SALES' })}>
+              <option value="INCOME">{t('einv.s.schemeIncome')}</option>
+              <option value="SALES">{t('einv.s.schemeSales')}</option>
+            </Select>
+          </Field>
+          {f.scheme !== 'INCOME' && <Field label={t('einv.s.zeroCategory')} hint={t('einv.s.noTax')}>
             <Select value={f.zeroCategory ?? 'Z'} onChange={(e) => setF({ ...f, zeroCategory: e.target.value as 'Z' | 'O' })}>
               <option value="Z">{t('einv.s.zeroZ')}</option>
               <option value="O">{t('einv.s.zeroO')}</option>
             </Select>
-          </Field>
+          </Field>}
           <Field label={t('einv.s.timeout')}><Input type="number" min={5} max={120} value={f.timeoutSec ?? 30} onChange={(e) => setF({ ...f, timeoutSec: Number(e.target.value) })} /></Field>
           <div className="sm:col-span-2"><Checkbox label={<b>{t('einv.s.enabled')}</b>} checked={!!f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} /></div>
         </div>

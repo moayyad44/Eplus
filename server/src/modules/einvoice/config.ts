@@ -17,6 +17,12 @@ const stored = z.object({
   sellerName: z.string().default(''),
   /** Income source sequence (تسلسل مصدر الدخل) chosen when linking the device. */
   incomeSourceSeq: z.string().default(''),
+  /**
+   * Invoice form required by the registration of this income source at the national system: INCOME (not registered
+   * in general sales tax → «فاتورة دخل» 011/021) or SALES (registered → «فاتورة مبيعات عامة» 012/022). A mismatch is
+   * refused with "This user is not authorized to submit this type of invoice" (guide p. 101).
+   */
+  scheme: z.enum(['INCOME', 'SALES']).default('SALES'),
   /** Category for 0% lines: Z = exempt (معفى), O = zero-rated (خاضع لنسبة الصفر). */
   zeroCategory: z.enum(['Z', 'O']).default('Z'),
   timeoutSec: z.number().int().min(5).max(120).default(30),
@@ -73,7 +79,7 @@ export function publicView(c: StoredConfig) {
   const creds = credentials(c);
   return {
     enabled: c.enabled, taxNumber: c.taxNumber, sellerName: c.sellerName, incomeSourceSeq: c.incomeSourceSeq,
-    zeroCategory: c.zeroCategory, timeoutSec: c.timeoutSec,
+    scheme: c.scheme, zeroCategory: c.zeroCategory, timeoutSec: c.timeoutSec,
     hasClientId: !!c.clientIdEnc, hasSecretKey: !!c.secretKeyEnc, clientIdHint: c.clientIdHint,
     credentialsReadable: !c.clientIdEnc || !c.secretKeyEnc || !!creds,
     credentialsUpdatedAt: c.credentialsUpdatedAt,

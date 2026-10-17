@@ -39,6 +39,7 @@ einvoiceRouter.put(
       taxNumber: digits('الرقم الضريبي', 15).optional(),
       sellerName: z.string().trim().max(200).optional(),
       incomeSourceSeq: digits('تسلسل مصدر الدخل', 20).optional(),
+      scheme: z.enum(['INCOME', 'SALES']).optional(),
       zeroCategory: z.enum(['Z', 'O']).optional(),
       timeoutSec: z.coerce.number().int().min(5).max(120).optional(),
       /** Empty / omitted = keep the stored value. */
@@ -48,7 +49,7 @@ einvoiceRouter.put(
     }), req.body);
     const before = await loadStored();
     const next = { ...before };
-    for (const k of ['enabled', 'taxNumber', 'sellerName', 'incomeSourceSeq', 'zeroCategory', 'timeoutSec'] as const) {
+    for (const k of ['enabled', 'taxNumber', 'sellerName', 'incomeSourceSeq', 'scheme', 'zeroCategory', 'timeoutSec'] as const) {
       if (body[k] !== undefined) (next as Record<string, unknown>)[k] = body[k];
     }
     let credsChanged = false;
@@ -64,7 +65,7 @@ einvoiceRouter.put(
       if (m.length) throw badRequest(`لا يمكن تفعيل الربط قبل إكمال: ${m.join('، ')}`);
     }
     const safe = (c: typeof next) => ({
-      enabled: c.enabled, taxNumber: c.taxNumber, sellerName: c.sellerName, incomeSourceSeq: c.incomeSourceSeq, zeroCategory: c.zeroCategory, timeoutSec: c.timeoutSec,
+      enabled: c.enabled, taxNumber: c.taxNumber, sellerName: c.sellerName, incomeSourceSeq: c.incomeSourceSeq, scheme: c.scheme, zeroCategory: c.zeroCategory, timeoutSec: c.timeoutSec,
     });
     await prisma.$transaction(async (tx) => {
       await saveStored(tx, next, req.ctx.userId);

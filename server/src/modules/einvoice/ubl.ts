@@ -1,9 +1,11 @@
 import { Prisma } from '@prisma/client';
 
 /**
- * UBL 2.1 invoice XML for the Jordanian national invoicing system (JoFotara), general sales tax taxpayers,
- * exactly as laid out in the ISTD technical guide v1.5 ("فاتورة المبيعات العامة" pp. 32-44 and
- * "فاتورة ارجاع المبيعات العامة" pp. 45-56). Pure functions: no database, no network.
+ * UBL 2.1 invoice XML for the Jordanian national invoicing system (JoFotara), exactly as laid out in the ISTD
+ * technical guide v1.5, in its two forms:
+ *  - income invoice (فاتورة الدخل, taxpayers not registered in sales tax): codes 011/021, no tax elements (pp. 11-31);
+ *  - general sales invoice (فاتورة المبيعات العامة): codes 012/022, with tax per line (pp. 32-56).
+ * Pure functions: no database, no network.
  */
 
 const D = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -31,13 +33,21 @@ export interface DocLine {
 /** Buyer. Anonymous (all empty) is the guide's fixed buyer block; name is required for receivable invoices. */
 export interface Buyer { name?: string | null; taxNumber?: string | null }
 
+export type Scheme = 'INCOME' | 'SALES';
+export type TypeCode = '011' | '021' | '012' | '022';
+/** Invoice type code for the taxpayer's registration (guide pp. 12, 33): cash for patients, receivable for companies. */
+export const typeCode = (scheme: Scheme, receivable: boolean): TypeCode =>
+  scheme === 'INCOME' ? (receivable ? '021' : '011') : receivable ? '022' : '012';
+export const isIncome = (t: string) => t.endsWith('1');
+export const isReceivable = (t: string) => t[1] === '2';
+
 export interface DocInput {
   docNumber: string;
   uuid: string;
   icv: number;
   issueDate: string; // yyyy-mm-dd
-  /** 012 cash local / 022 receivable local. */
-  typeName: '012' | '022';
+  /** Income: 011 cash / 021 receivable. General sales: 012 cash / 022 receivable (all local). */
+  typeName: TypeCode;
   kind: 'SALE' | 'RETURN';
   seller: { taxNumber: string; name: string; incomeSourceSeq: string };
   buyer: Buyer;
@@ -83,13 +93,15 @@ export function validate(doc: DocInput): string[] {
     if (D(l.discount).lt(0)) e.push(`خصم البند "${l.name}" سالب`);
     if (D(l.discount).gt(D(l.quantity).mul(l.unitPrice))) e.push(`خصم البند "${l.name}" أكبر من قيمته`);
     const pct = D(l.taxPercent).toNumber();
+    if (isIncome(doc.typeName)) { if (!l.name.trim()) e.push('وصف البند فارغ'); continue; }
     if (!ALLOWED_PERCENTS.includes(pct)) e.push(`نسبة الضريبة ${pct}% على "${l.name}" غير معتمدة في نظام الفوترة`);
     if (pct === 0 && l.taxCategory === 'S') e.push('النسبة 0% لا تكون بفئة S');
     if (pct > 0 && l.taxCategory !== 'S') e.push('النسبة الموجبة تكون بفئة S');
     if (!l.name.trim()) e.push('وصف البند فارغ');
   }
-  if (doc.typeName === '022' && !doc.buyer.name?.trim()) e.push('اسم المشتري إجباري في فاتورة الذمم');
-  if (doc.typeName === '012' && totals(doc.lines).payable.gt(10_000) && !doc.buyer.name?.trim()) e.push('اسم المشتري إجباري في الفاتورة النقدية التي تزيد على 10,000 دينار');
+  if (isIncome(doc.typeName) && doc.lines.some((l) => D(l.taxPercent).gt(0))) e.push('فاتورة الدخل لا تحمل ضريبة: يوجد بند بنسبة ضريبة أكبر من صفر');
+  if (isReceivable(doc.typeName) && !doc.buyer.name?.trim()) e.push('اسم المشتري إجباري في فاتورة الذمم');
+  if (!isReceivable(doc.typeName) && totals(doc.lines).payable.gt(10_000) && !doc.buyer.name?.trim()) e.push('اسم المشتري إجباري في الفاتورة النقدية التي تزيد على 10,000 دينار');
   if (doc.buyer.taxNumber && !/^\d{1,20}$/.test(doc.buyer.taxNumber)) e.push('الرقم الضريبي للمشتري يجب أن يكون أرقاماً فقط');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(doc.issueDate)) e.push('تاريخ الفاتورة غير صالح');
   if (doc.kind === 'RETURN' && (!doc.original || !doc.reason?.trim())) e.push('فاتورة الإرجاع تحتاج الفاتورة الأصلية وسبب الإرجاع');
@@ -149,7 +161,9 @@ export function buildXml(doc: DocInput): string {
   }
   // Totals (pp. 39-40): the discount is the sum of line discounts (no invoice-level discount is accepted).
   x.push(`<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:AllowanceChargeReason>discount</cbc:AllowanceChargeReason>${amt('Amount', t.discount)}</cac:AllowanceCharge>`);
-  x.push(`<cac:TaxTotal>${amt('TaxAmount', t.tax)}</cac:TaxTotal>`);
+  const income = isIncome(doc.typeName);
+  // Income invoices carry no tax elements at all (guide p. 18); sales invoices do (p. 39).
+  if (!income) x.push(`<cac:TaxTotal>${amt('TaxAmount', t.tax)}</cac:TaxTotal>`);
   x.push(`<cac:LegalMonetaryTotal>${amt('TaxExclusiveAmount', t.taxExclusive)}${amt('TaxInclusiveAmount', t.inclusive)}${amt('AllowanceTotalAmount', t.discount)}${amt('PayableAmount', t.payable)}</cac:LegalMonetaryTotal>`);
   // Lines (pp. 41-44)
   for (const l of doc.lines) {
@@ -158,9 +172,11 @@ export function buildXml(doc: DocInput): string {
     x.push(`<cbc:ID>${l.lineId}</cbc:ID>`);
     x.push(`<cbc:InvoicedQuantity unitCode="PCE">${qty(l.quantity)}</cbc:InvoicedQuantity>`);
     x.push(amt('LineExtensionAmount', a.ext));
-    x.push(`<cac:TaxTotal>${amt('TaxAmount', a.tax)}${amt('RoundingAmount', a.rounding)}`);
-    x.push(`<cac:TaxSubtotal>${amt('TaxAmount', a.tax)}<cac:TaxCategory><cbc:ID schemeAgencyID="6" schemeID="UN/ECE 5305">${l.taxCategory}</cbc:ID>`);
-    x.push(`<cbc:Percent>${D(l.taxPercent).toFixed(2)}</cbc:Percent><cac:TaxScheme><cbc:ID schemeAgencyID="6" schemeID="UN/ECE 5153">VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>`);
+    if (!income) {
+      x.push(`<cac:TaxTotal>${amt('TaxAmount', a.tax)}${amt('RoundingAmount', a.rounding)}`);
+      x.push(`<cac:TaxSubtotal>${amt('TaxAmount', a.tax)}<cac:TaxCategory><cbc:ID schemeAgencyID="6" schemeID="UN/ECE 5305">${l.taxCategory}</cbc:ID>`);
+      x.push(`<cbc:Percent>${D(l.taxPercent).toFixed(2)}</cbc:Percent><cac:TaxScheme><cbc:ID schemeAgencyID="6" schemeID="UN/ECE 5153">VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>`);
+    }
     x.push(`<cac:Item><cbc:Name>${esc(l.name)}</cbc:Name></cac:Item>`);
     x.push(`<cac:Price><cbc:PriceAmount currencyID="JO">${price(l.unitPrice)}</cbc:PriceAmount>`);
     x.push(`<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:AllowanceChargeReason>DISCOUNT</cbc:AllowanceChargeReason>${amt('Amount', D(l.discount))}</cac:AllowanceCharge></cac:Price>`);
