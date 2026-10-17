@@ -1074,7 +1074,7 @@ model InsuranceCompany {
   /// Company tax number, sent as the buyer's TN on its own national invoice (JoFotara) when it has one.
   taxNumber      String?
   /// What the national invoicing system (JoFotara) receives for this company's insurance invoices.
-  einvoiceMode   EInvoiceInsuranceMode @default(PATIENT_SHARE)
+  einvoiceMode   EInvoiceInsuranceMode @default(NONE)
   isActive       Boolean               @default(true)
   notes          String?
   createdAt      DateTime              @default(now())
@@ -1822,13 +1822,13 @@ model AuditLog {
 
 /// What goes to the national system for an insurance invoice of a company.
 enum EInvoiceInsuranceMode {
-  /// Only the share the patient pays (cash invoice to the patient). Default.
+  /// Only the share the patient pays (cash invoice to the patient).
   PATIENT_SHARE
   /// The whole invoice amount as one cash invoice to the patient.
   FULL_TO_PATIENT
   /// Patient share to the patient (cash) + company share to the company (receivable).
   PATIENT_AND_COMPANY
-  /// Nothing goes to the national system for this company's invoices (neither the patient's nor the company's share).
+  /// Nothing goes to the national system for this company's invoices (neither the patient's nor the company's share). Default.
   NONE
 }
 

@@ -273,7 +273,16 @@ describe('insurance invoices, per company setting', () => {
     membershipId = m.body.memberships[0].id;
   });
 
-  it('default: only the patient share goes to the national system', async () => {
+  it('default for a new company: nothing is sent', async () => {
+    expect((await admin.get(`/api/insurance/companies/${companyId}`)).body.einvoiceMode).toBe('NONE');
+    const inv = await insInvoice();
+    expect(inv.status, JSON.stringify(inv.body)).toBe(201);
+    expect(await docsOf(inv.body.id)).toEqual([]);
+  });
+
+  it('patient share only: just the patient share goes to the national system', async () => {
+    const c = (await admin.get(`/api/insurance/companies/${companyId}`)).body;
+    expect((await admin.put(`/api/insurance/companies/${companyId}`, { ...c, einvoiceMode: 'PATIENT_SHARE' })).status).toBe(200);
     const inv = await insInvoice();
     expect(inv.status, JSON.stringify(inv.body)).toBe(201);
     const docs = await docsOf(inv.body.id);

@@ -47,7 +47,7 @@ export function CompanyDialog({ company, onClose }: { company: Company | null; o
     code: company?.code ?? '', nameAr: company?.nameAr ?? '', nameEn: company?.nameEn ?? '', phone: company?.phone ?? '', email: company?.email ?? '', address: company?.address ?? '',
     contactPerson: company?.contactPerson ?? '', contractNumber: company?.contractNumber ?? '', contractStart: company?.contractStart?.slice(0, 10) ?? '', contractEnd: company?.contractEnd?.slice(0, 10) ?? '',
     openingBalance: String(company?.openingBalance ?? 0), isActive: company?.isActive ?? true, notes: company?.notes ?? '',
-    taxNumber: company?.taxNumber ?? '', einvoiceMode: company?.einvoiceMode ?? 'PATIENT_SHARE',
+    taxNumber: company?.taxNumber ?? '', einvoiceMode: company?.einvoiceMode ?? 'NONE',
   });
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV({ ...v, [k]: e.target.value });
   const save = useApiMutation(
@@ -75,7 +75,7 @@ export function CompanyDialog({ company, onClose }: { company: Company | null; o
         <Field label={t('ins.f.contractEnd')}><Input type="date" value={v.contractEnd} onChange={set('contractEnd')} /></Field>
         <Field label={t('einv.mode.label')} className="sm:col-span-2">
           <Select value={v.einvoiceMode} onChange={set('einvoiceMode')}>
-            {(['PATIENT_SHARE', 'FULL_TO_PATIENT', 'PATIENT_AND_COMPANY', 'NONE'] as const).map((m) => <option key={m} value={m}>{t(`einv.mode.${m}`)}</option>)}
+            {(['NONE', 'PATIENT_SHARE', 'FULL_TO_PATIENT', 'PATIENT_AND_COMPANY'] as const).map((m) => <option key={m} value={m}>{t(`einv.mode.${m}`)}</option>)}
           </Select>
         </Field>
         <Field label={t('einv.mode.taxNumber')} error={fe.taxNumber}><Input value={v.taxNumber} onChange={set('taxNumber')} dir="ltr" inputMode="numeric" /></Field>
