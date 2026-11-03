@@ -15,5 +15,6 @@ import system from './system';
 import print from './print';
 import insurance from './insurance';
 import einvoice from './einvoice';
+import ecoin from './ecoin';
 
-export default { ...common, ...enums, ...patients, ...queue, ...visit, ...appointments, ...lab, ...billing, ...dashboard, ...inventory, ...staff, ...reports, ...settings, ...system, ...print, ...insurance, ...einvoice };
+export default { ...common, ...enums, ...patients, ...queue, ...visit, ...appointments, ...lab, ...billing, ...dashboard, ...inventory, ...staff, ...reports, ...settings, ...system, ...print, ...insurance, ...einvoice, ...ecoin };

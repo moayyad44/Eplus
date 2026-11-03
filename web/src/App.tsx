@@ -48,6 +48,8 @@ const InsuranceCompanies = p(() => import('./pages/insurance/Companies'));
 const InsuranceCompanyDetail = p(() => import('./pages/insurance/CompanyDetail'));
 const InsuranceReports = p(() => import('./pages/insurance/Reports'));
 const EInvoicePage = p(() => import('./pages/einvoice/EInvoicePage'));
+const ShiftBoard = p(() => import('./pages/staff/ShiftBoard'));
+const ECoinPage = p(() => import('./pages/ecoin/ECoinPage'));
 const Notifications = p(() => import('./pages/system/Notifications'));
 const AuditLogs = p(() => import('./pages/system/AuditLogs'));
 const Settings = p(() => import('./pages/settings/Settings'));
@@ -132,6 +134,8 @@ export default function App() {
         <Route path="purchases/:id" element={<Guard any={['suppliers.view']}><PurchaseOrderPage /></Guard>} />
         <Route path="staff/users" element={<Guard any={['users.view']}><Users /></Guard>} />
         <Route path="staff/schedule" element={<Guard any={['shifts.view']}><Schedule /></Guard>} />
+        <Route path="staff/board" element={<Guard any={['shifts.view']}><ShiftBoard /></Guard>} />
+        <Route path="ecoin" element={<Guard any={['ecoin.use', 'ecoin.view_all', 'ecoin.manage']}><ECoinPage /></Guard>} />
         <Route path="staff/attendance" element={<Guard any={['attendance.view']}><Attendance /></Guard>} />
         <Route path="staff/leaves" element={<Guard any={['shifts.view', 'shifts.manage']}><Leaves /></Guard>} />
         <Route path="reports" element={<Guard any={['reports.patients', 'reports.doctors', 'reports.financial', 'reports.inventory', 'reports.attendance']}><Reports /></Guard>} />

@@ -13,9 +13,11 @@ import type { UserLite } from '@/lib/types';
 import { Button, Card, Checkbox, Dialog, EmptyState, Field, IconButton, Input, PageHeader, Segmented, Select, useConfirm } from '@/components/ui';
 import { RecordDialog } from './Attendance';
 
-interface Assignment { id: string; userId: string; date: string; startTime: string; endTime: string; user: { id: string; fullName: string; staffType: string }; shift: { id: string; name: string; type: string; color: string | null } }
+interface Assignment { id: string; userId: string | null; date: string; startTime: string; endTime: string; holding?: string; user: { id: string; fullName: string; staffType: string } | null; shift: { id: string; name: string; type: string; color: string | null } }
 interface Leave { id: string; userId: string; startDate: string; endDate: string; type: string; user: { fullName: string } }
 interface Shift { id: string; name: string; type: string; startTime: string; endTime: string; color: string | null }
+
+const VACANT = '__vacant__';
 
 export default function Schedule() {
   const { t } = useTranslation();
@@ -37,10 +39,15 @@ export default function Schedule() {
   const staff = useQuery({ queryKey: ['users', 'lookup'], queryFn: () => api.get<UserLite[]>('/users/lookup') });
   const del = useApiMutation((id: string) => api.del(`/staff/schedule/${id}`), { invalidate: [['schedule']], success: t('common.done') });
 
-  const people = (staff.data ?? []).filter((u) => !staffType || u.staffType === staffType).filter((u) => q.data?.assignments.some((a) => a.userId === u.id) || q.data?.leaves.some((l) => l.userId === u.id) || view === 'week');
+  const hasVacant = !!q.data?.assignments.some((a) => !a.userId);
+  // Shifts released by their holder (no one on them yet) get their own row, so the administration sees the gaps.
+  const people = [
+    ...(staff.data ?? []).filter((u) => !staffType || u.staffType === staffType).filter((u) => q.data?.assignments.some((a) => a.userId === u.id) || q.data?.leaves.some((l) => l.userId === u.id) || view === 'week'),
+    ...(hasVacant ? [{ id: VACANT, fullName: t('sx.vacant'), staffType: 'OTHER' as const, specialty: null }] : []),
+  ];
   const cell = (uid: string, d: Date) => {
     const k = ymd(d);
-    const as = q.data?.assignments.filter((a) => a.userId === uid && a.date.slice(0, 10) === k) ?? [];
+    const as = q.data?.assignments.filter((a) => (uid === VACANT ? !a.userId : a.userId === uid) && a.date.slice(0, 10) === k) ?? [];
     const onLeave = q.data?.leaves.some((l) => l.userId === uid && l.startDate.slice(0, 10) <= k && l.endDate.slice(0, 10) >= k);
     const att = q.data?.attendance.find((a) => a.userId === uid && a.date.slice(0, 10) === k);
     return { as, onLeave, att };
@@ -88,7 +95,7 @@ export default function Schedule() {
               <tbody>
                 {people.map((u) => (
                   <tr key={u.id}>
-                    <td className="sticky start-0 z-[1] border-b border-line bg-white p-2"><b className="text-sm">{u.fullName}</b><span className="block text-ink-muted">{t(`enum.StaffType.${u.staffType}`)}</span></td>
+                    <td className="sticky start-0 z-[1] border-b border-line bg-white p-2"><b className={clsx('text-sm', u.id === VACANT && 'text-warning-700')}>{u.fullName}</b>{u.id !== VACANT && <span className="block text-ink-muted">{t(`enum.StaffType.${u.staffType}`)}</span>}</td>
                     {days.map((d) => {
                       const c = cell(u.id, d);
                       return (
@@ -98,7 +105,7 @@ export default function Schedule() {
                             <button
                               key={a.id}
                               disabled={!can('shifts.manage')}
-                              onClick={async () => (await confirm({ message: `${t('staff.removeShift')}: ${a.user.fullName} — ${a.shift.name} ${a.date.slice(0, 10)}`, danger: true })) && del.mutate(a.id)}
+                              onClick={async () => (await confirm({ message: `${t('staff.removeShift')}: ${a.user?.fullName ?? t('sx.vacant')} — ${a.shift.name} ${a.date.slice(0, 10)}`, danger: true })) && del.mutate(a.id)}
                               className="mb-1 block w-full rounded-lg px-1.5 py-1 text-center font-semibold text-ink"
                               style={{ background: `${a.shift.color ?? '#9dd6f4'}33`, borderInlineStart: `3px solid ${a.shift.color ?? '#6cc0ec'}` }}
                               title={t('staff.removeShift')}

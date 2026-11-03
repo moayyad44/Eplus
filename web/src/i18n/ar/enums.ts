@@ -37,7 +37,7 @@ export default {
       REJECTED: 'مرفوضة', RESUBMISSION_REQUIRED: 'تحتاج إعادة تقديم', PAID: 'مدفوعة', PARTIALLY_PAID: 'مدفوعة جزئياً', CLOSED: 'مغلقة', CANCELLED: 'ملغاة',
     },
     NotificationType: {
-      LOW_STOCK: 'مخزون منخفض', EXPIRY: 'انتهاء صلاحية', UNPAID_INVOICE: 'فاتورة غير مدفوعة', UPCOMING_APPOINTMENT: 'موعد قادم',
+      ECOIN: 'E Coin', SHIFT_EXCHANGE: 'تبادل الشفتات', LOW_STOCK: 'مخزون منخفض', EXPIRY: 'انتهاء صلاحية', UNPAID_INVOICE: 'فاتورة غير مدفوعة', UPCOMING_APPOINTMENT: 'موعد قادم',
       LAB_REQUESTED: 'طلب تحليل', LAB_RESULT_READY: 'نتيجة تحليل', STAFF_LATE: 'تأخر موظف', SHIFT_ENDING: 'انتهاء شفت', QUEUE: 'قائمة الانتظار', INSURANCE: 'التأمين', SYSTEM: 'النظام',
     },
   },

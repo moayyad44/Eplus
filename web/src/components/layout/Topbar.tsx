@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Bell, ChevronDown, CircleHelp, Globe, KeyRound, LifeBuoy, LogIn, LogOut, Menu, Search, UserRound } from 'lucide-react';
+import { Bell, ChevronDown, Coins, CircleHelp, Globe, KeyRound, LifeBuoy, LogIn, LogOut, Menu, Search, UserRound } from 'lucide-react';
 import clsx from 'clsx';
 import { toast } from 'sonner';
 import { api, type Paged } from '@/lib/api';
@@ -21,6 +21,21 @@ function useOutside(ref: React.RefObject<HTMLElement>, onOut: () => void) {
 }
 
 interface Notification { id: string; type: string; title: string; body: string | null; link: string | null; readAt: string | null; createdAt: string }
+
+/** Doctors see their E Coin balance at all times (links to the wallet). */
+function ECoinChip() {
+  const { me, can } = useAuth();
+  const show = me?.user.staffType === 'DOCTOR' && can('ecoin.use');
+  const q = useQuery({ queryKey: ['ecoin', 'me'], queryFn: () => api.get<{ balance: number; enabled: boolean }>('/ecoin/me'), enabled: show, refetchInterval: 60_000 });
+  if (!show || !q.data?.enabled) return null;
+  return (
+    <Link to="/ecoin" className="flex h-10 items-center gap-1.5 rounded-xl bg-warning-50 px-2.5 text-sm font-bold text-warning-800 ring-1 ring-warning-200 hover:bg-warning-100" title="E Coin">
+      <Coins className="h-4 w-4 text-warning-600" />
+      <span className="tabular-nums" dir="ltr">{q.data.balance}</span>
+      <span className="hidden text-xs sm:inline">E Coin</span>
+    </Link>
+  );
+}
 
 function NotificationBell() {
   const { t } = useTranslation();
@@ -198,6 +213,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         <kbd className="ms-auto hidden rounded-md border border-line bg-white px-1.5 py-0.5 text-[10px] font-semibold sm:block" dir="ltr">{t('topbar.searchHint')}</kbd>
       </button>
       <div className="ms-auto flex items-center gap-1">
+        <ECoinChip />
         <AttendanceButton />
         <HelpButton />
         <NotificationBell />

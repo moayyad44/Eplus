@@ -28,7 +28,7 @@ async function ensureOwnWallet(userId: string) {
 ecoinRouter.get('/me', requirePerm('ecoin.use'), ah(async (req, res) => {
   await ensureOwnWallet(req.ctx.userId);
   const cfg = await getSetting('ecoin');
-  res.json({ ...(await walletSummary(req.ctx.userId)), enabled: cfg.enabled, securePrice: cfg.securePrice, expiryDays: cfg.expiryDays });
+  res.json({ ...(await walletSummary(req.ctx.userId)), enabled: cfg.enabled, securePrice: cfg.securePrice, expiryDays: cfg.expiryDays, penaltyWindowShifts: cfg.penaltyWindowShifts });
 }));
 
 /** Ledger: own rows, or anyone's with ecoin.view_all. */

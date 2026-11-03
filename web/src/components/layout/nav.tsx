@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Activity, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardCheck, ConciergeBell, FileClock, FileText, FlaskConical, History,
-  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode,
+  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode, Coins, LayoutGrid,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -69,6 +69,8 @@ export const NAV: NavSection[] = [
     items: [
       { to: '/staff/users', label: 'nav.users', icon: i(UserCog), any: ['users.view'] },
       { to: '/staff/schedule', label: 'nav.schedule', icon: i(CalendarClock), any: ['shifts.view'] },
+      { to: '/staff/board', label: 'nav.shiftBoard', icon: i(LayoutGrid), any: ['shifts.view'] },
+      { to: '/ecoin', label: 'nav.ecoin', icon: i(Coins), any: ['ecoin.use', 'ecoin.view_all', 'ecoin.manage'] },
       { to: '/staff/attendance', label: 'nav.attendance', icon: i(Clock), any: ['attendance.view'] },
       { to: '/staff/leaves', label: 'nav.leaves', icon: i(Plane), any: ['shifts.view', 'shifts.manage'] },
     ],
