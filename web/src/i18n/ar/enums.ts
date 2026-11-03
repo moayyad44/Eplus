@@ -19,7 +19,7 @@ export default {
     PaymentType: { PAYMENT: 'دفعة', REFUND: 'إرجاع' },
     InventoryTxnType: {
       PURCHASE: 'شراء', RECEIPT: 'إدخال', ISSUE: 'صرف', CONSUMPTION: 'استهلاك', RETURN: 'إرجاع', ADJUSTMENT: 'تعديل', STOCK_COUNT: 'جرد',
-      SALE: 'بيع', SALE_REVERSAL: 'إلغاء بيع',
+      SALE: 'بيع', SALE_REVERSAL: 'إلغاء بيع', TRANSFER_OUT: 'نقل (خروج)', TRANSFER_IN: 'نقل (دخول)',
     },
     StockCountStatus: { IN_PROGRESS: 'قيد التنفيذ', APPROVED: 'معتمد', CANCELLED: 'ملغى' },
     PurchaseOrderStatus: { DRAFT: 'مسودة', ORDERED: 'تم الطلب', RECEIVED: 'تم الاستلام', CANCELLED: 'ملغى' },

@@ -9,7 +9,8 @@ import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
 import { useSuppliersLookup } from '@/lib/catalogs';
 import { fmtDate, money, num, qty } from '@/lib/format';
-import { Button, Card, ErrorState, Field, IconButton, Input, PageHeader, PageLoader, Select, Textarea, useConfirm } from '@/components/ui';
+import { Button, Card, Dialog, ErrorState, Field, IconButton, Input, PageHeader, PageLoader, Select, Textarea, useConfirm } from '@/components/ui';
+import { WarehouseSelect, useDefaultWarehouseId } from './shared';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Autocomplete } from '@/components/shared/Autocomplete';
 
@@ -30,6 +31,8 @@ export default function PurchaseOrderPage() {
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<Line[]>([]);
   const [search, setSearch] = useState('');
+  const [receiving, setReceiving] = useState<string | null>(null);
+  const defaultWh = useDefaultWarehouseId();
   const initKey = q.data ? `${q.data.id}:${q.data.updatedAt}` : '';
   useEffect(() => {
     if (q.data) {
@@ -43,7 +46,7 @@ export default function PurchaseOrderPage() {
     const body = { supplierId, notes: notes || null, items: lines.map((l) => ({ itemId: l.itemId, quantity: Number(l.quantity), unitCost: Number(l.unitCost), batchNumber: l.batchNumber || null, expiryDate: l.expiryDate || null })) };
     return isNew ? api.post<{ id: string }>('/purchases', body) : api.put<{ id: string }>(`/purchases/${id}`, body);
   }, { invalidate: [['purchases'], ['suppliers']], onSuccess: (r) => isNew && nav(`/purchases/${r.id}`, { replace: true }) });
-  const status = useApiMutation((s: string) => api.post(`/purchases/${id}/status`, { status: s }), { invalidate: [['purchases'], ['suppliers'], ['inventory']], success: false, onSuccess: (_r, s) => toast.success(s === 'RECEIVED' ? t('suppliers.received') : t('common.done')) });
+  const status = useApiMutation((s: string) => api.post(`/purchases/${id}/status`, { status: s, ...(s === 'RECEIVED' && { warehouseId: receiving || defaultWh || null }) }), { invalidate: [['purchases'], ['suppliers'], ['inventory']], success: false, onSuccess: (_r, s) => { setReceiving(null); toast.success(s === 'RECEIVED' ? t('suppliers.received') : t('common.done')); } });
 
   if (!isNew && q.isLoading) return <PageLoader />;
   if (!isNew && (q.error || !q.data)) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
@@ -61,7 +64,7 @@ export default function PurchaseOrderPage() {
             {can('suppliers.manage') && q.data!.status === 'DRAFT' && <Button variant="secondary" onClick={() => status.mutate('ORDERED')}>{t('suppliers.markOrdered')}</Button>}
             {can('suppliers.manage') && ['DRAFT', 'ORDERED'].includes(q.data!.status) && (
               <>
-                <Button variant="success" icon={<PackageCheck className="h-4 w-4" />} onClick={async () => (await confirm({ message: t('suppliers.receiveConfirm') })) && status.mutate('RECEIVED')}>{t('suppliers.receive')}</Button>
+                <Button variant="success" icon={<PackageCheck className="h-4 w-4" />} onClick={() => setReceiving(defaultWh)}>{t('suppliers.receive')}</Button>
                 <Button variant="ghost" onClick={async () => (await confirm({ message: t('suppliers.cancelPO'), danger: true })) && status.mutate('CANCELLED')}>{t('suppliers.cancelPO')}</Button>
               </>
             )}
@@ -110,6 +113,14 @@ export default function PurchaseOrderPage() {
         <Field label={t('common.notes')} className="mt-4"><Textarea rows={2} value={notes} disabled={!editable} onChange={(e) => setNotes(e.target.value)} /></Field>
         {editable && <div className="mt-4 flex justify-end"><Button icon={<Plus className="h-4 w-4" />} loading={save.isPending} disabled={!supplierId || !lines.length} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></div>}
       </Card>
+      {receiving != null && (
+        <Dialog open size="sm" onClose={() => setReceiving(null)} title={t('suppliers.receive')} footer={<><Button variant="outline" onClick={() => setReceiving(null)}>{t('common.cancel')}</Button><Button variant="success" loading={status.isPending} onClick={() => status.mutate('RECEIVED')}>{t('common.confirm')}</Button></>}>
+          <div className="space-y-3 text-sm">
+            <p>{t('suppliers.receiveConfirm')}</p>
+            <Field label={t('inventory.receiveInto')}><WarehouseSelect value={receiving || defaultWh} onChange={setReceiving} /></Field>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

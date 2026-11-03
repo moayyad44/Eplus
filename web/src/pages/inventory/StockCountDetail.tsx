@@ -12,7 +12,7 @@ import { Button, Card, ErrorState, Input, PageHeader, PageLoader, SearchInput, u
 import { StatusBadge } from '@/components/shared/StatusBadge';
 
 interface Detail {
-  id: string; countNumber: string; title: string | null; status: string; createdAt: string; approvedAt: string | null;
+  id: string; countNumber: string; title: string | null; warehouse: { id: string; name: string } | null; status: string; createdAt: string; approvedAt: string | null;
   items: { id: string; systemQuantity: number; countedQuantity: number | null; difference: number | null; notes: string | null; item: { id: string; name: string; sku: string; location: string | null; purchasePrice: number; unit: { symbol: string | null; name: string } | null } }[];
 }
 
@@ -45,7 +45,7 @@ export default function StockCountDetail() {
     <div>
       <PageHeader
         title={<span className="flex items-center gap-2">{sc.countNumber} <StatusBadge enumName="StockCountStatus" value={sc.status} /></span>}
-        subtitle={`${sc.title ?? ''} · ${fmtDateTime(sc.createdAt)}${sc.approvedAt ? ` · ${t('enum.StockCountStatus.APPROVED')}: ${fmtDateTime(sc.approvedAt)}` : ''}`}
+        subtitle={`${sc.warehouse ? `${sc.warehouse.name} · ` : ''}${sc.title ?? ''} · ${fmtDateTime(sc.createdAt)}${sc.approvedAt ? ` · ${t('enum.StockCountStatus.APPROVED')}: ${fmtDateTime(sc.approvedAt)}` : ''}`}
         actions={
           <>
             <Button variant="outline" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()}>{t('common.print')}</Button>

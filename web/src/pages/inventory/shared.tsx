@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
-import { useCatalog, useSuppliersLookup } from '@/lib/catalogs';
+import { useCatalog, useSuppliersLookup, useWarehouses } from '@/lib/catalogs';
 import { num } from '@/lib/format';
 import { Button, Dialog, Field, Input, Select, Textarea } from '@/components/ui';
 
@@ -10,20 +10,40 @@ export interface Item {
   id: string; name: string; sku: string; barcode: string | null; categoryId: string | null; unitId: string | null; supplierId: string | null; quantity: number; minQuantity: number;
   purchasePrice: number; salePrice: number | null; expiryDate: string | null; batchNumber: string | null; location: string | null; notes: string | null; isActive: boolean;
   category: { id: string; name: string } | null; unit: { id: string; name: string; symbol: string | null } | null; supplier: { id: string; name: string } | null;
+  /** Quantity per warehouse (item detail). */
+  stocks?: { warehouseId: string; quantity: number; warehouse: { id: string; name: string; code: string; isDefault: boolean } }[];
+  /** Quantity in the warehouse the list is filtered on. */
+  warehouseQuantity?: number;
 }
+
+/** Active warehouses; the default one first. Empty value = the default warehouse unless `allLabel` is given. */
+export function WarehouseSelect({ value, onChange, allLabel, exclude, className }: { value: string; onChange: (id: string) => void; allLabel?: string; exclude?: string; className?: string }) {
+  const { t } = useTranslation();
+  const w = useWarehouses();
+  return (
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className={className}>
+      {allLabel != null && <option value="">{allLabel}</option>}
+      {w.data?.filter((x) => (x.isActive || x.id === value) && x.id !== exclude).map((x) => <option key={x.id} value={x.id}>{x.name}{x.isDefault ? ` (${t('inventory.wh.default')})` : ''}</option>)}
+    </Select>
+  );
+}
+
+/** The default warehouse id once loaded (to preselect it). */
+export const useDefaultWarehouseId = () => useWarehouses().data?.find((w) => w.isDefault)?.id ?? '';
 
 export function ItemDialog({ item, onClose, onSaved }: { item?: Item; onClose: () => void; onSaved?: (i: Item) => void }) {
   const { t } = useTranslation();
   const cats = useCatalog('inventory-categories');
   const units = useCatalog('units');
   const suppliers = useSuppliersLookup();
+  const defaultWh = useDefaultWarehouseId();
   const [v, setV] = useState({
     name: item?.name ?? '', sku: item?.sku ?? '', barcode: item?.barcode ?? '', categoryId: item?.categoryId ?? '', unitId: item?.unitId ?? '', supplierId: item?.supplierId ?? '',
     minQuantity: String(item?.minQuantity ?? 0), purchasePrice: String(item?.purchasePrice ?? 0), salePrice: item?.salePrice != null ? String(item.salePrice) : '',
-    expiryDate: item?.expiryDate?.slice(0, 10) ?? '', batchNumber: item?.batchNumber ?? '', location: item?.location ?? '', notes: item?.notes ?? '', openingQuantity: '0',
+    expiryDate: item?.expiryDate?.slice(0, 10) ?? '', batchNumber: item?.batchNumber ?? '', location: item?.location ?? '', notes: item?.notes ?? '', openingQuantity: '0', openingWarehouseId: '',
   });
   const save = useApiMutation(() => {
-    const body = { ...v, categoryId: v.categoryId || null, unitId: v.unitId || null, supplierId: v.supplierId || null, expiryDate: v.expiryDate || null, ...(item ? { openingQuantity: undefined } : {}) };
+    const body = { ...v, categoryId: v.categoryId || null, unitId: v.unitId || null, supplierId: v.supplierId || null, expiryDate: v.expiryDate || null, openingWarehouseId: v.openingWarehouseId || null, ...(item ? { openingQuantity: undefined, openingWarehouseId: undefined } : {}) };
     return item ? api.put<Item>(`/inventory/items/${item.id}`, body) : api.post<Item>('/inventory/items', body);
   }, { invalidate: [['inventory']], onSuccess: (i) => { onSaved?.(i); onClose(); } });
   const fe = save.fieldErrors;
@@ -37,6 +57,7 @@ export function ItemDialog({ item, onClose, onSaved }: { item?: Item; onClose: (
         <Field label={t('inventory.category')}><Select {...f('categoryId')} placeholder={t('common.select')}>{cats.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>
         <Field label={t('inventory.unit')}><Select {...f('unitId')} placeholder={t('common.select')}>{units.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></Field>
         {!item && <Field label={t('inventory.openingQuantity')} error={fe.openingQuantity}><Input type="number" min={0} {...f('openingQuantity')} dir="ltr" /></Field>}
+        {!item && Number(v.openingQuantity) > 0 && <Field label={t('inventory.openingWarehouse')}><WarehouseSelect value={v.openingWarehouseId || defaultWh} onChange={(id) => setV({ ...v, openingWarehouseId: id })} /></Field>}
         {item && <Field label={t('inventory.quantity')} hint={t('inventory.qtyLocked')}><Input value={num(item.quantity)} disabled dir="ltr" /></Field>}
         <Field label={t('inventory.minQuantity')}><Input type="number" min={0} {...f('minQuantity')} dir="ltr" /></Field>
         <Field label={t('inventory.purchasePrice')}><Input type="number" step="0.001" min={0} {...f('purchasePrice')} dir="ltr" /></Field>
@@ -55,9 +76,12 @@ const TYPES = ['PURCHASE', 'RECEIPT', 'ISSUE', 'CONSUMPTION', 'RETURN', 'ADJUSTM
 
 export function MovementDialog({ item, onClose }: { item: Item; onClose: () => void }) {
   const { t } = useTranslation();
-  const [v, setV] = useState({ type: 'CONSUMPTION' as (typeof TYPES)[number], quantity: '', unitCost: '', reason: '', reference: '', batchNumber: '', expiryDate: '' });
+  const [v, setV] = useState({ type: 'CONSUMPTION' as (typeof TYPES)[number], quantity: '', unitCost: '', reason: '', reference: '', batchNumber: '', expiryDate: '', warehouseId: '' });
+  const defaultWh = useDefaultWarehouseId();
+  const whId = v.warehouseId || defaultWh;
+  const inWh = item.stocks ? num(item.stocks.find((s) => s.warehouseId === whId)?.quantity ?? 0) : null;
   const stockIn = ['PURCHASE', 'RECEIPT', 'RETURN'].includes(v.type);
-  const save = useApiMutation(() => api.post('/inventory/transactions', { ...v, itemId: item.id, quantity: Number(v.quantity), unitCost: v.unitCost || null, expiryDate: v.expiryDate || null }), {
+  const save = useApiMutation(() => api.post('/inventory/transactions', { ...v, itemId: item.id, warehouseId: whId || null, quantity: Number(v.quantity), unitCost: v.unitCost || null, expiryDate: v.expiryDate || null }), {
     invalidate: [['inventory']], onSuccess: onClose,
   });
   const fe = save.fieldErrors;
@@ -65,6 +89,7 @@ export function MovementDialog({ item, onClose }: { item: Item; onClose: () => v
   return (
     <Dialog open onClose={onClose} title={t('inventory.newMovement')} subtitle={`${item.name} — ${t('inventory.quantity')}: ${num(item.quantity)}`} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={t('inventory.warehouse')} className="sm:col-span-2" hint={inWh != null ? t('inventory.available', { q: inWh }) : undefined}><WarehouseSelect value={whId} onChange={(id) => setV({ ...v, warehouseId: id })} /></Field>
         <Field group label={t('inventory.movementType')} className="sm:col-span-2">
           <div className="grid grid-cols-3 gap-2">
             {TYPES.map((x) => (

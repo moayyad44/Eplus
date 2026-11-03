@@ -26,7 +26,7 @@ export default {
     insDashboard: 'لوحة التأمين', insClaims: 'المطالبات', insAuthorizations: 'الموافقات المسبقة', insPayments: 'دفعات الشركات', insCompanies: 'شركات التأمين والعقود', insReports: 'تقارير التأمين', einvoice: 'الفوترة الوطنية', shiftBoard: 'لوحة الشفتات', ecoin: 'E Coin',
     dashboard: 'لوحة التحكم', home: 'الرئيسية', reception: 'الاستقبال', queue: 'قائمة الانتظار', patients: 'المرضى', appointments: 'المواعيد',
     lab: 'المختبر', invoices: 'الفواتير', newInvoice: 'فاتورة جديدة', outstanding: 'الفواتير غير المدفوعة', cashier: 'الصندوق', payments: 'المدفوعات',
-    expenses: 'المصروفات', inventory: 'الأصناف', transactions: 'حركات المخزون', stockCounts: 'الجرد', suppliers: 'الموردون', purchases: 'أوامر الشراء',
+    expenses: 'المصروفات', inventory: 'الأصناف', transactions: 'حركات المخزون', stockCounts: 'الجرد', warehouses: 'المستودعات', transfers: 'نقل البضاعة', suppliers: 'الموردون', purchases: 'أوامر الشراء',
     users: 'الموظفون والمستخدمون', schedule: 'جدول الدوام', attendance: 'الحضور', leaves: 'الإجازات', reports: 'التقارير', notifications: 'الإشعارات',
     audit: 'سجل العمليات', settings: 'الإعدادات', help: 'دليل الاستخدام', account: 'حسابي', logout: 'تسجيل الخروج', menu: 'القائمة',
   },

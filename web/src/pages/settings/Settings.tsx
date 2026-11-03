@@ -1,3 +1,4 @@
+import { useWarehouses } from '@/lib/catalogs';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -47,6 +48,7 @@ export default function Settings() {
       {tab === 'inventory' && (
         <div className="space-y-4">
           <KeyValueForm settingKey="inventory" fields={[['expiryAlertDays', 'number'], ['defaultMinQuantity', 'number']]} ns="inventoryS" />
+          <SaleWarehouse />
           <div className="grid gap-4 lg:grid-cols-2">
             <CatalogEditor path="inventory-categories" title={t('inventory.category')} fields={[{ key: 'name', label: t('settings.fields.name'), required: true }]} columns={[{ key: 'n', header: t('settings.fields.name'), cell: (r) => <b>{String(r.name)}</b> }]} />
             <CatalogEditor path="units" title={t('inventory.unit')} fields={[{ key: 'name', label: t('settings.fields.name'), required: true }, { key: 'symbol', label: t('settings.fields.symbol') }]} columns={[{ key: 'n', header: t('settings.fields.name'), cell: (r) => <b>{String(r.name)}</b> }, { key: 's', header: t('settings.fields.symbol'), cell: (r) => String(r.symbol ?? '') }]} />
@@ -439,5 +441,26 @@ function Roles() {
         </Dialog>
       )}
     </div>
+  );
+}
+
+/** Which warehouse invoices take sold items from. */
+function SaleWarehouse() {
+  const { t } = useTranslation();
+  const { can } = useAuth();
+  const s = useSettings();
+  const w = useWarehouses();
+  const current = (s.data?.inventory as { saleWarehouseId?: string | null } | undefined)?.saleWarehouseId ?? '';
+  const save = useApiMutation((id: string) => api.put('/settings/inventory', { saleWarehouseId: id || null }), { invalidate: [['settings'], ['inventory']] });
+  if (!s.data) return null;
+  return (
+    <Card>
+      <Field label={t('settings.inventoryS.saleWarehouseId')} className="max-w-md">
+        <Select value={current} disabled={!can('settings.manage') || save.isPending} onChange={(e) => save.mutate(e.target.value)}>
+          <option value="">{t('settings.inventoryS.saleWarehouseDefault')}</option>
+          {w.data?.filter((x) => x.isActive || x.id === current).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </Select>
+      </Field>
+    </Card>
   );
 }

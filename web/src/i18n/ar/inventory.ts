@@ -14,6 +14,21 @@ export default {
     low: 'منخفض', expired: 'منتهي', expiringSoon: 'قريب الانتهاء', archiveHint: 'لا يمكن أرشفة صنف له رصيد', qtyLocked: 'الكمية لا تُعدّل مباشرة — استخدم حركة مخزون',
     stockCounts: 'جلسات الجرد', stockCountsSubtitle: 'لا يتغير المخزون إلا بعد اعتماد الجرد', newCount: 'جلسة جرد جديدة', countTitle: 'عنوان الجلسة', allItems: 'كل الأصناف الفعالة',
     byCategory: 'حسب التصنيف', systemQty: 'كمية النظام', countedQty: 'الكمية الفعلية', difference: 'الفرق', diffValue: 'قيمة الفرق', approve: 'اعتماد الجرد', approveConfirm: 'اعتماد الجرد سيعدّل كميات المخزون حسب الفروقات. متابعة؟',
+    warehouse: 'المستودع', allWarehouses: 'كل المستودعات', inWarehouse: 'في المستودع', total: 'الإجمالي', available: 'المتوفر في المستودع: {{q}}',
+    byWarehouse: 'الكمية في المستودعات', openingWarehouse: 'مستودع الكمية الافتتاحية', receiveInto: 'استلام البضاعة إلى', countWarehouse: 'المستودع الذي يُجرد',
+    wh: {
+      title: 'المستودعات', subtitle: 'أماكن حفظ البضاعة وما في كل منها', new: 'مستودع جديد', edit: 'تعديل المستودع', code: 'الرمز', codeHint: 'أحرف إنجليزية وأرقام (مثل ER)',
+      location: 'المكان', items: 'أصناف فيه', value: 'قيمة البضاعة', default: 'الافتراضي', sale: 'صرف الفواتير', inactive: 'متوقف', makeDefault: 'اجعله افتراضياً',
+      stop: 'إيقاف', activate: 'تفعيل', showItems: 'عرض الأصناف', defaultHint: 'المستودع الافتراضي يُستخدم عندما لا يُختار مستودع (الحركات، الاستلام، الجرد).',
+      stopConfirm: 'إيقاف المستودع "{{name}}"؟ لا يمكن إيقاف مستودع فيه بضاعة.',
+    },
+    tr: {
+      title: 'نقل البضاعة', subtitle: 'سندات نقل البضاعة بين المستودعات', new: 'نقل بضاعة', number: 'رقم السند', from: 'من مستودع', to: 'إلى مستودع', lines: 'الأصناف',
+      addItem: 'أضف صنفاً', searchItem: 'ابحث عن صنف في المستودع المصدر…', qty: 'الكمية المنقولة', none: 'لا توجد أصناف بعد', by: 'بواسطة', notes: 'ملاحظات',
+      save: 'تنفيذ النقل', confirm: 'نقل {{n}} صنف من "{{from}}" إلى "{{to}}"؟ تتغير الكميات فوراً.', done: 'تم النقل — سند {{number}}', print: 'طباعة السند',
+      pickFrom: 'اختر المستودع المصدر أولاً', more: 'أكثر من المتوفر', allOrNothing: 'يُنفّذ السند كاملاً أو لا شيء: إذا نقص أي صنف لا يتغير شيء.', reverse: 'نقل عكسي',
+      receivedBy: 'المستلم', signature: 'التوقيع',
+    },
     approved: 'تم اعتماد الجرد — تعديل {{count}} صنف', saveCounts: 'حفظ الكميات', cancelCount: 'إلغاء الجلسة', itemsCount: 'عدد الأصناف', counted: 'تم عدّه', progress: 'التقدم',
   },
   suppliers: {

@@ -34,6 +34,10 @@ const Suppliers = p(() => import('./pages/inventory/Suppliers'));
 const SupplierDetail = p(() => import('./pages/inventory/SupplierDetail'));
 const Purchases = p(() => import('./pages/inventory/Purchases'));
 const PurchaseOrderPage = p(() => import('./pages/inventory/PurchaseOrderPage'));
+const Warehouses = p(() => import('./pages/inventory/Warehouses'));
+const Transfers = p(() => import('./pages/inventory/Transfers'));
+const TransferNew = p(() => import('./pages/inventory/TransferNew'));
+const TransferDetail = p(() => import('./pages/inventory/TransferDetail'));
 const Users = p(() => import('./pages/staff/Users'));
 const Schedule = p(() => import('./pages/staff/Schedule'));
 const Attendance = p(() => import('./pages/staff/Attendance'));
@@ -126,6 +130,10 @@ export default function App() {
         <Route path="inventory/items" element={<Guard any={['inventory.view']}><Items /></Guard>} />
         <Route path="inventory/items/:id" element={<Guard any={['inventory.view']}><ItemDetail /></Guard>} />
         <Route path="inventory/transactions" element={<Guard any={['inventory.view']}><Transactions /></Guard>} />
+        <Route path="inventory/warehouses" element={<Guard any={['inventory.view']}><Warehouses /></Guard>} />
+        <Route path="inventory/transfers" element={<Guard any={['inventory.view', 'inventory.transfer']}><Transfers /></Guard>} />
+        <Route path="inventory/transfers/new" element={<Guard any={['inventory.transfer']}><TransferNew /></Guard>} />
+        <Route path="inventory/transfers/:id" element={<Guard any={['inventory.view', 'inventory.transfer']}><TransferDetail /></Guard>} />
         <Route path="inventory/stock-counts" element={<Guard any={['stockcount.manage', 'inventory.view']}><StockCounts /></Guard>} />
         <Route path="inventory/stock-counts/:id" element={<Guard any={['stockcount.manage', 'inventory.view']}><StockCountDetail /></Guard>} />
         <Route path="suppliers" element={<Guard any={['suppliers.view']}><Suppliers /></Guard>} />

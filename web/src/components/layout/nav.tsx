@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Activity, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardCheck, ConciergeBell, FileClock, FileText, FlaskConical, History,
-  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode, Coins, LayoutGrid,
+  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode, Coins, LayoutGrid, Warehouse, PackageOpen,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -58,6 +58,8 @@ export const NAV: NavSection[] = [
     label: 'nav.sections.inventory',
     items: [
       { to: '/inventory/items', label: 'nav.inventory', icon: i(Boxes), any: ['inventory.view'] },
+      { to: '/inventory/warehouses', label: 'nav.warehouses', icon: i(Warehouse), any: ['inventory.view'] },
+      { to: '/inventory/transfers', label: 'nav.transfers', icon: i(PackageOpen), any: ['inventory.view', 'inventory.transfer'] },
       { to: '/inventory/transactions', label: 'nav.transactions', icon: i(ArrowLeftRight), any: ['inventory.view'] },
       { to: '/inventory/stock-counts', label: 'nav.stockCounts', icon: i(ClipboardCheck), any: ['stockcount.manage'] },
       { to: '/suppliers', label: 'nav.suppliers', icon: i(Truck), any: ['suppliers.view'] },

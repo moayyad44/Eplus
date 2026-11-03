@@ -12,6 +12,7 @@ import type { Invoice } from '@/lib/billing';
 import type { Patient } from '@/lib/types';
 import { bp, type LabOrder, type ReportFields, type RxItem, type TimelineVisit } from '@/lib/clinical';
 import { ErrorState, PageLoader } from '@/components/ui';
+import type { TransferDoc } from '@/pages/inventory/TransferDetail';
 
 type Settings = { clinic: { name: string; nameEn: string; address: string; phone: string; email: string; taxNumber: string; reportFooter: string; logoKey: string | null }; financial: { invoiceFooter: string }; medical: { prescriptionFooter: string; reportDoctorName?: string } };
 const useSettings = () => useQuery({ queryKey: ['settings-public'], queryFn: () => api.get<Settings>('/settings/public'), staleTime: 5 * 60_000 });
@@ -143,6 +144,39 @@ function InvoicePrint() {
           )}
           {!thermal && <div className="mt-12 flex justify-between text-xs"><span>{t('print.signature')}: ____________</span><span>{t('print.stamp')}: ____________</span></div>}
         </>
+      )}
+    </Shell>
+  );
+}
+
+function TransferPrint() {
+  const { id } = useParams();
+  const { t } = useTranslation();
+  const q = useQuery({ queryKey: ['transfers', id], queryFn: () => api.get<TransferDoc>(`/inventory/transfers/${id}`) });
+  const d = q.data;
+  if (q.error) return <ErrorState error={q.error} />;
+  return (
+    <Shell title={t('inventory.tr.title')} ready={!!d}>
+      {d && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Row k={t('inventory.tr.number')} v={<span dir="ltr">{d.transferNumber}</span>} />
+            <Row k={t('common.date')} v={fmtDateTime(d.createdAt)} />
+            <Row k={t('inventory.tr.from')} v={d.fromWarehouse.name} />
+            <Row k={t('inventory.tr.to')} v={d.toWarehouse.name} />
+          </div>
+          <table className="w-full border-collapse text-[12px]">
+            <thead><tr className="bg-primary-50"><th className="border border-gray-300 p-1.5 text-start">#</th><th className="border border-gray-300 p-1.5 text-start">{t('suppliers.item')}</th><th className="border border-gray-300 p-1.5 text-start">SKU</th><th className="border border-gray-300 p-1.5">{t('inventory.tr.qty')}</th></tr></thead>
+            <tbody>
+              {d.items.map((i, n) => <tr key={i.id}><td className="border border-gray-300 p-1.5">{n + 1}</td><td className="border border-gray-300 p-1.5">{i.item.name}</td><td className="border border-gray-300 p-1.5" dir="ltr">{i.item.sku}</td><td className="border border-gray-300 p-1.5 text-center">{qty(i.quantity)} {i.item.unit?.symbol ?? i.item.unit?.name ?? ''}</td></tr>)}
+            </tbody>
+          </table>
+          {d.notes && <Row k={t('inventory.tr.notes')} v={d.notes} />}
+          <div className="grid grid-cols-2 gap-6 pt-10 text-xs">
+            <p>{d.createdBy ?? ''}<br />{t('print.signature')}: ____________</p>
+            <p>{t('inventory.tr.receivedBy')}: ____________<br />{t('print.signature')}: ____________</p>
+          </div>
+        </div>
       )}
     </Shell>
   );
@@ -386,6 +420,7 @@ export default function PrintRoutes() {
     <Routes>
       <Route path="invoice/:id" element={<InvoicePrint />} />
       <Route path="receipt/:id" element={<ReceiptPrint />} />
+      <Route path="transfer/:id" element={<TransferPrint />} />
       <Route path="prescription/:id" element={<PrescriptionPrint />} />
       <Route path="medical-report/:id" element={<MedicalReportPrint />} />
       <Route path="lab/:id" element={<LabPrint />} />

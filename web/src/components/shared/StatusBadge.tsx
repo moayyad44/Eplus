@@ -18,7 +18,7 @@ const TONES: Record<string, Record<string, Tone>> = {
   InsuranceStatus: { ACTIVE: 'success', SUSPENDED: 'danger', EXPIRED: 'danger', NOT_STARTED: 'warning', ARCHIVED: 'neutral' },
   PayerType: { SELF_PAY: 'neutral', INSURANCE: 'primary', CORPORATE: 'violet', GOVERNMENT: 'info', OTHER: 'neutral' },
   EInvoiceStatus: { PENDING: 'warning', SENDING: 'info', SUBMITTED: 'success', REJECTED: 'danger', FAILED: 'danger', UNKNOWN: 'warning', VOID: 'neutral' },
-  InventoryTxnType: { PURCHASE: 'success', RECEIPT: 'success', RETURN: 'success', SALE_REVERSAL: 'success', ISSUE: 'warning', CONSUMPTION: 'warning', SALE: 'info', ADJUSTMENT: 'violet', STOCK_COUNT: 'violet' },
+  InventoryTxnType: { PURCHASE: 'success', RECEIPT: 'success', RETURN: 'success', SALE_REVERSAL: 'success', ISSUE: 'warning', CONSUMPTION: 'warning', SALE: 'info', ADJUSTMENT: 'violet', STOCK_COUNT: 'violet', TRANSFER_OUT: 'primary', TRANSFER_IN: 'primary' },
 };
 
 export function StatusBadge({ enumName, value, dot = true }: { enumName: string; value: string | null | undefined; dot?: boolean }) {

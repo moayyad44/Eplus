@@ -9,8 +9,9 @@ import { useCatalog } from '@/lib/catalogs';
 import { fmtDateTime } from '@/lib/format';
 import { Button, Card, DataTable, Dialog, Field, Input, PageHeader, Pagination, Select } from '@/components/ui';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { WarehouseSelect, useDefaultWarehouseId } from './shared';
 
-interface Row { id: string; countNumber: string; title: string | null; status: string; createdAt: string; approvedAt: string | null; _count: { items: number } }
+interface Row { id: string; countNumber: string; title: string | null; warehouse: { id: string; name: string } | null; status: string; createdAt: string; approvedAt: string | null; _count: { items: number } }
 
 export default function StockCounts() {
   const { t } = useTranslation();
@@ -19,8 +20,9 @@ export default function StockCounts() {
   const cats = useCatalog('inventory-categories');
   const list = usePagedList<Row>('stock-counts', '/inventory/stock-counts');
   const [open, setOpen] = useState(false);
-  const [v, setV] = useState({ title: '', categoryId: '' });
-  const create = useApiMutation(() => api.post<{ id: string }>('/inventory/stock-counts', { title: v.title || null, categoryId: v.categoryId || null }), { invalidate: [['stock-counts']], onSuccess: (r) => nav(`/inventory/stock-counts/${r.id}`) });
+  const [v, setV] = useState({ title: '', categoryId: '', warehouseId: '' });
+  const defaultWh = useDefaultWarehouseId();
+  const create = useApiMutation(() => api.post<{ id: string }>('/inventory/stock-counts', { title: v.title || null, categoryId: v.categoryId || null, warehouseId: v.warehouseId || defaultWh || null }), { invalidate: [['stock-counts']], onSuccess: (r) => nav(`/inventory/stock-counts/${r.id}`) });
   return (
     <div>
       <PageHeader title={t('inventory.stockCounts')} subtitle={t('inventory.stockCountsSubtitle')} actions={can('stockcount.manage') && <Button icon={<Plus className="h-4 w-4" />} onClick={() => setOpen(true)}>{t('inventory.newCount')}</Button>} />
@@ -34,6 +36,7 @@ export default function StockCounts() {
           columns={[
             { key: 'n', header: '#', cell: (r) => <span className="font-mono text-xs font-semibold">{r.countNumber}</span> },
             { key: 't', header: t('inventory.countTitle'), cell: (r) => r.title ?? '—' },
+            { key: 'w', header: t('inventory.warehouse'), cell: (r) => r.warehouse?.name ?? '—' },
             { key: 'c', header: t('inventory.itemsCount'), cell: (r) => r._count.items },
             { key: 'd', header: t('common.createdAt'), cell: (r) => fmtDateTime(r.createdAt) },
             { key: 'a', header: t('enum.StockCountStatus.APPROVED'), cell: (r) => fmtDateTime(r.approvedAt) },
@@ -44,6 +47,7 @@ export default function StockCounts() {
       </Card>
       <Dialog open={open} onClose={() => setOpen(false)} size="sm" title={t('inventory.newCount')} footer={<><Button variant="outline" onClick={() => setOpen(false)}>{t('common.cancel')}</Button><Button loading={create.isPending} onClick={() => create.mutate(undefined)}>{t('common.add')}</Button></>}>
         <div className="space-y-3">
+          <Field label={t('inventory.countWarehouse')}><WarehouseSelect value={v.warehouseId || defaultWh} onChange={(id) => setV({ ...v, warehouseId: id })} /></Field>
           <Field label={t('inventory.countTitle')}><Input value={v.title} onChange={(e) => setV({ ...v, title: e.target.value })} /></Field>
           <Field label={t('inventory.byCategory')}>
             <Select value={v.categoryId} onChange={(e) => setV({ ...v, categoryId: e.target.value })}>
