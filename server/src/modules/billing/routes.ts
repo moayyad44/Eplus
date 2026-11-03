@@ -9,7 +9,7 @@ import { badRequest, notFound } from '../../lib/errors';
 import { requireAnyPerm, requirePerm } from '../../middleware/auth';
 import { ageFrom, rangeFromQuery } from '../../lib/dates';
 import { flushInvoice } from '../einvoice/service';
-import { addPayment, buildInvoice, cancelInvoice, changeInvoiceDate, changePaymentDate, issueInvoice, recomputeInvoice, requestedInvoiceDate } from './service';
+import { addPayment, buildInvoice, cancelInvoice, changeInvoiceDate, changePaymentDate, issueInvoice, overpaidOf, recomputeInvoice, requestedInvoiceDate } from './service';
 
 export const billingRouter = Router();
 
@@ -65,7 +65,7 @@ async function loadInvoice(id: string) {
   if (!inv) throw notFound('الفاتورة غير موجودة');
   const userIds = [inv.createdById, inv.cancelledById, ...inv.payments.flatMap((p) => [p.receivedById, p.voidedById])].filter(Boolean) as string[];
   const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } });
-  return { ...inv, patient: { ...inv.patient, age: ageFrom(inv.patient.dateOfBirth) }, userNames: Object.fromEntries(users.map((u) => [u.id, u.fullName])) };
+  return { ...inv, overpaid: overpaidOf(inv), patient: { ...inv.patient, age: ageFrom(inv.patient.dateOfBirth) }, userNames: Object.fromEntries(users.map((u) => [u.id, u.fullName])) };
 }
 
 // ── Invoices ──
@@ -371,11 +371,11 @@ billingRouter.get(
       include: {
         method: true,
         patient: { select: { fullName: true, fileNumber: true, phone: true } },
-        invoice: { select: { id: true, invoiceNumber: true, total: true, paidAmount: true, balance: true, status: true } },
+        invoice: { select: { id: true, invoiceNumber: true, total: true, paidAmount: true, refundedAmount: true, patientShare: true, transferredFromInsurance: true, balance: true, status: true } },
       },
     });
     if (!p) throw notFound();
     const receiver = p.receivedById ? await prisma.user.findUnique({ where: { id: p.receivedById }, select: { fullName: true } }) : null;
-    res.json({ ...p, receivedBy: receiver?.fullName ?? null });
+    res.json({ ...p, invoice: { ...p.invoice, overpaid: overpaidOf(p.invoice) }, receivedBy: receiver?.fullName ?? null });
   }),
 );

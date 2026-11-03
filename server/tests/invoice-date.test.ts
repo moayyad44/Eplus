@@ -174,3 +174,31 @@ describe('receipt date (back-dating payments and refunds)', () => {
     expect((await admin.put(`/api/billing/payments/${p2.id}/date`, { date: R2 })).status).toBe(400);
   });
 });
+
+describe('overpayment and expenses per day', () => {
+  it('a patient may pay more than what is left: the whole amount is recorded on the same invoice as an overpayment', async () => {
+    const id = (await newInvoice(admin, { invoiceDate: D3 })).body.id; // 20 JD
+    const pay = await admin.post(`/api/billing/invoices/${id}/payments`, payOn(25));
+    expect(pay.status, JSON.stringify(pay.body)).toBe(201);
+    let inv = (await admin.get(`/api/billing/invoices/${id}`)).body;
+    expect([inv.status, inv.paidAmount, inv.balance, inv.overpaid]).toEqual(['PAID', 25, 0, 5]);
+    expect((await admin.get(`/api/billing/payments/${pay.body.payment.id}`)).body.invoice.overpaid).toBe(5);
+    expect((await admin.post(`/api/billing/invoices/${id}/payments`, payOn(1))).status).toBe(400); // nothing left to pay
+    const rf = await admin.post(`/api/billing/invoices/${id}/refunds`, { ...payOn(5), notes: 'إرجاع الزيادة' });
+    expect(rf.status, JSON.stringify(rf.body)).toBe(201);
+    inv = (await admin.get(`/api/billing/invoices/${id}`)).body;
+    expect([inv.status, inv.balance, inv.overpaid]).toEqual(['PAID', 0, 0]);
+  });
+
+  it('an expense counts on its own day only (not also on the next day)', async () => {
+    const ymdLocal = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const day = ymdLocal(360), next = ymdLocal(359);
+    const cat = await prisma.expenseCategory.create({ data: { name: 'اختبار يوم المصروف' } });
+    await prisma.expense.create({ data: { categoryId: cat.id, amount: 7, expenseDate: new Date(`${day}T00:00:00.000Z`), description: 'مصروف اختبار' } });
+    const on = (await admin.get(`/api/reports/financial?from=${day}&to=${day}`)).body;
+    const after = (await admin.get(`/api/reports/financial?from=${next}&to=${next}`)).body;
+    expect(on.summary.expenses).toBe(7);
+    expect(after.summary.expenses).toBe(0);
+    expect(after.expensesByCategory).toEqual([]);
+  });
+});

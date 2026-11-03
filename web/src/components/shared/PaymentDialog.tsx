@@ -27,6 +27,8 @@ export function PaymentDialog({ invoiceId, max, mode = 'PAYMENT', onClose, onDon
     return d.toISOString();
   };
   const method = methods.data?.find((m) => m.id === v.methodId);
+  // A patient may pay more than what is left (recorded on the same invoice as an overpayment); a refund may not.
+  const over = mode === 'PAYMENT' ? Math.round((Number(v.amount) - max) * 1000) / 1000 : 0;
   const save = useApiMutation(
     () => api.post<{ payment: { id: string; receiptNumber: string } }>(`/billing/invoices/${invoiceId}/${mode === 'REFUND' ? 'refunds' : 'payments'}`, { ...v, amount: Number(v.amount), reference: v.reference || null, notes: v.notes || null, paidAt: paidAt() }),
     {
@@ -50,9 +52,10 @@ export function PaymentDialog({ invoiceId, max, mode = 'PAYMENT', onClose, onDon
       <div className="space-y-3">
         <Field group label={t('common.amount')} required error={save.fieldErrors.amount} hint={`${t('common.balance')}: ${money(max)}`}>
           <div className="flex gap-2">
-            <Input type="number" step="0.001" min={0} max={max} value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} dir="ltr" className="text-lg font-bold" />
+            <Input type="number" step="0.001" min={0} max={mode === 'REFUND' ? max : undefined} value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} dir="ltr" className="text-lg font-bold" />
             <Button variant="outline" onClick={() => setV({ ...v, amount: String(max) })}>{t('billing.fullAmount')}</Button>
           </div>
+          {over > 0 && <p className="mt-1.5 rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs font-semibold text-warning-700">{t('billing.overpayNote', { amount: money(over) })}</p>}
         </Field>
         <Field group label={t('billing.method')} required error={save.fieldErrors.methodId}>
           <div className="grid grid-cols-2 gap-2">

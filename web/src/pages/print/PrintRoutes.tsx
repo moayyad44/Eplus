@@ -119,6 +119,7 @@ function InvoicePrint() {
             )}
             <div className="flex justify-between"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.patientPaid') : t('common.paid')}</span><span>{money(num(inv.paidAmount) - num(inv.refundedAmount))}</span></div>
             <div className="flex justify-between font-bold"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.patientBalance') : t('common.balance')}</span><span>{money(inv.balance)}</span></div>
+            {(inv.overpaid ?? 0) > 0 && <div className="flex justify-between font-bold"><span>{t('billing.overpaid')}</span><span>{money(inv.overpaid)}</span></div>}
           </div>
           {inv.payments.filter((x) => !x.voidedAt).length > 0 && (
             <div className="mt-4 text-xs">
@@ -151,7 +152,7 @@ function ReceiptPrint() {
   const { id } = useParams();
   const { t } = useTranslation();
   const s = useSettings();
-  const q = useQuery({ queryKey: ['receipt', id], queryFn: () => api.get<{ receiptNumber: string; type: string; amount: number; paidAt: string; reference: string | null; notes: string | null; receivedBy: string | null; method: { name: string }; patient: { fullName: string; fileNumber: string }; invoice: { invoiceNumber: string; total: number; balance: number } }>(`/billing/payments/${id}`) });
+  const q = useQuery({ queryKey: ['receipt', id], queryFn: () => api.get<{ receiptNumber: string; type: string; amount: number; paidAt: string; reference: string | null; notes: string | null; receivedBy: string | null; method: { name: string }; patient: { fullName: string; fileNumber: string }; invoice: { invoiceNumber: string; total: number; balance: number; overpaid?: number } }>(`/billing/payments/${id}`) });
   const r = q.data;
   const thermal = (s.data as unknown as { financial: { thermalReceipt?: boolean } })?.financial?.thermalReceipt;
   if (q.error) return <ErrorState error={q.error} />;
@@ -167,6 +168,7 @@ function ReceiptPrint() {
           {r.reference && <Row k={t('billing.reference')} v={<span dir="ltr">{r.reference}</span>} />}
           <Row k={t('print.forInvoice')} v={r.invoice.invoiceNumber} />
           <Row k={t('print.remainingOnInvoice')} v={money(r.invoice.balance)} />
+          {(r.invoice.overpaid ?? 0) > 0 && <Row k={t('billing.overpaid')} v={money(r.invoice.overpaid)} />}
           {r.notes && <Row k={t('common.notes')} v={r.notes} />}
           <Row k={t('billing.receivedBy')} v={r.receivedBy} />
           <p className="pt-8 text-xs">{t('print.signature')}: ____________</p>

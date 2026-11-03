@@ -215,8 +215,7 @@ describe('end-to-end clinical & billing workflow', () => {
     const cash = methods.body.find((m: { code: string }) => m.code === 'CASH');
     const cliq = methods.body.find((m: { code: string }) => m.code === 'CLIQ');
 
-    const over = await reception.post(`/api/billing/invoices/${invoiceId}/payments`, { amount: 100, methodId: cash.id });
-    expect(over.status).toBe(400);
+    // (Paying more than what is left is allowed and recorded as an overpayment: covered in invoice-date.test.ts.)
     const noRef = await reception.post(`/api/billing/invoices/${invoiceId}/payments`, { amount: 5, methodId: cliq.id });
     expect(noRef.status).toBe(400);
 

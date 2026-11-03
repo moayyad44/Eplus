@@ -183,6 +183,7 @@ export default function InvoiceDetail() {
               <div className={clsx('flex justify-between rounded-xl px-3 py-2 text-lg font-bold', num(inv.balance) > 0 ? 'bg-danger-50 text-danger-700' : 'bg-success-50 text-success-700')}>
                 <dt>{insured ? t('ins.inv.patientBalance') : t('common.balance')}</dt><dd className="tabular-nums">{money(inv.balance)}</dd>
               </div>
+              {(inv.overpaid ?? 0) > 0 && <div className="flex justify-between rounded-xl bg-warning-50 px-3 py-2 font-bold text-warning-700"><dt>{t('billing.overpaid')}</dt><dd className="tabular-nums">{money(inv.overpaid)}</dd></div>}
             </dl>
           </Card>
         </aside>

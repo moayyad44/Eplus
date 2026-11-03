@@ -248,7 +248,10 @@ export async function addPayment(tx: Tx, ctx: Ctx, invoiceId: string, p: Payment
   if (method.requiresReference && !p.reference) throw badRequest(`رقم العملية مطلوب للدفع عبر ${method.name}`);
   const amount = r3(p.amount);
   if (amount.lte(0)) throw badRequest('المبلغ يجب أن يكون أكبر من صفر');
-  if (type === 'PAYMENT' && amount.gt(inv.balance)) throw badRequest(`المبلغ أكبر من المتبقي (${D(inv.balance).toNumber()})`);
+  // A patient may pay more than what is left: the whole amount is recorded on this invoice and the extra shows as
+  // an overpayment (it can be refunded later). Paying an invoice that has nothing left is refused.
+  if (type === 'PAYMENT' && D(inv.balance).lte(0)) throw badRequest('الفاتورة مدفوعة بالكامل');
+  const over = type === 'PAYMENT' ? Prisma.Decimal.max(amount.sub(inv.balance), 0) : D(0);
   if (type === 'REFUND' && amount.gt(D(inv.paidAmount).sub(inv.refundedAmount))) throw badRequest('مبلغ الإرجاع أكبر من المبلغ المدفوع');
   const paidAt = p.paidAt ?? new Date();
   if (p.paidAt) await checkPaidAt(tx, ctx, inv, paidAt, type);
@@ -265,7 +268,7 @@ export async function addPayment(tx: Tx, ctx: Ctx, invoiceId: string, p: Payment
   const updated = await recomputeInvoice(tx, inv.id);
   await audit(tx, ctx, {
     action: type === 'REFUND' ? 'payment.refund' : 'payment.create', entityType: 'invoice', entityId: inv.id,
-    summary: `${type === 'REFUND' ? 'إرجاع' : 'دفعة'} ${amount.toNumber()} (${method.name}) على ${inv.invoiceNumber} — إيصال ${payment.receiptNumber}`,
+    summary: `${type === 'REFUND' ? 'إرجاع' : 'دفعة'} ${amount.toNumber()} (${method.name}) على ${inv.invoiceNumber} — إيصال ${payment.receiptNumber}${over.gt(0) ? ` — زيادة ${over.toNumber()}` : ''}`,
     before: { paidAmount: D(inv.paidAmount).toNumber(), balance: D(inv.balance).toNumber(), status: inv.status },
     after: { paidAmount: D(updated.paidAmount).toNumber(), balance: D(updated.balance).toNumber(), status: updated.status },
   });
@@ -407,3 +410,7 @@ export async function changePaymentDate(tx: Tx, ctx: Ctx, paymentId: string, day
   });
   return { receiptNumber: p.receiptNumber, oldDate: old, newDate: day };
 }
+
+/** What the patient paid beyond what he owes on this invoice (net of refunds). */
+export const overpaidOf = (inv: { paidAmount: Prisma.Decimal.Value; refundedAmount: Prisma.Decimal.Value; patientShare: Prisma.Decimal.Value; transferredFromInsurance: Prisma.Decimal.Value; status: string }) =>
+  inv.status === 'CANCELLED' ? 0 : Math.max(0, D(inv.paidAmount).sub(inv.refundedAmount).sub(inv.patientShare).sub(inv.transferredFromInsurance).toNumber());

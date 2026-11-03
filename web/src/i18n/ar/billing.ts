@@ -25,7 +25,7 @@ export default {
     voidReason: 'سبب إلغاء الدفعة', receipt: 'إيصال', printReceipt: 'طباعة الإيصال', printInvoice: 'طباعة الفاتورة', printThermal: 'طباعة حرارية',
     receiptNumber: 'رقم الإيصال', receivedBy: 'استلمها', method: 'طريقة الدفع', reference: 'رقم العملية / المرجع', referenceRequired: 'رقم العملية مطلوب لهذه الطريقة',
     paymentSaved: 'تم تسجيل الدفعة — إيصال {{number}}', refundSaved: 'تم تسجيل الإرجاع', refundReason: 'سبب الإرجاع', refunded: 'المسترد', voided: 'ملغاة',
-    fullAmount: 'كامل المبلغ', outstanding: 'الفواتير غير المدفوعة', outstandingSubtitle: 'الذمم المستحقة على المرضى', debtAge: 'عمر الدين', lastPayment: 'آخر دفعة',
+    fullAmount: 'كامل المبلغ', overpaid: 'مدفوع بالزيادة', overpayNote: 'المبلغ أكبر من المتبقي: ستُسجَّل زيادة {{amount}} على هذه الفاتورة', outstanding: 'الفواتير غير المدفوعة', outstandingSubtitle: 'الذمم المستحقة على المرضى', debtAge: 'عمر الدين', lastPayment: 'آخر دفعة',
     days: '{{count}} يوم', totalOutstanding: 'إجمالي الذمم', minAge: 'عمر الدين أكثر من', cashier: 'الصندوق والحسابات اليومية', cashierSubtitle: 'ملخص المبيعات والمقبوضات حسب الفترة',
     grossSales: 'إجمالي المبيعات', netSales: 'صافي المبيعات', discounts: 'الخصومات', collected: 'المقبوضات', refunds: 'المرتجعات', netReceipts: 'صافي المقبوضات',
     unpaid: 'غير مدفوع من الفترة', expenses: 'المصروفات', netIncome: 'صافي الدخل', byMethod: 'المقبوضات حسب طريقة الدفع', daily: 'المقبوضات اليومية',
