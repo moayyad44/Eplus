@@ -10,6 +10,7 @@ import { requireAnyPerm, requirePerm } from '../../middleware/auth';
 import { can } from '../../auth/context';
 import { addDays, dateOnly, dateOnlyStr, rangeFromQuery } from '../../lib/dates';
 import { getSetting, settingSchemas } from '../../lib/settings';
+import { penaltyCoverage } from '../ecoin/penalty';
 import { basePrice, hoursOf, purchasePrice, slotInclude, slotState, viewerOf, windowOf } from './core';
 import {
   adminAssign, buyShift, isUniqueViolation, recordHandover, releaseShift, requestCoverage, requestSwap, respondCoverage, respondSwap, secureShift,
@@ -44,13 +45,23 @@ shiftsRouter.get(
       prisma.shiftAssignment.findMany({ where: { userId: req.ctx.userId, date: { gte: addDays(from, -1), lte: to } } }),
     ]);
     const myEnds = new Set(mine.map((m) => windowOf(m).end.getTime()));
-    const penalty = showPrices && viewer.isDoctor ? await prisma.eCoinPenalty.findFirst({ where: { userId: req.ctx.userId, status: 'ACTIVE', usesLeft: { gt: 0 } } }) : null;
+    // Incentive discounts: a penalised doctor's covered shifts are cheaper for everyone else.
+    const discounted = new Map<string, number>();
+    let penalty: { discount: number; usesLeft: number } | null = null;
+    if (showPrices && cfg.penaltyEnabled) {
+      const holders = [...new Set(slots.map((a) => a.userId).filter((x): x is string => !!x)), ...(viewer.isDoctor ? [req.ctx.userId] : [])];
+      for (const p of await prisma.eCoinPenalty.findMany({ where: { status: 'ACTIVE', userId: { in: holders } } })) {
+        const cov = await penaltyCoverage(prisma, p, now);
+        for (const sid of cov.slotIds) discounted.set(sid, p.discount);
+        if (p.userId === req.ctx.userId) penalty = { discount: p.discount, usesLeft: cov.usesLeft };
+      }
+    }
     const who = await names([...coverages.map((c) => c.requesterId), ...handovers.flatMap((h) => [h.nextUserId, h.prevUserId])]);
     const out = slots.map((a) => {
       const st = slotState(a, viewer, cfg, ex, now);
       const doctorSlot = a.staffType === 'DOCTOR';
       const base = showPrices && doctorSlot ? basePrice(a, rules, cfg) : null;
-      const discount = base && penalty ? Math.min(penalty.discount, base.price) : 0;
+      const discount = base ? Math.min(discounted.get(a.id) ?? 0, base.price) : 0;
       const w = windowOf(a);
       return {
         id: a.id, date: dateOnlyStr(a.date), startTime: a.startTime, endTime: a.endTime, hours: Math.round(hoursOf(a) * 100) / 100,
@@ -77,7 +88,7 @@ shiftsRouter.get(
     if (viewer.isDoctor && viewer.canEcoin && cfg.enabled) balance = (await prisma.eCoinWallet.findUnique({ where: { userId: req.ctx.userId } }))?.balance ?? 0;
     res.json({
       now, slots: out, unassigned,
-      viewer: { ...viewer, showPrices, balance, penalty: penalty && { discount: penalty.discount, usesLeft: penalty.usesLeft }, canManage: can(req.ctx, 'shifts.manage'), canHandover: can(req.ctx, 'shifts.handover') },
+      viewer: { ...viewer, showPrices, balance, penalty, canManage: can(req.ctx, 'shifts.manage'), canHandover: can(req.ctx, 'shifts.handover') },
       rules: { purchaseLeadMinutes: cfg.purchaseLeadMinutes, changeLeadMinutes: ex.changeLeadMinutes, minCoverMinutes: ex.minCoverMinutes, maxCoverMinutes: ex.maxCoverMinutes, ecoinEnabled: cfg.enabled },
     });
   }),
@@ -92,7 +103,7 @@ shiftsRouter.get(
     if (!a) throw notFound('الشفت غير موجود');
     const [cfg, ex, viewer] = await Promise.all([getSetting('ecoin'), getSetting('shiftExchange'), viewerOf(prisma, req.ctx)]);
     const st = slotState(a, viewer, cfg, ex);
-    const price = cfg.enabled && a.staffType === 'DOCTOR' && ((viewer.isDoctor && viewer.canEcoin) || can(req.ctx, 'ecoin.view_all')) ? await purchasePrice(prisma, req.ctx.userId, a, cfg) : null;
+    const price = cfg.enabled && a.staffType === 'DOCTOR' && ((viewer.isDoctor && viewer.canEcoin) || can(req.ctx, 'ecoin.view_all')) ? await purchasePrice(prisma, a, cfg) : null;
     const who = await names([a.originalUserId, ...a.events.flatMap((e) => [e.fromUserId, e.toUserId, e.createdById])]);
     res.json({
       id: a.id, date: dateOnlyStr(a.date), startTime: a.startTime, endTime: a.endTime, shift: a.shift, holder: a.user, holding: a.holding, staffType: a.staffType,

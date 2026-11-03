@@ -9,6 +9,7 @@ import { getSetting } from '../../lib/settings';
 import { notifyPermission, notifyUsers } from '../../lib/notify';
 import { dateOnlyStr } from '../../lib/dates';
 import { debit } from '../ecoin/wallet';
+import { refreshPenalty } from '../ecoin/penalty';
 import { closeOpenRequests, ensureDoctor, ensureFree, ensureNotStarted, fmtSlot, lockSlot, minutesUntil, purchasePrice, windowOf, type Slot } from './core';
 
 const name = async (tx: Tx, id: string | null) => (id ? (await tx.user.findUnique({ where: { id }, select: { fullName: true } }))?.fullName ?? '' : 'شاغر');
@@ -38,7 +39,7 @@ export async function buyShift(tx: Tx, ctx: Ctx, slotId: string, requestId?: str
   if (a.holding === 'PURCHASED') throw badRequest('لا يمكن شراء الشفت: تم شراؤه من طبيب آخر');
   ensureNotStarted(a, cfg.purchaseLeadMinutes, 'شراء الشفت');
   await ensureFree(tx, ctx.userId, a, [a.id]);
-  const p = await purchasePrice(tx, ctx.userId, a, cfg);
+  const p = await purchasePrice(tx, a, cfg);
   const prevId = a.userId;
   const txn = await debit(tx, ctx.userId, p.price, {
     type: 'PURCHASE', assignmentId: a.id, idempotencyKey: requestId ?? null, createdById: ctx.userId,
@@ -48,16 +49,10 @@ export async function buyShift(tx: Tx, ctx: Ctx, slotId: string, requestId?: str
   await tx.shiftAssignment.update({ where: { id: a.id }, data: { userId: ctx.userId, holding: 'PURCHASED', securedAt: null } });
   await tx.shiftEvent.create({ data: { assignmentId: a.id, type: 'PURCHASED', fromUserId: prevId, toUserId: ctx.userId, price: p.price, txnId: txn.id, createdById: ctx.userId, note: p.discount ? `سعر ${p.base} − تخفيض ${p.discount}` : null } });
   await closeOpenRequests(tx, a.id, 'انتقلت ملكية الشفت بالشراء');
-  let penaltyEnded = false;
-  if (p.penalty && p.discount > 0) {
-    const left = p.penalty.usesLeft - 1;
-    await tx.eCoinPenalty.update({ where: { id: p.penalty.id }, data: { usesLeft: left, ...(left === 0 && { status: 'ENDED', endedAt: new Date() }) } });
-    penaltyEnded = left === 0;
-  }
+  if (p.penalty && p.discount > 0) await refreshPenalty(tx, p.penalty);
   await audit(tx, ctx, { action: 'shift.purchase', entityType: 'shift_assignment', entityId: a.id, summary: `شراء ${fmtSlot(a)} بـ ${p.price} E Coin من ${await name(tx, prevId)}`, after: { buyer: ctx.userId, previousHolderId: prevId, price: p.price, txnId: txn.id } });
   await notifyUsers([ctx.userId], { type: 'ECOIN', title: 'تم شراء الشفت', body: `${fmtSlot(a)} — خُصم ${p.price} E Coin. رصيدك الآن ${txn.balanceAfter}`, link: '/staff/board', dedupeKey: `buy:${txn.id}` }, tx);
   if (prevId) await notifyUsers([prevId], { type: 'SHIFT_EXCHANGE', title: 'خسرت شفتاً', body: `اشترى ${ctx.userName} شفتك ${fmtSlot(a)}`, link: '/staff/board', dedupeKey: `lost:${txn.id}` }, tx);
-  if (penaltyEnded) await notifyUsers([ctx.userId], { type: 'ECOIN', title: 'انتهت فترة التخفيض', body: 'عادت أسعار الشفتات لقيمتها الطبيعية', link: '/ecoin', dedupeKey: `pen-end:${p.penalty!.id}` }, tx);
   return { txn, replayed: false };
 }
 

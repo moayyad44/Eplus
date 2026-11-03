@@ -6,6 +6,7 @@ import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { addDays, dateOnlyStr } from '../../lib/dates';
 import { getSetting, type SettingValue } from '../../lib/settings';
 import { shiftWindow } from '../staff/attendance';
+import { slotDiscount } from '../ecoin/penalty';
 
 /** Shared rules of the shift exchange. All times come from the server clock, never from the browser. */
 
@@ -71,11 +72,11 @@ export function basePrice(a: Pick<ShiftAssignment, 'shiftId' | 'date' | 'startTi
   return byLength ? { price: byLength.price, source: 'DURATION' } : { price: cfg.otherPrice, source: 'OTHER' };
 }
 
-/** Purchase price for a buyer: base minus his active incentive discount (never below zero). */
-export async function purchasePrice(tx: Db, buyerId: string, a: Slot, cfg: SettingValue<'ecoin'>) {
+/** Purchase price: base minus the discount of its holder's active incentive penalty, if it covers this shift (never below zero). */
+export async function purchasePrice(tx: Db, a: Slot, cfg: SettingValue<'ecoin'>) {
   const rules = await tx.shiftPriceRule.findMany({ where: { shiftId: a.shiftId, isActive: true } });
   const base = basePrice(a, rules, cfg);
-  const penalty = cfg.penaltyEnabled ? await tx.eCoinPenalty.findFirst({ where: { userId: buyerId, status: 'ACTIVE', usesLeft: { gt: 0 } }, orderBy: { triggeredAt: 'asc' } }) : null;
+  const penalty = cfg.penaltyEnabled ? await slotDiscount(tx, a) : null;
   const discount = penalty ? Math.min(penalty.discount, base.price) : 0;
   return { base: base.price, source: base.source, discount, price: Math.max(0, base.price - discount), penalty };
 }

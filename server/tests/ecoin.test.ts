@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '../src/lib/prisma';
 import { awardForInvoice } from '../src/modules/ecoin/earn';
 import { processExpiry } from '../src/modules/ecoin/wallet';
-import { evaluatePenalties } from '../src/modules/ecoin/penalty';
+import { evaluatePenalties, penaltyCoverage, refreshPenalty } from '../src/modules/ecoin/penalty';
 import { buyShift } from '../src/modules/shiftx/actions';
 import { addDays, dateOnly } from '../src/lib/dates';
 import { login, type Client } from './helpers';
@@ -238,7 +238,7 @@ describe('releasing a shift', () => {
 });
 
 describe('incentive rule (no coins during the last 5 worked shifts)', () => {
-  it('16-17. after 5 worked shifts without coins: purchases cost 1 less for the next 5 purchases, then back to normal; evaluated once', async () => {
+  it('16-17. after 5 worked shifts without coins: his own next 5 shifts cost 1 less for whoever buys them, then back to normal; evaluated once', async () => {
     const u = id['dr.omar'];
     await prisma.eCoinWallet.upsert({ where: { userId: u }, create: { userId: u, penaltyCheckedThrough: addDays(new Date(), -12) }, update: { penaltyCheckedThrough: addDays(new Date(), -12) } });
     for (let d = 7; d >= 3; d--) await slot(u, inMinutes(-d * DAY), 8); // five shifts he worked, all over
@@ -250,20 +250,43 @@ describe('incentive rule (no coins during the last 5 worked shifts)', () => {
     expect((pens[0].windowShifts as unknown[]).length).toBe(5);
     expect((await admin.get('/api/ecoin/penalties')).body.some((p: { userId: string }) => p.userId === u)).toBe(true);
 
-    await give(u, 20);
+    // The penalised doctor himself buys at the normal price.
+    await give(u, 5);
+    const other = await slot(id['dr.ahmad'], inMinutes(39 * DAY), 8);
+    const own = await omar.post(`/api/shifts/${other.id}/buy`, {});
+    expect(own.status, JSON.stringify(own.body)).toBe(200);
+    expect(own.body.price).toBe(2);
+
+    // His shifts (the one he just bought counts as one of his next five, and is protected).
+    const mine = [];
+    for (let i = 0; i < 6; i++) mine.push(await slot(u, inMinutes((40 + i) * DAY), 8));
+    const day = localDay(inMinutes(40 * DAY));
+    const b = await lina.get(`/api/shifts/board?from=${day}&to=${day}`);
+    expect(b.body.slots.find((x: { id: string }) => x.id === mine[0].id).price).toMatchObject({ base: 2, discount: 1, price: 1 });
+    const ob = await omar.get(`/api/shifts/board?from=${day}&to=${day}`);
+    expect(ob.body.viewer.penalty).toMatchObject({ discount: 1, usesLeft: 5 });
+
+    // His first five shifts after the penalty (whatever else he already held) are covered; the rest are not.
+    const cov = await penaltyCoverage(prisma, pens[0]);
+    expect(cov.shifts).toHaveLength(5);
+    expect(cov.shifts).toContain(other.id);
+    const expected = mine.map((s) => (cov.slotIds.has(s.id) ? 1 : 2));
+    expect(expected.filter((x) => x === 1).length).toBeGreaterThan(0);
+    expect(expected[5]).toBe(2);
+    await give(id['dr.lina'], 20);
     const prices: number[] = [];
-    for (let i = 0; i < 6; i++) {
-      const s = await slot(id['dr.lina'], inMinutes((10 + i) * DAY), 8); // 2 E Coins each
-      if (i === 0) {
-        const b = await omar.get(`/api/shifts/board?from=${localDay(inMinutes(10 * DAY))}&to=${localDay(inMinutes(10 * DAY))}`);
-        expect(b.body.slots.find((x: { id: string }) => x.id === s.id).price).toMatchObject({ base: 2, discount: 1, price: 1 });
-      }
-      const r = await omar.post(`/api/shifts/${s.id}/buy`, {});
+    for (const s of mine) {
+      const r = await lina.post(`/api/shifts/${s.id}/buy`, {});
       expect(r.status, JSON.stringify(r.body)).toBe(200);
       prices.push(r.body.price);
     }
-    expect(prices).toEqual([1, 1, 1, 1, 1, 2]);
+    expect(prices).toEqual(expected); // discounted while covered, then the normal price again
+    const p = await prisma.eCoinPenalty.findFirstOrThrow({ where: { userId: u } });
+    expect(p).toMatchObject({ status: 'ACTIVE' }); // the protected shift he bought (one of the five) is still ahead
+    expect(p.usesLeft).toBeGreaterThan(0);
+    await refreshPenalty(prisma, p, inMinutes(60 * DAY)); // ... once his covered shifts have started, all five are used up
     expect(await prisma.eCoinPenalty.findFirstOrThrow({ where: { userId: u } })).toMatchObject({ status: 'ENDED', usesLeft: 0 });
+    await evaluatePenalties();
     expect(await prisma.notification.count({ where: { userId: u, title: 'انتهت فترة التخفيض' } })).toBe(1);
   });
 
@@ -403,12 +426,12 @@ describe('permissions and safety', () => {
     const weekday = s.date.getUTCDay();
     expect((await admin.post('/api/ecoin/price-rules', { shiftId: s.shiftId, weekday, price: 3 })).status).toBe(201);
     expect((await admin.post('/api/ecoin/price-rules', { shiftId: s.shiftId, weekday, price: 4 })).status).toBe(400); // duplicate
-    const day = localDay(inMinutes(15 * DAY));
-    let p = (await admin.get(`/api/ecoin/prices?from=${day}&to=${day}`)).body;
+    const day = localDay(inMinutes(15 * DAY)), day2 = localDay(inMinutes(16 * DAY)); // the second one may fall on the next day
+    let p = (await admin.get(`/api/ecoin/prices?from=${day}&to=${day2}`)).body;
     expect(p.find((x: { id: string }) => x.id === s.id)).toMatchObject({ price: 3, source: 'WEEKDAY' });
     expect(p.find((x: { id: string }) => x.id === other.id)).toMatchObject({ price: 2, source: 'DURATION' });
     expect((await admin.post('/api/ecoin/price-rules', { shiftId: s.shiftId, date: day, price: 5 })).status).toBe(201);
-    p = (await admin.get(`/api/ecoin/prices?from=${day}&to=${day}`)).body;
+    p = (await admin.get(`/api/ecoin/prices?from=${day}&to=${day2}`)).body;
     expect(p.find((x: { id: string }) => x.id === s.id)).toMatchObject({ price: 5, source: 'DATE' });
     expect((await admin.post('/api/ecoin/price-rules', { shiftId: s.shiftId, weekday: 1, date: day, price: 1 })).status).toBe(400); // one or the other
   });

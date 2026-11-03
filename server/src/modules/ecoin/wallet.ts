@@ -2,6 +2,7 @@ import type { ECoinSource, ECoinTxnType, Prisma } from '@prisma/client';
 import type { Tx } from '../../lib/prisma';
 import { prisma } from '../../lib/prisma';
 import { badRequest, conflict } from '../../lib/errors';
+import { penaltyCoverage } from './penalty';
 import { getSetting } from '../../lib/settings';
 import { notifyUsers } from '../../lib/notify';
 import { addDays } from '../../lib/dates';
@@ -166,7 +167,7 @@ export async function walletSummary(userId: string) {
     reversals: sum('REVERSAL'),
     expiringSoon: expiring,
     expiryWarnDays,
-    penalty,
+    penalty: penalty && { ...penalty, usesLeft: Math.max(0, (await penaltyCoverage(prisma, penalty, now)).usesLeft) },
   };
 }
 
