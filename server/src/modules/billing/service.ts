@@ -13,6 +13,7 @@ import { changeVisitStatus } from '../visits/service';
 import { computeCoverage, contractPrice, usableMembership, type MembershipWithContract } from '../insurance/coverage';
 import { cancelClaimWithInvoice, createClaimForInvoice } from '../insurance/claims';
 import { onInvoiceCancel, onInvoiceDateChange, prepareSaleDocs } from '../einvoice/service';
+import { awardForInvoice, clawbackForInvoice } from '../ecoin/earn';
 
 export interface InvoiceItemInput {
   serviceId: string;
@@ -196,6 +197,8 @@ export async function issueInvoice(tx: Tx, ctx: Ctx, invoiceId: string) {
   await createClaimForInvoice(tx, ctx, inv.id);
   // National e-invoicing: documents prepared now (fixed number + UUID), sent once this transaction commits.
   await prepareSaleDocs(tx, ctx, inv.id);
+  // E Coin: one award to the ordering doctor when the invoice holds lab tests (never twice for an invoice).
+  await awardForInvoice(tx, ctx, inv.id);
   // Nothing left for the patient to pay (e.g. fully covered) → the visit is done.
   if (updated.status === 'PAID' && inv.visitId) {
     const visit = await tx.visit.findUnique({ where: { id: inv.visitId }, select: { status: true } });
@@ -284,6 +287,7 @@ export async function cancelInvoice(tx: Tx, ctx: Ctx, invoiceId: string, reason:
   // Before anything changes: refused while a national submission's outcome is unknown; otherwise accepted national
   // documents get a return invoice and unsent ones are voided.
   await onInvoiceCancel(tx, ctx, inv.id, reason);
+  await clawbackForInvoice(tx, ctx, inv.id, reason);
   await cancelClaimWithInvoice(tx, ctx, inv.id, reason);
   const updated = await tx.invoice.update({
     where: { id: inv.id },

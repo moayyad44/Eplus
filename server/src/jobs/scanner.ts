@@ -6,6 +6,9 @@ import { notifyPermission, notifyUsers, usersWithPermission } from '../lib/notif
 import { num } from '../lib/money';
 import { shiftWindow } from '../modules/staff/attendance';
 import { processQueue } from '../modules/einvoice/service';
+import { processExpiry } from '../modules/ecoin/wallet';
+import { evaluatePenalties } from '../modules/ecoin/penalty';
+import { expireStaleRequests } from '../modules/shiftx/actions';
 
 /**
  * Periodic scanner that turns data conditions into notifications and keeps time-based states current.
@@ -65,19 +68,21 @@ export async function runScan(now = new Date()) {
 
   // 5. Shifts that ended while the employee is still checked in
   const openShifts = await prisma.shiftAssignment.findMany({
-    where: { date: { gte: addDays(today, -1), lte: today }, attendance: { some: { checkIn: { not: null }, checkOut: null } } },
+    where: { date: { gte: addDays(today, -1), lte: today }, userId: { not: null }, attendance: { some: { checkIn: { not: null }, checkOut: null } } },
     include: { user: { select: { id: true, fullName: true } } },
   });
   for (const a of openShifts) {
     if (shiftWindow(a).end > now) continue;
+    if (!a.userId) continue;
     await notifyUsers([a.userId], { type: 'SHIFT_ENDING', title: 'انتهى الشفت', body: 'لا تنسَ تسجيل المغادرة', link: '/staff/attendance', dedupeKey: `shiftend:${a.id}` });
   }
 
   // 6. Yesterday's scheduled staff with no attendance record and no approved leave → ABSENT (can be turned off in settings)
   const yesterday = addDays(today, -1);
   const { autoAbsent } = await getSetting('attendance');
-  const missing = autoAbsent ? await prisma.shiftAssignment.findMany({ where: { date: yesterday, attendance: { none: {} } }, select: { id: true, userId: true } }) : [];
+  const missing = autoAbsent ? await prisma.shiftAssignment.findMany({ where: { date: yesterday, userId: { not: null }, attendance: { none: {} } }, select: { id: true, userId: true } }) : [];
   for (const m of missing) {
+    if (!m.userId) continue; // vacant slot
     const onLeave = await prisma.leave.findFirst({ where: { userId: m.userId, status: 'APPROVED', startDate: { lte: yesterday }, endDate: { gte: yesterday } } });
     await prisma.attendance.upsert({
       where: { userId_date: { userId: m.userId, date: yesterday } },
@@ -85,6 +90,12 @@ export async function runScan(now = new Date()) {
       update: {},
     });
   }
+
+  // 6b. E Coin & shift exchange: expire coins by their own dates (and warn before), close requests whose
+  // shifts started, then judge closed blocks of worked shifts for the incentive rule (after the absence pass).
+  await processExpiry(now).catch((e) => console.error('[ecoin expiry]', e));
+  await expireStaleRequests(now).catch((e) => console.error('[shift requests]', e));
+  await evaluatePenalties(now).catch((e) => console.error('[ecoin penalties]', e));
 
   // 7. Insurance memberships expiring within 7 days or already expired while still marked active (reception, once a week)
   const insExpiring = await prisma.patientInsurance.findMany({

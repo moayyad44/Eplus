@@ -40,6 +40,40 @@ export const settingSchemas = {
     graceMinutes: z.number().int().min(0).max(120).default(10),
     autoAbsent: z.boolean().default(true),
   }),
+  /** E Coin: doctors' virtual coins (no cash value). Earned on lab invoices, spent on shifts. */
+  ecoin: z.object({
+    enabled: z.boolean().default(true),
+    /** Coins per issued invoice containing lab tests (one per invoice, whatever the number of tests). */
+    coinsPerLabInvoice: z.number().int().min(0).max(100).default(1),
+    /** Each coin expires this many days after it was earned. */
+    expiryDays: z.number().int().min(1).max(3650).default(30),
+    /** Warn the doctor this many days before coins expire. */
+    expiryWarnDays: z.number().int().min(0).max(60).default(5),
+    /** Price for a doctor to secure (protect) a shift distributed to him. */
+    securePrice: z.number().int().min(0).max(100).default(1),
+    /** Default price by shift length; a duration not listed uses otherPrice. Per-shift rules override these. */
+    durationPrices: z.array(z.object({ hours: z.number().min(0.5).max(24), price: z.number().int().min(0).max(100) })).max(20)
+      .default([{ hours: 8, price: 2 }, { hours: 12, price: 3 }]),
+    otherPrice: z.number().int().min(0).max(100).default(2),
+    /** No purchase when the shift starts within this many minutes (or has started). */
+    purchaseLeadMinutes: z.number().int().min(0).max(1440).default(60),
+    /** Incentive rule: after N worked shifts with fewer than minCoins earned, the next purchases cost less. */
+    penaltyEnabled: z.boolean().default(true),
+    penaltyWindowShifts: z.number().int().min(1).max(50).default(5),
+    penaltyMinCoins: z.number().int().min(1).max(100).default(1),
+    penaltyDiscount: z.number().int().min(0).max(100).default(1),
+    penaltyUses: z.number().int().min(1).max(50).default(5),
+  }),
+  /** Shift exchange between staff (doctors and nurses): swaps, release, partial coverage. */
+  shiftExchange: z.object({
+    swapEnabled: z.boolean().default(true),
+    releaseEnabled: z.boolean().default(true),
+    coverEnabled: z.boolean().default(true),
+    /** Swaps and releases close this many minutes before the shift starts. */
+    changeLeadMinutes: z.number().int().min(0).max(1440).default(60),
+    minCoverMinutes: z.number().int().min(5).max(720).default(15),
+    maxCoverMinutes: z.number().int().min(5).max(720).default(180),
+  }),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;

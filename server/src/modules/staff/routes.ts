@@ -65,13 +65,17 @@ staffRouter.post(
     const shift = await prisma.shift.findFirst({ where: { id: body.shiftId, isActive: true } });
     if (!shift) throw badRequest('الشفت غير متاح');
     const leaves = await prisma.leave.findMany({ where: { userId: { in: body.userIds }, status: 'APPROVED', startDate: { lte: to }, endDate: { gte: from } } });
+    const staffTypes = new Map((await prisma.user.findMany({ where: { id: { in: body.userIds } }, select: { id: true, staffType: true } })).map((u) => [u.id, u.staffType]));
     const data: Prisma.ShiftAssignmentCreateManyInput[] = [];
     let skippedLeave = 0;
     for (let d = new Date(from); d <= to; d = new Date(d.getTime() + 86_400_000)) {
       if (!body.weekdays.includes(d.getUTCDay())) continue;
       for (const userId of body.userIds) {
         if (leaves.some((l) => l.userId === userId && l.startDate <= d && l.endDate >= d)) { skippedLeave++; continue; }
-        data.push({ userId, shiftId: shift.id, date: new Date(d), startTime: body.startTime ?? shift.startTime, endTime: body.endTime ?? shift.endTime, notes: body.notes, createdById: req.ctx.userId });
+        data.push({
+          userId, shiftId: shift.id, date: new Date(d), startTime: body.startTime ?? shift.startTime, endTime: body.endTime ?? shift.endTime, notes: body.notes, createdById: req.ctx.userId,
+          staffType: staffTypes.get(userId) ?? null, originalUserId: userId,
+        });
       }
     }
     const created = await prisma.$transaction(async (tx) => {
@@ -88,11 +92,15 @@ staffRouter.delete(
   requirePerm('shifts.manage'),
   ah(async (req, res) => {
     await prisma.$transaction(async (tx) => {
-      const a = await tx.shiftAssignment.findUnique({ where: { id: req.params.id }, include: { _count: { select: { attendance: true } }, user: { select: { fullName: true } } } });
+      const a = await tx.shiftAssignment.findUnique({ where: { id: req.params.id }, include: { _count: { select: { attendance: true, events: true, coverages: true } }, user: { select: { fullName: true } } } });
       if (!a) throw notFound();
       if (a._count.attendance) throw badRequest('لا يمكن حذف دوام عليه حضور مسجل');
+      // Its history (purchase, protection, swap, release, coverage) and any E Coin spent on it must stay traceable.
+      if (a._count.events || a._count.coverages || (await tx.eCoinTxn.count({ where: { assignmentId: a.id } }))) {
+        throw badRequest('لا يمكن حذف دوام عليه عمليات (شراء، تأمين، تبديل، تنازل أو تغطية). أعد توزيعه بدلاً من حذفه');
+      }
       await tx.shiftAssignment.delete({ where: { id: a.id } });
-      await audit(tx, req.ctx, { action: 'schedule.delete', entityType: 'shift_assignment', entityId: a.id, summary: `${a.user.fullName} ${dateOnlyStr(a.date)}`, before: a });
+      await audit(tx, req.ctx, { action: 'schedule.delete', entityType: 'shift_assignment', entityId: a.id, summary: `${a.user?.fullName ?? 'شاغر'} ${dateOnlyStr(a.date)}`, before: a });
     });
     res.json({ ok: true });
   }),

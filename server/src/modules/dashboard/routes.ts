@@ -82,7 +82,7 @@ dashboardRouter.get(
       upcomingAppointments: upcoming,
       lowStock: lowStock.map((i) => ({ ...i, quantity: num(i.quantity), minQuantity: num(i.minQuantity) })),
       expiringCount: expiring,
-      doctorsOnShift: doctorsOnShift.map((d) => ({ ...d.user, startTime: d.startTime, endTime: d.endTime, checkedIn: checkedIn.has(d.user.id) })),
+      doctorsOnShift: doctorsOnShift.flatMap((d) => (d.user ? [{ ...d.user, startTime: d.startTime, endTime: d.endTime, checkedIn: checkedIn.has(d.user.id) }] : [])),
       visitsByDoctor: byDoctor.map((d) => ({ doctorId: d.doctorId, name: doctorNames.find((n) => n.id === d.doctorId)?.fullName ?? 'غير محدد', count: d._count })),
       series,
     });

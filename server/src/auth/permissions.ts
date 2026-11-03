@@ -89,6 +89,15 @@ export const PERMISSIONS = {
   'shifts.manage': { module: 'staff', description: 'إدارة الشفتات والجداول والإجازات' },
   'attendance.view': { module: 'staff', description: 'عرض الحضور' },
   'attendance.manage': { module: 'staff', description: 'تسجيل وتعديل الحضور لجميع الموظفين' },
+  'shifts.swap': { module: 'staff', description: 'طلب تبديل الشفتات والرد على طلبات التبديل' },
+  'shifts.release': { module: 'staff', description: 'التنازل عن الشفت' },
+  'shifts.cover': { module: 'staff', description: 'طلب تغطية جزء من الشفت التالي والرد على الطلبات' },
+  'shifts.handover': { module: 'staff', description: 'تسجيل التأخير وتمديد الشفت والتسليم بين الموظفين' },
+  // E Coin (doctors only)
+  'ecoin.use': { module: 'ecoin', description: 'محفظة E Coin: شراء الشفتات وتأمين الشفت (للأطباء فقط)' },
+  'ecoin.view_all': { module: 'ecoin', description: 'الاطلاع على محافظ جميع الأطباء والعمليات والتقارير' },
+  'ecoin.manage': { module: 'ecoin', description: 'إعدادات E Coin وأسعار الشفتات وإلغاء العمليات الخاطئة' },
+  'ecoin.adjust': { module: 'ecoin', description: 'تعديل رصيد طبيب يدوياً (بسبب إلزامي)' },
   // Reports
   'reports.patients': { module: 'reports', description: 'تقارير المرضى' },
   'reports.doctors': { module: 'reports', description: 'تقارير الأطباء' },
@@ -120,6 +129,7 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
       'patients.view', 'medical.view', 'medical.history.manage', 'consultation.manage', 'vitals.record',
       'attachments.view', 'attachments.upload', 'queue.view', 'queue.call', 'appointments.view',
       'lab.view', 'lab.order', 'shifts.view', 'attendance.view', 'invoices.view', 'insurance.view',
+      'shifts.swap', 'shifts.release', 'shifts.cover', 'ecoin.use',
     ],
   },
   {
@@ -130,6 +140,7 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
       'patients.view', 'medical.view', 'vitals.record', 'nursing.record', 'attachments.view', 'attachments.upload',
       'queue.view', 'queue.view_all', 'queue.call', 'lab.view', 'lab.process', 'appointments.view',
       'inventory.view', 'shifts.view', 'attendance.view',
+      'shifts.swap', 'shifts.release', 'shifts.cover',
     ],
   },
   {

@@ -33,6 +33,8 @@ import { auditRouter, notificationsRouter, searchRouter } from './modules/system
 import { backupsRouter } from './modules/system/backups';
 import { insuranceRouter } from './modules/insurance/routes';
 import { einvoiceRouter } from './modules/einvoice/routes';
+import { ecoinRouter } from './modules/ecoin/routes';
+import { shiftsRouter } from './modules/shiftx/routes';
 import { claimsRouter, insurancePaymentsRouter, insuranceReportsRouter } from './modules/insurance/claimRoutes';
 
 export function createApp() {
@@ -108,6 +110,8 @@ export function createApp() {
   api.use('/attachments', attachmentsRouter);
   api.use('/billing', billingRouter);
   api.use('/einvoice', einvoiceRouter);
+  api.use('/ecoin', ecoinRouter);
+  api.use('/shifts', shiftsRouter);
   api.use('/cashier', cashierRouter);
   api.use('/expenses', expensesRouter);
   api.use('/inventory', inventoryRouter);

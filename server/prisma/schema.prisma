@@ -1676,22 +1676,33 @@ model Shift {
 }
 
 model ShiftAssignment {
-  id          String   @id @default(uuid())
-  userId      String
-  shiftId     String
-  date        DateTime @db.Date
-  startTime   String
-  endTime     String
-  notes       String?
-  createdById String?
-  createdAt   DateTime @default(now())
+  id             String       @id @default(uuid())
+  /// Current holder. Null = vacant (released by its holder, waiting for a buyer or the administration).
+  userId         String?
+  shiftId        String
+  date           DateTime     @db.Date
+  startTime      String
+  endTime        String
+  notes          String?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  /// Staff category of the slot (who may hold it), kept when the slot is vacant.
+  staffType      StaffType?
+  /// Holder chosen by the administration when the shift was distributed.
+  originalUserId String?
+  /// How the current holder holds it (E Coin protection).
+  holding        ShiftHolding @default(ASSIGNED)
+  securedAt      DateTime?
 
-  user       User         @relation(fields: [userId], references: [id])
-  shift      Shift        @relation(fields: [shiftId], references: [id])
+  user       User?           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  shift      Shift           @relation(fields: [shiftId], references: [id])
   attendance Attendance[]
+  events     ShiftEvent[]
+  coverages  ShiftCoverage[]
 
   @@unique([userId, date, shiftId])
   @@index([date])
+  @@index([userId, date])
   @@map("shift_assignments")
 }
 
@@ -1765,6 +1776,8 @@ model Attendance {
 // ───────────────────────────── Notifications & audit ─────────────────────────────
 
 enum NotificationType {
+  ECOIN
+  SHIFT_EXCHANGE
   LOW_STOCK
   EXPIRY
   UNPAID_INVOICE
@@ -1932,4 +1945,264 @@ model EInvoiceAttempt {
 
   @@index([eInvoiceId, at])
   @@map("einvoice_attempts")
+}
+
+// ── E Coin (doctors' virtual coins) and shift exchange ──
+
+/// How the current holder holds a distributed shift.
+enum ShiftHolding {
+  /// As distributed (or swapped in): others may buy it.
+  ASSIGNED
+  /// The holder paid to protect it: nobody can buy it.
+  SECURED
+  /// Bought from another doctor: owned by the buyer and protected.
+  PURCHASED
+  /// Released by its holder: no holder until bought or reassigned.
+  VACANT
+}
+
+enum ShiftEventType {
+  ASSIGNED
+  SECURED
+  PURCHASED
+  RELEASED
+  SWAPPED
+  REASSIGNED
+  COVERAGE
+  HANDOVER
+  REVERSED
+}
+
+enum ExchangeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum ECoinSource {
+  LAB_INVOICE
+  ADJUSTMENT
+  REFUND
+}
+
+enum ECoinTxnType {
+  /// Earned for an issued invoice with lab tests.
+  EARN
+  /// Lots past their validity.
+  EXPIRE
+  /// Bought another doctor's (or a vacant) shift.
+  PURCHASE
+  /// Secured one's own shift.
+  SECURE
+  /// Manual correction by the administration (+ or -).
+  ADJUST
+  /// Earned coins taken back because their invoice was cancelled.
+  CLAWBACK
+  /// Administrative reversal of an earlier transaction.
+  REVERSAL
+}
+
+enum PenaltyStatus {
+  ACTIVE
+  ENDED
+}
+
+/// One wallet per doctor. balance = sum of unexpired lot remainders; the row is locked for every movement.
+model ECoinWallet {
+  userId                String    @id
+  balance               Int       @default(0)
+  /// Penalty rule: worked shifts up to this moment were already evaluated (blocks of N, never twice).
+  penaltyCheckedThrough DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("ecoin_wallets")
+}
+
+/// Coins earned together; each lot expires on its own date and is spent soonest-to-expire first.
+model ECoinLot {
+  id         String      @id @default(uuid())
+  userId     String
+  source     ECoinSource
+  amount     Int
+  remaining  Int
+  earnedAt   DateTime    @default(now())
+  /// When the activity happened (lab order time) — used by the penalty rule.
+  activityAt DateTime    @default(now())
+  expiresAt  DateTime
+  /// LAB_INVOICE lots: one per invoice, ever.
+  invoiceId  String?     @unique
+  expiredAt  DateTime?
+  warnedAt   DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+  @@map("ecoin_lots")
+}
+
+/// Wallet ledger. Append-only (database trigger): corrections are new rows, never edits.
+model ECoinTxn {
+  id             String       @id @default(uuid())
+  userId         String
+  type           ECoinTxnType
+  /// Signed: + adds to the balance, - takes from it.
+  amount         Int
+  balanceBefore  Int
+  balanceAfter   Int
+  lotId          String?
+  invoiceId      String?
+  assignmentId   String?
+  /// REVERSAL rows: the transaction they reverse (at most once).
+  reversalOfId   String?      @unique
+  /// Client request id: a resent request returns the first result instead of charging twice.
+  idempotencyKey String?      @unique
+  reason         String?
+  meta           Json?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+
+  uses ECoinLotUse[]
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([assignmentId])
+  @@map("ecoin_transactions")
+}
+
+/// Which lots a debit (or a refund) touched. Append-only.
+model ECoinLotUse {
+  id     String @id @default(uuid())
+  txnId  String
+  lotId  String
+  /// Positive = taken from the lot, negative = given back to it.
+  amount Int
+
+  txn ECoinTxn @relation(fields: [txnId], references: [id])
+
+  @@index([lotId])
+  @@map("ecoin_lot_uses")
+}
+
+/// Custom price of one shift on a weekday or on a date (date wins over weekday, both over the duration default).
+model ShiftPriceRule {
+  id          String    @id @default(uuid())
+  shiftId     String
+  /// 0 = Sunday … 6 = Saturday
+  weekday     Int?
+  date        DateTime? @db.Date
+  price       Int
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([shiftId])
+  @@map("shift_price_rules")
+}
+
+/// Discount granted after N worked shifts without coins: applies to the doctor's next purchases.
+model ECoinPenalty {
+  id           String        @id @default(uuid())
+  userId       String
+  windowStart  DateTime
+  windowEnd    DateTime
+  /// Worked shifts evaluated (ids), for review by the administration.
+  windowShifts Json
+  coinsEarned  Int
+  discount     Int
+  usesTotal    Int
+  usesLeft     Int
+  status       PenaltyStatus @default(ACTIVE)
+  triggeredAt  DateTime      @default(now())
+  endedAt      DateTime?
+
+  @@unique([userId, windowEnd])
+  @@index([userId, status])
+  @@map("ecoin_penalties")
+}
+
+/// Full history of a shift: every holder change and protection. Append-only.
+model ShiftEvent {
+  id           String         @id @default(uuid())
+  assignmentId String
+  type         ShiftEventType
+  fromUserId   String?
+  toUserId     String?
+  price        Int?
+  txnId        String?
+  refId        String?
+  note         String?
+  createdById  String?
+  createdAt    DateTime       @default(now())
+
+  assignment ShiftAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([assignmentId, createdAt])
+  @@index([type, createdAt])
+  @@map("shift_events")
+}
+
+/// Swap request between two holders; executed only when the other side accepts.
+model ShiftSwap {
+  id               String         @id @default(uuid())
+  requesterId      String
+  targetUserId     String
+  fromAssignmentId String
+  toAssignmentId   String
+  status           ExchangeStatus @default(PENDING)
+  note             String?
+  respondedAt      DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@index([requesterId, status])
+  @@index([targetUserId, status])
+  @@map("shift_swaps")
+}
+
+/// The holder of the previous shift covers the first part of the next shift (no change of holder, no coins).
+model ShiftCoverage {
+  id           String         @id @default(uuid())
+  assignmentId String
+  requesterId  String
+  ownerId      String
+  minutes      Int
+  startAt      DateTime
+  endAt        DateTime
+  status       ExchangeStatus @default(PENDING)
+  note         String?
+  respondedAt  DateTime?
+  createdAt    DateTime       @default(now())
+
+  assignment ShiftAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([assignmentId, status])
+  @@index([ownerId, status])
+  @@index([requesterId, status])
+  @@map("shift_coverages")
+}
+
+/// Late arrival of the next holder and/or extension of the previous one, recorded by an authorised user.
+model ShiftHandover {
+  id               String    @id @default(uuid())
+  nextAssignmentId String?
+  prevAssignmentId String?
+  nextUserId       String?
+  prevUserId       String?
+  plannedStart     DateTime?
+  actualStart      DateTime?
+  plannedEnd       DateTime?
+  actualEnd        DateTime?
+  lateMinutes      Int       @default(0)
+  extendedMinutes  Int       @default(0)
+  reason           String?
+  recordedById     String
+  createdAt        DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([nextUserId])
+  @@index([prevUserId])
+  @@map("shift_handovers")
 }
