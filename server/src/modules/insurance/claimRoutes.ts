@@ -6,7 +6,7 @@ import { ah, nullableStr, optionalDate, pageQuery, paged, paginate } from '../..
 import { parse } from '../../lib/validate';
 import { notFound } from '../../lib/errors';
 import { requireAnyPerm, requirePerm } from '../../middleware/auth';
-import { rangeFromQuery } from '../../lib/dates';
+import { dateOnly, rangeFromQuery, ymd } from '../../lib/dates';
 import { D, num } from '../../lib/money';
 import {
   addNote, closeClaim, markReady, markResubmissionRequired, markUnderReview, recordCompanyPayment, recordDecision,
@@ -220,8 +220,8 @@ insuranceReportsRouter.get(
   requirePerm('insurance.report.view'),
   ah(async (req, res) => {
     const q = parse(period, req.query);
-    const { from, to } = rangeFromQuery(q.from ?? monthStart(), q.to ?? new Date().toISOString().slice(0, 10));
-    const today = new Date(new Date().toISOString().slice(0, 10));
+    const { from, to } = rangeFromQuery(q.from ?? monthStart(), q.to ?? ymd(new Date()));
+    const today = dateOnly();
     const [totals, insured, visits, byStatus, collection, byCompany, expiring] = await Promise.all([
       insuranceTotals(from, to, q.companyId),
       prisma.patientInsurance.findMany({
@@ -295,7 +295,7 @@ insuranceReportsRouter.get(
   requirePerm('insurance.report.view'),
   ah(async (req, res) => {
     const q = parse(period, req.query);
-    const { from, to } = rangeFromQuery(q.from ?? monthStart(), q.to ?? new Date().toISOString().slice(0, 10));
+    const { from, to } = rangeFromQuery(q.from ?? monthStart(), q.to ?? ymd(new Date()));
     const events = await prisma.insuranceClaimEvent.findMany({
       where: { type: 'DECISION', dRejected: { gt: 0 }, voidedAt: null, createdAt: { gte: from, lte: to }, ...(q.companyId && { claim: { companyId: q.companyId } }) },
       orderBy: { createdAt: 'desc' },
@@ -325,7 +325,7 @@ insuranceReportsRouter.get(
     const q = parse(period.pick({ from: true, to: true }), req.query);
     const company = await prisma.insuranceCompany.findUnique({ where: { id: req.params.id } });
     if (!company) throw notFound();
-    const { from, to } = rangeFromQuery(q.from ?? monthStart(), q.to ?? new Date().toISOString().slice(0, 10));
+    const { from, to } = rangeFromQuery(q.from ?? monthStart(), q.to ?? ymd(new Date()));
     const sumClaims = async (gte?: Date, lte?: Date) => D((await prisma.insuranceClaim.aggregate({ where: { companyId: company.id, createdAt: { ...(gte && { gte }), ...(lte && { lte }) } }, _sum: { insuranceAmount: true } }))._sum.insuranceAmount);
     const sumEvents = async (gte?: Date, lte?: Date) => (await prisma.insuranceClaimEvent.aggregate({
       where: { voidedAt: null, claim: { companyId: company.id }, createdAt: { ...(gte && { gte }), ...(lte && { lte }) } },

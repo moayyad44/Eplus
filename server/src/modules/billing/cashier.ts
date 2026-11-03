@@ -5,7 +5,7 @@ import { prisma } from '../../lib/prisma';
 import { ah } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { requirePerm } from '../../middleware/auth';
-import { rangeFromQuery } from '../../lib/dates';
+import { dateOnly, rangeFromQuery } from '../../lib/dates';
 import { D, num } from '../../lib/money';
 import { env } from '../../config/env';
 import { insuranceTotals } from '../insurance/claimRoutes';
@@ -26,7 +26,7 @@ export async function financialSummary(from: Date, to: Date, branchId?: string |
       FROM payments p JOIN payment_methods m ON m.id = p."methodId" JOIN invoices i ON i.id = p."invoiceId"
       WHERE p."voidedAt" IS NULL AND p."paidAt" BETWEEN ${from} AND ${to} ${branch}
       GROUP BY m.id, m.name, m.code, p.type ORDER BY m.name`,
-    prisma.expense.aggregate({ where: { voidedAt: null, expenseDate: { gte: new Date(from.toISOString().slice(0, 10)), lte: to }, ...(branchId && { branchId }) }, _sum: { amount: true }, _count: true }),
+    prisma.expense.aggregate({ where: { voidedAt: null, expenseDate: { gte: dateOnly(from), lte: dateOnly(to) }, ...(branchId && { branchId }) }, _sum: { amount: true }, _count: true }),
     prisma.invoice.aggregate({ where: { status: { in: ['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'] }, balance: { gt: 0 }, ...(branchId && { branchId }) }, _sum: { balance: true }, _count: true }),
     prisma.$queryRaw<{ day: string; collected: Prisma.Decimal; refunded: Prisma.Decimal }[]>`
       SELECT to_char(p."paidAt" AT TIME ZONE 'UTC' AT TIME ZONE ${env.TZ}, 'YYYY-MM-DD') AS day,

@@ -258,7 +258,7 @@ describe('incentive rule (no coins during the last 5 worked shifts)', () => {
     expect(own.body.price).toBe(2);
 
     // His shifts (the one he just bought counts as one of his next five, and is protected).
-    const mine = [];
+    const mine: Awaited<ReturnType<typeof slot>>[] = [];
     for (let i = 0; i < 6; i++) mine.push(await slot(u, inMinutes((40 + i) * DAY), 8));
     const day = localDay(inMinutes(40 * DAY));
     const b = await lina.get(`/api/shifts/board?from=${day}&to=${day}`);

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { UserRound } from 'lucide-react';
 import { toast } from 'sonner';
+import { ymd } from '@/lib/format';
 import { api, ApiError } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
 import type { Patient, PatientLite } from '@/lib/types';
@@ -84,7 +85,7 @@ export function PatientFormDialog({ open, onClose, patient, initialPhone, onSave
             </Select>
           </Field>
           <Field label={t('patients.dateOfBirth')} error={fe.dateOfBirth}>
-            <Input type="date" value={v.dateOfBirth} onChange={set('dateOfBirth')} max={new Date().toISOString().slice(0, 10)} />
+            <Input type="date" value={v.dateOfBirth} onChange={set('dateOfBirth')} max={ymd()} />
           </Field>
           <Field label={t('patients.nationalId')} error={fe.nationalId}>
             <Input value={v.nationalId} onChange={set('nationalId')} inputMode="numeric" dir="ltr" className="text-end" />

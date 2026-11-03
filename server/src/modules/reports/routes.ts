@@ -5,7 +5,7 @@ import { prisma } from '../../lib/prisma';
 import { ah } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { requirePerm } from '../../middleware/auth';
-import { addDays, ageFrom, dateOnly, rangeFromQuery } from '../../lib/dates';
+import { addDays, ageFrom, dateOnly, rangeFromQuery, ymd } from '../../lib/dates';
 import { num } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
 import { financialSummary } from '../billing/cashier';
@@ -56,7 +56,7 @@ reportsRouter.get(
     const ageGroups: Record<string, number> = { '0-12': 0, '13-17': 0, '18-39': 0, '40-59': 0, '60+': 0, 'غير محدد': 0 };
     const seen = new Set<string>();
     for (const v of visits) {
-      const day = v.arrivedAt.toISOString().slice(0, 10);
+      const day = ymd(v.arrivedAt);
       byDay.set(day, (byDay.get(day) ?? 0) + 1);
       byType.set(v.visitType?.name ?? 'غير محدد', (byType.get(v.visitType?.name ?? 'غير محدد') ?? 0) + 1);
       if (seen.has(v.patient.id)) continue;
