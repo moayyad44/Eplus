@@ -62,6 +62,7 @@ export const PERMISSIONS = {
   'inventory.view': { module: 'inventory', description: 'عرض المخزون' },
   'inventory.manage': { module: 'inventory', description: 'إضافة وتعديل الأصناف' },
   'inventory.transact': { module: 'inventory', description: 'تسجيل حركات المخزون' },
+  'inventory.transfer': { module: 'inventory', description: 'نقل البضاعة بين المستودعات' },
   'stockcount.manage': { module: 'inventory', description: 'إنشاء جلسات الجرد وإدخال الكميات' },
   'stockcount.approve': { module: 'inventory', description: 'اعتماد الجرد' },
   'suppliers.view': { module: 'inventory', description: 'عرض الموردين' },

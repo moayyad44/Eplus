@@ -8,7 +8,7 @@ import { AppError, badRequest, forbidden, notFound } from '../../lib/errors';
 import { D, r3 } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
 import { addDays, ymd } from '../../lib/dates';
-import { recordMovement } from '../inventory/service';
+import { recordMovement, saleWarehouse } from '../inventory/service';
 import { changeVisitStatus } from '../visits/service';
 import { computeCoverage, contractPrice, usableMembership, type MembershipWithContract } from '../insurance/coverage';
 import { cancelClaimWithInvoice, createClaimForInvoice } from '../insurance/claims';
@@ -156,14 +156,29 @@ export async function buildInvoice(tx: Tx, ctx: Ctx, input: InvoiceInput) {
   };
 }
 
-/** Deducts stock for catalog items linked to inventory (e.g. medications sold by the clinic). */
+/**
+ * Deducts stock for catalog items linked to inventory (e.g. medications sold by the clinic), from the sales
+ * warehouse. Cancelling puts back exactly what was taken, into the warehouse it was taken from.
+ */
 async function moveStockForInvoice(tx: Tx, ctx: Ctx, invoiceId: string, invoiceNumber: string, reverse: boolean) {
+  if (reverse) {
+    const sold = await tx.inventoryTransaction.findMany({ where: { referenceType: 'invoice', referenceId: invoiceId, type: 'SALE' }, orderBy: { createdAt: 'asc' } });
+    for (const s of sold) {
+      await recordMovement(tx, ctx, {
+        itemId: s.itemId, type: 'SALE_REVERSAL', quantity: D(s.quantity).neg(), warehouseId: s.warehouseId,
+        reason: 'إلغاء فاتورة', reference: invoiceNumber, referenceType: 'invoice', referenceId: invoiceId,
+      });
+    }
+    return;
+  }
   const items = await tx.invoiceItem.findMany({ where: { invoiceId }, include: { service: { select: { inventoryItemId: true } } } });
+  if (!items.some((it) => it.service.inventoryItemId)) return;
+  const wh = await saleWarehouse(tx);
   for (const it of items) {
     if (!it.service.inventoryItemId) continue;
     await recordMovement(tx, ctx, {
-      itemId: it.service.inventoryItemId, type: reverse ? 'SALE_REVERSAL' : 'SALE', quantity: it.quantity,
-      reason: reverse ? 'إلغاء فاتورة' : 'بيع عبر فاتورة', reference: invoiceNumber, referenceType: 'invoice', referenceId: invoiceId,
+      itemId: it.service.inventoryItemId, type: 'SALE', quantity: it.quantity, warehouseId: wh.id,
+      reason: 'بيع عبر فاتورة', reference: invoiceNumber, referenceType: 'invoice', referenceId: invoiceId,
     });
   }
 }

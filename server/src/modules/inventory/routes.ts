@@ -11,7 +11,7 @@ import { addDays, dateOnly, rangeFromQuery } from '../../lib/dates';
 import { nextCounter, pad } from '../../lib/counters';
 import { D } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
-import { recordMovement } from './service';
+import { recordMovement, resolveWarehouse } from './service';
 
 export const inventoryRouter = Router();
 
@@ -44,7 +44,7 @@ inventoryRouter.get(
   ah(async (req, res) => {
     const q = parse(
       pageQuery.extend({
-        categoryId: z.string().uuid().optional(), supplierId: z.string().uuid().optional(),
+        categoryId: z.string().uuid().optional(), supplierId: z.string().uuid().optional(), warehouseId: z.string().uuid().optional(),
         filter: z.enum(['all', 'low', 'out', 'expiring', 'expired', 'inactive']).default('all'),
       }),
       req.query,
@@ -55,6 +55,13 @@ inventoryRouter.get(
     if (q.filter === 'low') {
       const rows = await prisma.$queryRaw<{ id: string }[]>`SELECT id FROM inventory_items WHERE "deletedAt" IS NULL AND "isActive" AND quantity <= "minQuantity"`;
       idFilter = rows.map((r) => r.id);
+    }
+    // One warehouse: only the items it holds, with its quantity.
+    let inWarehouse: Map<string, Prisma.Decimal> | undefined;
+    if (q.warehouseId) {
+      const rows = await prisma.warehouseStock.findMany({ where: { warehouseId: q.warehouseId, quantity: { gt: 0 } }, select: { itemId: true, quantity: true } });
+      inWarehouse = new Map(rows.map((r) => [r.itemId, r.quantity]));
+      idFilter = (idFilter ?? rows.map((r) => r.itemId)).filter((id) => inWarehouse!.has(id));
     }
     const where: Prisma.InventoryItemWhereInput = {
       deletedAt: null,
@@ -70,9 +77,12 @@ inventoryRouter.get(
     const [items, total, value] = await Promise.all([
       prisma.inventoryItem.findMany({ where, include: itemInclude, orderBy: sortBy(q.sort, ['name', 'quantity', 'expiryDate', 'sku', 'createdAt'] as const, 'name', q.sort ? q.order : 'asc'), ...paginate(q) }),
       prisma.inventoryItem.count({ where }),
-      prisma.$queryRaw<{ v: Prisma.Decimal | null }[]>`SELECT SUM(quantity * "purchasePrice") AS v FROM inventory_items WHERE "deletedAt" IS NULL AND "isActive"`,
+      q.warehouseId
+        ? prisma.$queryRaw<{ v: Prisma.Decimal | null }[]>`SELECT SUM(s.quantity * i."purchasePrice") AS v FROM warehouse_stock s JOIN inventory_items i ON i.id = s."itemId" WHERE i."deletedAt" IS NULL AND i."isActive" AND s."warehouseId" = ${q.warehouseId}`
+        : prisma.$queryRaw<{ v: Prisma.Decimal | null }[]>`SELECT SUM(quantity * "purchasePrice") AS v FROM inventory_items WHERE "deletedAt" IS NULL AND "isActive"`,
     ]);
-    res.json({ ...paged(items, total, q), stockValue: D(value[0]?.v).toNumber() });
+    const rows = inWarehouse ? items.map((i) => ({ ...i, warehouseQuantity: inWarehouse!.get(i.id) ?? 0 })) : items;
+    res.json({ ...paged(rows, total, q), stockValue: D(value[0]?.v).toNumber() });
   }),
 );
 
@@ -82,7 +92,11 @@ inventoryRouter.get(
   ah(async (req, res) => {
     const item = await prisma.inventoryItem.findFirst({
       where: { id: req.params.id, deletedAt: null },
-      include: { ...itemInclude, transactions: { orderBy: { createdAt: 'desc' }, take: 50 } },
+      include: {
+        ...itemInclude,
+        transactions: { orderBy: { createdAt: 'desc' }, take: 50, include: { warehouse: { select: { id: true, name: true } } } },
+        stocks: { where: { quantity: { not: 0 } }, include: { warehouse: { select: { id: true, name: true, code: true, isDefault: true } } }, orderBy: { warehouse: { name: 'asc' } } },
+      },
     });
     if (!item) throw notFound('الصنف غير موجود');
     res.json(item);
@@ -93,14 +107,14 @@ inventoryRouter.post(
   '/items',
   requirePerm('inventory.manage'),
   ah(async (req, res) => {
-    const body = parse(itemBody.extend({ openingQuantity: z.coerce.number().min(0).max(1_000_000).default(0) }), req.body);
-    const { openingQuantity, ...data } = body;
+    const body = parse(itemBody.extend({ openingQuantity: z.coerce.number().min(0).max(1_000_000).default(0), openingWarehouseId: z.string().uuid().nullable().optional() }), req.body);
+    const { openingQuantity, openingWarehouseId, ...data } = body;
     const item = await prisma.$transaction(async (tx) => {
       const created = await tx.inventoryItem.create({ data: { ...data, expiryDate: data.expiryDate ? dateOnly(data.expiryDate) : data.expiryDate } });
       await audit(tx, req.ctx, { action: 'inventory_item.create', entityType: 'inventory_item', entityId: created.id, summary: created.name, after: created });
       if (openingQuantity > 0) {
         await recordMovement(tx, req.ctx, {
-          itemId: created.id, type: 'RECEIPT', quantity: openingQuantity, unitCost: data.purchasePrice, reason: 'رصيد افتتاحي', batchNumber: data.batchNumber, expiryDate: created.expiryDate,
+          itemId: created.id, type: 'RECEIPT', quantity: openingQuantity, warehouseId: openingWarehouseId, unitCost: data.purchasePrice, reason: 'رصيد افتتاحي', batchNumber: data.batchNumber, expiryDate: created.expiryDate,
         });
       }
       return created;
@@ -153,6 +167,7 @@ inventoryRouter.post(
       z.object({
         itemId: z.string().uuid('اختر الصنف'),
         type: z.enum(MANUAL_TYPES),
+        warehouseId: z.string().uuid().nullable().optional(),
         quantity: z.coerce.number().refine((v) => v !== 0, 'الكمية مطلوبة').refine((v) => Math.abs(v) <= 1_000_000, 'الكمية كبيرة جداً'),
         unitCost: z.preprocess((v) => (v === '' ? null : v), z.coerce.number().min(0).nullable().optional()),
         reason: z.string().trim().min(2, 'يرجى ذكر السبب').max(300),
@@ -172,15 +187,16 @@ inventoryRouter.get(
   '/transactions',
   requireAnyPerm('inventory.view', 'reports.inventory'),
   ah(async (req, res) => {
-    const q = parse(pageQuery.extend({ itemId: z.string().uuid().optional(), type: z.nativeEnum(InventoryTxnType).optional(), from: z.string().optional(), to: z.string().optional() }), req.query);
+    const q = parse(pageQuery.extend({ itemId: z.string().uuid().optional(), warehouseId: z.string().uuid().optional(), type: z.nativeEnum(InventoryTxnType).optional(), from: z.string().optional(), to: z.string().optional() }), req.query);
     const where: Prisma.InventoryTransactionWhereInput = {
       ...(q.itemId && { itemId: q.itemId }),
+      ...(q.warehouseId && { warehouseId: q.warehouseId }),
       ...(q.type && { type: q.type }),
       ...(q.from && { createdAt: (({ from, to }) => ({ gte: from, lte: to }))(rangeFromQuery(q.from, q.to)) }),
       ...(q.q && { OR: [{ item: { name: { contains: q.q, mode: 'insensitive' } } }, { reference: { contains: q.q, mode: 'insensitive' } }, { reason: { contains: q.q, mode: 'insensitive' } }] }),
     };
     const [items, total] = await Promise.all([
-      prisma.inventoryTransaction.findMany({ where, ...paginate(q), orderBy: { createdAt: 'desc' }, include: { item: { select: { id: true, name: true, sku: true, unit: { select: { symbol: true, name: true } } } } } }),
+      prisma.inventoryTransaction.findMany({ where, ...paginate(q), orderBy: { createdAt: 'desc' }, include: { item: { select: { id: true, name: true, sku: true, unit: { select: { symbol: true, name: true } } } }, warehouse: { select: { id: true, name: true } } } }),
       prisma.inventoryTransaction.count({ where }),
     ]);
     const users = await prisma.user.findMany({ where: { id: { in: [...new Set(items.map((i) => i.userId).filter(Boolean) as string[])] } }, select: { id: true, fullName: true } });
@@ -197,7 +213,7 @@ inventoryRouter.get(
   ah(async (req, res) => {
     const q = parse(pageQuery, req.query);
     const [items, total] = await Promise.all([
-      prisma.stockCount.findMany({ ...paginate(q), orderBy: { createdAt: 'desc' }, include: { _count: { select: { items: true } } } }),
+      prisma.stockCount.findMany({ ...paginate(q), orderBy: { createdAt: 'desc' }, include: { _count: { select: { items: true } }, warehouse: { select: { id: true, name: true } } } }),
       prisma.stockCount.count(),
     ]);
     res.json(paged(items, total, q));
@@ -209,23 +225,25 @@ inventoryRouter.post(
   requirePerm('stockcount.manage'),
   ah(async (req, res) => {
     const body = parse(
-      z.object({ title: nullableStr(120), notes: nullableStr(500), categoryId: z.string().uuid().nullable().optional(), itemIds: z.array(z.string().uuid()).max(5000).optional() }),
+      z.object({ title: nullableStr(120), notes: nullableStr(500), warehouseId: z.string().uuid().nullable().optional(), categoryId: z.string().uuid().nullable().optional(), itemIds: z.array(z.string().uuid()).max(5000).optional() }),
       req.body,
     );
     const sc = await prisma.$transaction(async (tx) => {
+      // A count is of one warehouse: the system quantity is what that warehouse holds.
+      const wh = await resolveWarehouse(tx, body.warehouseId);
       const items = await tx.inventoryItem.findMany({
         where: { deletedAt: null, isActive: true, ...(body.itemIds?.length ? { id: { in: body.itemIds } } : {}), ...(body.categoryId && { categoryId: body.categoryId }) },
-        select: { id: true, quantity: true },
+        select: { id: true, stocks: { where: { warehouseId: wh.id }, select: { quantity: true } } },
       });
       if (!items.length) throw badRequest('لا توجد أصناف للجرد');
       const n = await nextCounter(tx, 'stock_count');
       const created = await tx.stockCount.create({
         data: {
-          countNumber: `SC-${pad(n, 5)}`, title: body.title, notes: body.notes, createdById: req.ctx.userId,
-          items: { create: items.map((i) => ({ itemId: i.id, systemQuantity: i.quantity })) },
+          countNumber: `SC-${pad(n, 5)}`, title: body.title, notes: body.notes, warehouseId: wh.id, createdById: req.ctx.userId,
+          items: { create: items.map((i) => ({ itemId: i.id, systemQuantity: i.stocks[0]?.quantity ?? 0 })) },
         },
       });
-      await audit(tx, req.ctx, { action: 'stock_count.create', entityType: 'stock_count', entityId: created.id, summary: `${created.countNumber} (${items.length} صنف)` });
+      await audit(tx, req.ctx, { action: 'stock_count.create', entityType: 'stock_count', entityId: created.id, summary: `${created.countNumber} — ${wh.name} (${items.length} صنف)` });
       return created;
     });
     res.status(201).json(sc);
@@ -238,7 +256,7 @@ inventoryRouter.get(
   ah(async (req, res) => {
     const sc = await prisma.stockCount.findUnique({
       where: { id: req.params.id },
-      include: { items: { include: { item: { select: { id: true, name: true, sku: true, location: true, quantity: true, purchasePrice: true, unit: { select: { symbol: true, name: true } } } } }, orderBy: { item: { name: 'asc' } } } },
+      include: { warehouse: { select: { id: true, name: true } }, items: { include: { item: { select: { id: true, name: true, sku: true, location: true, quantity: true, purchasePrice: true, unit: { select: { symbol: true, name: true } } } } }, orderBy: { item: { name: 'asc' } } } },
     });
     if (!sc) throw notFound();
     res.json(sc);
@@ -281,7 +299,7 @@ inventoryRouter.post(
       for (const i of sc.items) {
         const diff = D(i.countedQuantity).sub(i.systemQuantity);
         if (diff.eq(0)) continue;
-        await recordMovement(tx, req.ctx, { itemId: i.itemId, type: 'STOCK_COUNT', quantity: diff, reason: `اعتماد جرد ${sc.countNumber}`, reference: sc.countNumber, referenceType: 'stock_count', referenceId: sc.id });
+        await recordMovement(tx, req.ctx, { itemId: i.itemId, type: 'STOCK_COUNT', quantity: diff, warehouseId: sc.warehouseId, reason: `اعتماد جرد ${sc.countNumber}`, reference: sc.countNumber, referenceType: 'stock_count', referenceId: sc.id });
         adjusted++;
       }
       await tx.stockCount.update({ where: { id: sc.id }, data: { status: 'APPROVED', approvedById: req.ctx.userId, approvedAt: new Date() } });

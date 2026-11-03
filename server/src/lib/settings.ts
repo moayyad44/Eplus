@@ -35,6 +35,8 @@ export const settingSchemas = {
   inventory: z.object({
     expiryAlertDays: z.number().int().min(1).max(365).default(60),
     defaultMinQuantity: z.number().min(0).default(5),
+    /** Warehouse stock sold through invoices comes out of (null = the default warehouse). */
+    saleWarehouseId: z.string().uuid().nullable().default(null),
   }),
   attendance: z.object({
     graceMinutes: z.number().int().min(0).max(120).default(10),

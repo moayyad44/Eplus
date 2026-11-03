@@ -25,6 +25,7 @@ import { billingRouter } from './modules/billing/routes';
 import { cashierRouter } from './modules/billing/cashier';
 import { expensesRouter } from './modules/expenses/routes';
 import { inventoryRouter } from './modules/inventory/routes';
+import { warehousesRouter } from './modules/inventory/warehouses';
 import { purchasesRouter, suppliersRouter } from './modules/inventory/suppliers';
 import { staffRouter } from './modules/staff/routes';
 import { dashboardRouter } from './modules/dashboard/routes';
@@ -114,6 +115,7 @@ export function createApp() {
   api.use('/shifts', shiftsRouter);
   api.use('/cashier', cashierRouter);
   api.use('/expenses', expensesRouter);
+  api.use('/inventory', warehousesRouter);
   api.use('/inventory', inventoryRouter);
   api.use('/suppliers', suppliersRouter);
   api.use('/purchases', purchasesRouter);

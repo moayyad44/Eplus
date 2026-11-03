@@ -40,6 +40,10 @@ settingsRouter.put(
     if (!(key in settingSchemas)) throw notFound('إعداد غير معروف');
     const current = await getSetting(key);
     const value = (settingSchemas[key] as z.AnyZodObject).parse({ ...current, ...req.body });
+    if (key === 'inventory' && value.saleWarehouseId) {
+      const w = await prisma.warehouse.findUnique({ where: { id: value.saleWarehouseId } });
+      if (!w?.isActive) throw badRequest('مستودع صرف الفواتير غير موجود أو غير فعّال');
+    }
     await prisma.$transaction(async (tx) => {
       await tx.setting.upsert({ where: { key }, create: { key, value, updatedBy: req.ctx.userId }, update: { value, updatedBy: req.ctx.userId } });
       await audit(tx, req.ctx, { action: 'settings.update', entityType: 'setting', entityId: key, before: current, after: value });

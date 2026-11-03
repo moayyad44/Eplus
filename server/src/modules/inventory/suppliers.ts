@@ -10,7 +10,7 @@ import { requirePerm } from '../../middleware/auth';
 import { nextCounter, pad } from '../../lib/counters';
 import { D, num, r3 } from '../../lib/money';
 import { dateOnly } from '../../lib/dates';
-import { recordMovement } from './service';
+import { recordMovement, resolveWarehouse } from './service';
 
 export const suppliersRouter = Router();
 
@@ -198,23 +198,26 @@ purchasesRouter.post(
   '/:id/status',
   requirePerm('suppliers.manage'),
   ah(async (req, res) => {
-    const { status } = parse(z.object({ status: z.enum(['ORDERED', 'RECEIVED', 'CANCELLED']) }), req.body);
+    const { status, warehouseId } = parse(z.object({ status: z.enum(['ORDERED', 'RECEIVED', 'CANCELLED']), warehouseId: z.string().uuid().nullable().optional() }), req.body);
     const po = await prisma.$transaction(async (tx) => {
       const before = await tx.purchaseOrder.findUnique({ where: { id: req.params.id }, include: { items: true } });
       if (!before) throw notFound();
       if (['RECEIVED', 'CANCELLED'].includes(before.status)) throw badRequest('أمر الشراء مغلق');
       if (status === 'ORDERED' && before.status !== 'DRAFT') throw badRequest('أمر الشراء مرسل مسبقاً');
       // Receiving is what puts stock on the shelf — one PURCHASE movement per line.
+      let into = '';
       if (status === 'RECEIVED') {
+        const wh = await resolveWarehouse(tx, warehouseId); // received into the chosen warehouse (default: the default one)
+        into = ` — إلى ${wh.name}`;
         for (const it of before.items) {
           await recordMovement(tx, req.ctx, {
-            itemId: it.itemId, type: 'PURCHASE', quantity: it.quantity, unitCost: it.unitCost, reason: 'استلام أمر شراء',
+            itemId: it.itemId, type: 'PURCHASE', quantity: it.quantity, warehouseId: wh.id, unitCost: it.unitCost, reason: 'استلام أمر شراء',
             reference: before.poNumber, referenceType: 'purchase_order', referenceId: before.id, batchNumber: it.batchNumber, expiryDate: it.expiryDate,
           });
         }
       }
       const row = await tx.purchaseOrder.update({ where: { id: before.id }, data: { status, ...(status === 'RECEIVED' && { receivedAt: new Date() }) } });
-      await audit(tx, req.ctx, { action: 'purchase_order.status', entityType: 'purchase_order', entityId: row.id, summary: `${row.poNumber}: ${before.status} → ${status}` });
+      await audit(tx, req.ctx, { action: 'purchase_order.status', entityType: 'purchase_order', entityId: row.id, summary: `${row.poNumber}: ${before.status} → ${status}${into}` });
       return row;
     });
     res.json(po);

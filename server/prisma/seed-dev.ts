@@ -110,7 +110,9 @@ async function main() {
     const item = await prisma.inventoryItem.create({
       data: { name, sku, categoryId: cat[c], unitId: unit[u], quantity: qty, minQuantity: min, purchasePrice: cost, salePrice: sale, supplierId: supplier.id, expiryDate: new Date(expiryDate.toISOString().slice(0, 10)), batchNumber: `B-${sku}-01`, location: 'المستودع', notes: '[DEMO]' },
     });
-    await prisma.inventoryTransaction.create({ data: { itemId: item.id, type: 'RECEIPT', quantity: qty, balanceAfter: qty, unitCost: cost, reason: 'رصيد افتتاحي [DEMO]' } });
+    const main = await prisma.warehouse.findFirstOrThrow({ where: { isDefault: true } });
+    await prisma.warehouseStock.create({ data: { warehouseId: main.id, itemId: item.id, quantity: qty } });
+    await prisma.inventoryTransaction.create({ data: { itemId: item.id, type: 'RECEIPT', quantity: qty, balanceAfter: qty, warehouseId: main.id, warehouseBalanceAfter: qty, unitCost: cost, reason: 'رصيد افتتاحي [DEMO]' } });
     if (sku === 'MED-PARA') {
       await prisma.service.upsert({ where: { code: 'MED-PARA' }, create: { code: 'MED-PARA', name: 'Paracetamol 500mg (علبة)', category: 'MEDICATION', price: sale!, inventoryItemId: item.id }, update: {} });
     }
