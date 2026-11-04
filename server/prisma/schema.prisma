@@ -104,6 +104,7 @@ model User {
 
   @@index([roleId])
   @@index([staffType, isActive])
+  @@index([branchId])
   @@map("users")
 }
 
@@ -141,6 +142,7 @@ model RolePermission {
   permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
 
   @@id([roleId, permissionKey])
+  @@index([permissionKey])
   @@map("role_permissions")
 }
 
@@ -154,6 +156,7 @@ model UserPermissionOverride {
   permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
 
   @@id([userId, permissionKey])
+  @@index([permissionKey])
   @@map("user_permission_overrides")
 }
 
@@ -352,6 +355,7 @@ model Service {
   claimItems     InsuranceClaimItem[]
 
   @@index([category, isActive])
+  @@index([inventoryItemId])
   @@map("services")
 }
 
@@ -399,6 +403,7 @@ model LabTest {
   service    Service?       @relation(fields: [serviceId], references: [id])
   orderItems LabOrderItem[]
 
+  @@index([serviceId])
   @@map("laboratory_tests")
 }
 
@@ -438,6 +443,8 @@ model Appointment {
   @@index([startAt])
   @@index([doctorId, startAt])
   @@index([patientId])
+  @@index([branchId])
+  @@index([visitTypeId])
   @@map("appointments")
 }
 
@@ -519,6 +526,9 @@ model Visit {
   @@index([queueDate, status])
   @@index([doctorId, queueDate])
   @@index([patientId, arrivedAt])
+  @@index([branchId])
+  @@index([patientInsuranceId])
+  @@index([visitTypeId])
   @@map("visits")
 }
 
@@ -596,6 +606,7 @@ model Consultation {
   visit  Visit @relation(fields: [visitId], references: [id])
   doctor User  @relation(fields: [doctorId], references: [id])
 
+  @@index([doctorId])
   @@map("consultations")
 }
 
@@ -642,6 +653,7 @@ model Prescription {
 
   @@index([visitId])
   @@index([patientId])
+  @@index([doctorId])
   @@map("prescriptions")
 }
 
@@ -697,6 +709,7 @@ model LabOrder {
   @@index([status, requestedAt])
   @@index([patientId])
   @@index([visitId])
+  @@index([doctorId])
   @@map("lab_orders")
 }
 
@@ -714,6 +727,7 @@ model LabOrderItem {
   results  LabResult[]
 
   @@index([labOrderId])
+  @@index([labTestId])
   @@map("lab_order_items")
 }
 
@@ -760,6 +774,8 @@ model MedicalReport {
   doctor  User    @relation(fields: [doctorId], references: [id])
 
   @@index([patientId])
+  @@index([doctorId])
+  @@index([visitId])
   @@map("medical_reports")
 }
 
@@ -802,6 +818,11 @@ model Attachment {
 
   @@index([patientId])
   @@index([visitId])
+  @@index([authorizationId])
+  @@index([claimId])
+  @@index([expenseId])
+  @@index([labOrderId])
+  @@index([patientInsuranceId])
   @@map("attachments")
 }
 
@@ -834,6 +855,7 @@ model InvoiceTemplateItem {
   service  Service         @relation(fields: [serviceId], references: [id])
 
   @@unique([templateId, serviceId])
+  @@index([serviceId])
   @@map("invoice_template_items")
 }
 
@@ -909,6 +931,10 @@ model Invoice {
   @@index([patientId])
   @@index([visitId])
   @@index([doctorId, issuedAt])
+  @@index([branchId])
+  @@index([insuranceContractId])
+  @@index([patientInsuranceId])
+  @@index([templateId])
   @@map("invoices")
 }
 
@@ -941,6 +967,7 @@ model InvoiceItem {
 
   @@index([invoiceId])
   @@index([authorizationId])
+  @@index([serviceId])
   @@map("invoice_items")
 }
 
@@ -991,6 +1018,7 @@ model Payment {
   @@index([paidAt])
   @@index([invoiceId])
   @@index([methodId, paidAt])
+  @@index([patientId])
   @@map("payments")
 }
 
@@ -1147,6 +1175,7 @@ model InsuranceCoverageRule {
 
   @@unique([contractId, serviceId])
   @@unique([contractId, category])
+  @@index([serviceId])
   @@map("insurance_coverage_rules")
 }
 
@@ -1191,6 +1220,7 @@ model PatientInsurance {
   @@index([patientId])
   @@index([companyId])
   @@index([endDate])
+  @@index([contractId])
   @@map("patient_insurances")
 }
 
@@ -1237,6 +1267,11 @@ model InsuranceAuthorization {
 
   @@index([patientId, status])
   @@index([status, requestedAt])
+  @@index([companyId])
+  @@index([contractId])
+  @@index([patientInsuranceId])
+  @@index([serviceId])
+  @@index([visitId])
   @@map("insurance_authorizations")
 }
 
@@ -1292,6 +1327,9 @@ model InsuranceClaim {
   @@index([companyId, status])
   @@index([status, submittedAt])
   @@index([patientId])
+  @@index([contractId])
+  @@index([patientInsuranceId])
+  @@index([visitId])
   @@map("insurance_claims")
 }
 
@@ -1315,6 +1353,8 @@ model InsuranceClaimItem {
   service     Service        @relation(fields: [serviceId], references: [id])
 
   @@index([claimId])
+  @@index([invoiceItemId])
+  @@index([serviceId])
   @@map("insurance_claim_items")
 }
 
@@ -1347,6 +1387,7 @@ model InsuranceClaimEvent {
 
   @@index([claimId, createdAt])
   @@index([type, createdAt])
+  @@index([allocationId])
   @@map("insurance_claim_events")
 }
 
@@ -1372,6 +1413,7 @@ model InsurancePayment {
 
   @@index([companyId, paidAt])
   @@index([paidAt])
+  @@index([methodId])
   @@map("insurance_payments")
 }
 
@@ -1427,6 +1469,9 @@ model Expense {
 
   @@index([expenseDate])
   @@index([categoryId])
+  @@index([branchId])
+  @@index([paymentMethodId])
+  @@index([supplierId])
   @@map("expenses")
 }
 
@@ -1486,6 +1531,9 @@ model InventoryItem {
 
   @@index([name])
   @@index([expiryDate])
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([unitId])
   @@map("inventory_items")
 }
 
@@ -1557,6 +1605,7 @@ model StockCount {
   items     StockCountItem[]
   warehouse Warehouse?       @relation(fields: [warehouseId], references: [id])
 
+  @@index([warehouseId])
   @@map("stock_counts")
 }
 
@@ -1573,6 +1622,7 @@ model StockCountItem {
   item       InventoryItem @relation(fields: [itemId], references: [id])
 
   @@unique([stockCountId, itemId])
+  @@index([itemId])
   @@map("stock_count_items")
 }
 
@@ -1627,6 +1677,8 @@ model StockTransfer {
   items         StockTransferItem[]
 
   @@index([createdAt])
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
   @@map("stock_transfers")
 }
 
@@ -1640,6 +1692,7 @@ model StockTransferItem {
   item     InventoryItem @relation(fields: [itemId], references: [id])
 
   @@unique([transferId, itemId])
+  @@index([itemId])
   @@map("stock_transfer_items")
 }
 
@@ -1707,6 +1760,8 @@ model PurchaseOrderItem {
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   item          InventoryItem @relation(fields: [itemId], references: [id])
 
+  @@index([itemId])
+  @@index([purchaseOrderId])
   @@map("purchase_order_items")
 }
 
@@ -1730,6 +1785,8 @@ model SupplierPayment {
   method        PaymentMethod  @relation(fields: [methodId], references: [id])
 
   @@index([supplierId])
+  @@index([methodId])
+  @@index([purchaseOrderId])
   @@map("supplier_payments")
 }
 
@@ -1785,6 +1842,7 @@ model ShiftAssignment {
   @@unique([userId, date, shiftId])
   @@index([date])
   @@index([userId, date])
+  @@index([shiftId])
   @@map("shift_assignments")
 }
 
@@ -1852,6 +1910,7 @@ model Attendance {
 
   @@unique([userId, date])
   @@index([date])
+  @@index([shiftAssignmentId])
   @@map("attendance")
 }
 
@@ -2005,6 +2064,7 @@ model EInvoice {
   @@index([invoiceId])
   @@index([status, nextAttemptAt])
   @@index([createdAt])
+  @@index([originalId])
   @@map("einvoices")
 }
 
@@ -2165,6 +2225,7 @@ model ECoinLotUse {
   txn ECoinTxn @relation(fields: [txnId], references: [id])
 
   @@index([lotId])
+  @@index([txnId])
   @@map("ecoin_lot_uses")
 }
 
