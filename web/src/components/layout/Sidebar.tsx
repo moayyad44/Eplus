@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { NAV } from './nav';
 import { Logo } from './Logo';
@@ -32,6 +32,11 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
               <ul className="space-y-0.5">
                 {s.items.map((i) => (
                   <li key={i.to}>
+                    {i.newTab ? (
+                      <a href={i.to} target="_blank" rel="noopener" onClick={onClose} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-primary-700 hover:bg-primary-50">
+                        <span className="text-primary-600">{i.icon}</span>{t(i.label)}<ExternalLink className="ms-auto h-3.5 w-3.5 opacity-60" />
+                      </a>
+                    ) : (
                     <NavLink
                       to={i.to}
                       end={i.to === '/insurance'}
@@ -50,6 +55,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                         </>
                       )}
                     </NavLink>
+                    )}
                   </li>
                 ))}
               </ul>

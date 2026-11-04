@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   Activity, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardCheck, ConciergeBell, FileClock, FileText, FlaskConical, History,
-  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode, Coins, LayoutGrid, Warehouse, PackageOpen,
+  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode, Coins, LayoutGrid, Warehouse, PackageOpen, Calculator,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -9,6 +9,8 @@ export interface NavItem {
   label: string; // i18n key
   icon: ReactNode;
   any: string[]; // visible if the user holds any of these permissions
+  /** Opens in a new tab (a separate workspace such as the accounting system). */
+  newTab?: boolean;
 }
 export interface NavSection {
   label: string;
@@ -35,6 +37,7 @@ export const NAV: NavSection[] = [
   {
     label: 'nav.sections.finance',
     items: [
+      { to: '/accounting', label: 'acc.open', icon: i(Calculator), any: ['accounting.access'], newTab: true },
       { to: '/billing/invoices', label: 'nav.invoices', icon: i(FileText), any: ['invoices.view'] },
       { to: '/billing/outstanding', label: 'nav.outstanding', icon: i(FileClock), any: ['invoices.view'] },
       { to: '/billing/cashier', label: 'nav.cashier', icon: i(Wallet), any: ['cashier.view'] },

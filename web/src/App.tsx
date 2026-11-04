@@ -60,6 +60,17 @@ const Settings = p(() => import('./pages/settings/Settings'));
 const Account = p(() => import('./pages/system/Account'));
 const Help = p(() => import('./pages/system/Help'));
 const PrintRoutes = p(() => import('./pages/print/PrintRoutes'));
+const AccountingLayout = p(() => import('./pages/accounting/Layout'));
+const AccDashboard = p(() => import('./pages/accounting/Dashboard'));
+const AccAccounts = p(() => import('./pages/accounting/Accounts'));
+const AccJournal = p(() => import('./pages/accounting/Journal'));
+const AccEntry = p(() => import('./pages/accounting/JournalEntry'));
+const AccStatement = p(() => import('./pages/accounting/Statement'));
+const AccTrial = p(() => import('./pages/accounting/Reports').then((m) => ({ default: m.TrialBalance })));
+const AccIncome = p(() => import('./pages/accounting/Reports').then((m) => ({ default: m.IncomeStatement })));
+const AccBalance = p(() => import('./pages/accounting/Reports').then((m) => ({ default: m.BalanceSheet })));
+const AccPeriods = p(() => import('./pages/accounting/Periods'));
+const AccSettings = p(() => import('./pages/accounting/Settings'));
 
 /** Route guard: the API enforces permissions; this just avoids showing screens the user cannot use. */
 function Guard({ any, children }: { any: string[]; children: ReactNode }) {
@@ -99,6 +110,19 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/print/*" element={<Suspense fallback={<PageLoader />}><PrintRoutes /></Suspense>} />
+      <Route path="/accounting" element={<Suspense fallback={<PageLoader />}><AccountingLayout /></Suspense>}>
+        <Route index element={<AccDashboard />} />
+        <Route path="accounts" element={<Guard any={['accounting.accounts.view', 'accounting.journal.view']}><AccAccounts /></Guard>} />
+        <Route path="journal" element={<Guard any={['accounting.journal.view']}><AccJournal /></Guard>} />
+        <Route path="journal/new" element={<Guard any={['accounting.journal.create']}><AccEntry /></Guard>} />
+        <Route path="journal/:id" element={<Guard any={['accounting.journal.view']}><AccEntry /></Guard>} />
+        <Route path="statement" element={<Guard any={['accounting.reports.view', 'accounting.journal.view']}><AccStatement /></Guard>} />
+        <Route path="trial-balance" element={<Guard any={['accounting.reports.view']}><AccTrial /></Guard>} />
+        <Route path="income-statement" element={<Guard any={['accounting.reports.view']}><AccIncome /></Guard>} />
+        <Route path="balance-sheet" element={<Guard any={['accounting.reports.view']}><AccBalance /></Guard>} />
+        <Route path="periods" element={<AccPeriods />} />
+        <Route path="settings" element={<Guard any={['accounting.settings']}><AccSettings /></Guard>} />
+      </Route>
       <Route element={<AppLayout />}>
         <Route index element={<Home />} />
         <Route path="dashboard" element={<Guard any={['dashboard.admin']}><Dashboard /></Guard>} />
