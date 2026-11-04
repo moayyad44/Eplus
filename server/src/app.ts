@@ -23,6 +23,7 @@ import { appointmentsRouter } from './modules/appointments/routes';
 import { attachmentsRouter } from './modules/attachments/routes';
 import { billingRouter } from './modules/billing/routes';
 import { cashierRouter } from './modules/billing/cashier';
+import { accountingRouter } from './modules/accounting/routes';
 import { expensesRouter } from './modules/expenses/routes';
 import { inventoryRouter } from './modules/inventory/routes';
 import { warehousesRouter } from './modules/inventory/warehouses';
@@ -114,6 +115,7 @@ export function createApp() {
   api.use('/ecoin', ecoinRouter);
   api.use('/shifts', shiftsRouter);
   api.use('/cashier', cashierRouter);
+  api.use('/accounting', accountingRouter);
   api.use('/expenses', expensesRouter);
   api.use('/inventory', warehousesRouter);
   api.use('/inventory', inventoryRouter);

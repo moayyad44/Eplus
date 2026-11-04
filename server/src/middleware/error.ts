@@ -27,6 +27,15 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     if (err.code === 'P2025') return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'العنصر غير موجود' } });
     if (err.code === 'P2003') return res.status(409).json({ error: { code: 'IN_USE', message: 'لا يمكن تنفيذ العملية لوجود بيانات مرتبطة' } });
   }
+  // Accounting rules enforced by the database itself (last line of defence) → a clear message, never a crash.
+  const msg = err instanceof Error ? err.message : '';
+  const ACC: [string, string][] = [
+    ['ACC_UNBALANCED', 'القيد غير متوازن'], ['ACC_TOTAL_MISMATCH', 'إجمالي القيد لا يطابق سطوره'], ['ACC_PERIOD_CLOSED', 'الفترة المحاسبية مغلقة'],
+    ['ACC_NO_PERIOD', 'لا توجد فترة محاسبية تشمل هذا التاريخ'], ['ACC_GROUP_ACCOUNT', 'لا يُقيَّد على حساب رئيسي؛ اختر حساباً فرعياً'],
+    ['ACC_ACCOUNT_USED', 'الحساب عليه قيود؛ أوقفه بدلاً من حذفه'], ['ACC_NO_DELETE', 'القيود لا تُحذف نهائياً'], ['ACC_APPEND_ONLY', 'السجل لا يُعدَّل'],
+  ];
+  const hit = ACC.find(([code]) => msg.includes(code));
+  if (hit) return res.status(400).json({ error: { code: hit[0], message: hit[1] } });
   if (err && typeof err === 'object' && 'type' in err && (err as { type: string }).type === 'entity.parse.failed') {
     return res.status(400).json({ error: { code: 'BAD_JSON', message: 'صيغة الطلب غير صحيحة' } });
   }

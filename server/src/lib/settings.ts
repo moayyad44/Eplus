@@ -32,6 +32,14 @@ export const settingSchemas = {
     /** Doctor name printed at the end of every medical report form, whoever wrote it. */
     reportDoctorName: z.string().max(120).default('Dr. Mus\u2019ab Odeh'),
   }),
+  /** EmergencyPlus Accounting */
+  accounting: z.object({
+    /** Entries by users without the approve permission wait for approval (else they post on save). */
+    requireApproval: z.boolean().default(true),
+    /** Operations of EmergencyPlus from this day on are posted automatically (null = not started yet). */
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
+    currency: z.string().default('JOD'),
+  }),
   inventory: z.object({
     expiryAlertDays: z.number().int().min(1).max(365).default(60),
     defaultMinQuantity: z.number().min(0).default(5),

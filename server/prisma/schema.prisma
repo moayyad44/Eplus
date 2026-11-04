@@ -2349,3 +2349,187 @@ model ShiftHandover {
   @@index([prevUserId])
   @@map("shift_handovers")
 }
+
+// ───────────────────────── EmergencyPlus Accounting ─────────────────────────
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountNature {
+  DEBIT
+  CREDIT
+}
+
+/// Chart of accounts (tree). A group account only totals its children; entries go to leaf accounts.
+model Account {
+  id          String        @id @default(uuid())
+  code        String        @unique
+  name        String
+  type        AccountType
+  nature      AccountNature
+  parentId    String?
+  isGroup     Boolean       @default(false)
+  isActive    Boolean       @default(true)
+  /// Created by the system (can be renamed, never deleted).
+  isSystem    Boolean       @default(false)
+  /// Fixed role used by automatic entries (e.g. CASH, VISA_CLEARING). Unique when set.
+  systemKey   String?       @unique
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  parent   Account?      @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Account[]     @relation("AccountTree")
+  lines    JournalLine[]
+
+  @@index([parentId])
+  @@index([type])
+  @@map("acc_accounts")
+}
+
+enum FiscalStatus {
+  OPEN
+  CLOSED
+}
+
+model FiscalYear {
+  id         String       @id @default(uuid())
+  name       String
+  startDate  DateTime     @db.Date
+  endDate    DateTime     @db.Date
+  status     FiscalStatus @default(OPEN)
+  closedAt   DateTime?
+  closedById String?
+  createdAt  DateTime     @default(now())
+
+  periods FiscalPeriod[]
+
+  @@unique([startDate])
+  @@map("acc_fiscal_years")
+}
+
+model FiscalPeriod {
+  id           String       @id @default(uuid())
+  fiscalYearId String
+  name         String
+  startDate    DateTime     @db.Date
+  endDate      DateTime     @db.Date
+  status       FiscalStatus @default(OPEN)
+  closedAt     DateTime?
+  closedById   String?
+  reopenedAt   DateTime?
+  reopenedById String?
+  reopenReason String?
+
+  fiscalYear FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Restrict)
+
+  @@unique([fiscalYearId, startDate])
+  @@index([startDate, endDate])
+  @@map("acc_fiscal_periods")
+}
+
+enum JournalType {
+  GENERAL
+  OPENING
+  ADJUSTMENT
+  CLOSING
+  EXPENSE
+  REVENUE
+  RECEIPT
+  PAYMENT
+  PAYROLL
+  PURCHASE
+  CHEQUE
+  BANK_RECONCILIATION
+  DEPRECIATION
+  CORRECTION
+}
+
+enum JournalStatus {
+  /// Saved, waiting for approval (only when approval is required for this user).
+  DRAFT
+  /// Approved = posted: counts in the ledger and every report.
+  POSTED
+  /// Deleted: kept with its full history, no longer counts anywhere.
+  DELETED
+}
+
+model JournalEntry {
+  id          String        @id @default(uuid())
+  number      String        @unique
+  date        DateTime      @db.Date
+  type        JournalType   @default(GENERAL)
+  status      JournalStatus @default(DRAFT)
+  description String
+  reference   String?
+  /// Origin of an automatic entry ("invoice", "payment", "expense"…); null for a manual entry.
+  sourceType  String?
+  sourceId    String?
+  /// One entry per source operation: "invoice:<id>". Prevents duplicates on retries.
+  sourceKey   String?       @unique
+  totalDebit  Decimal       @default(0) @db.Decimal(14, 3)
+  version     Int           @default(1)
+  createdById String?
+  updatedById String?
+  postedById  String?
+  postedAt    DateTime?
+  deletedById String?
+  deletedAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  lines     JournalLine[]
+  revisions JournalRevision[]
+
+  @@index([date])
+  @@index([status, date])
+  @@index([sourceType, sourceId])
+  @@map("acc_journal_entries")
+}
+
+model JournalLine {
+  id          String  @id @default(uuid())
+  entryId     String
+  lineNo      Int
+  accountId   String
+  debit       Decimal @default(0) @db.Decimal(14, 3)
+  credit      Decimal @default(0) @db.Decimal(14, 3)
+  description String?
+  /// Optional sub-ledger party: PATIENT / SUPPLIER / INSURANCE / EMPLOYEE / OTHER
+  partyType   String?
+  partyId     String?
+  partyName   String?
+  /// Optional analysis: the doctor behind a revenue line.
+  doctorId    String?
+
+  entry   JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([accountId])
+  @@index([partyType, partyId])
+  @@map("acc_journal_lines")
+}
+
+/// Full history of an entry: one snapshot per version (creation, every edit, approval, deletion). Append-only.
+model JournalRevision {
+  id        String   @id @default(uuid())
+  entryId   String
+  version   Int
+  action    String
+  snapshot  Json
+  changes   Json?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  entry JournalEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+
+  @@unique([entryId, version, action])
+  @@index([entryId])
+  @@map("acc_journal_revisions")
+}

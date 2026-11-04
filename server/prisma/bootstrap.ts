@@ -14,6 +14,7 @@ import { settingSchemas } from '../src/lib/settings';
 import { ICD10_COMMON } from './data/icd10';
 import { LAB_PACKAGES, LAB_TESTS, patientPrice } from './data/lab-catalog';
 import { INV_CATEGORIES, SHEET_SERVICES, STOCK_ITEMS } from './data/inventory-catalog';
+import { CHART_OF_ACCOUNTS, NATURE_OF } from '../src/modules/accounting/chart';
 
 const prisma = new PrismaClient();
 
@@ -43,6 +44,29 @@ async function main() {
       const grant = r.permissions.filter((k) => added.includes(k));
       if (grant.length) await prisma.rolePermission.createMany({ data: grant.map((permissionKey) => ({ roleId: existing.id, permissionKey })), skipDuplicates: true });
     }
+  }
+
+  // Accounting: the starting chart of accounts (once), and an open fiscal year for the current calendar year (once).
+  if ((await prisma.account.count()) === 0) {
+    const ids = new Map<string, string>();
+    for (const a of CHART_OF_ACCOUNTS) {
+      const row = await prisma.account.create({
+        data: { code: a.code, name: a.name, type: a.type, nature: a.nature ?? NATURE_OF[a.type], isGroup: !!a.group, isSystem: true, systemKey: a.key ?? null, parentId: a.parent ? ids.get(a.parent) : null },
+      });
+      ids.set(a.code, row.id);
+    }
+  }
+  if ((await prisma.fiscalYear.count()) === 0) {
+    const y = new Date().getFullYear();
+    await prisma.fiscalYear.create({
+      data: {
+        name: `السنة المالية ${y}`, startDate: new Date(`${y}-01-01T00:00:00Z`), endDate: new Date(`${y}-12-31T00:00:00Z`),
+        periods: { create: Array.from({ length: 12 }, (_, m) => ({
+          name: `${String(m + 1).padStart(2, '0')}/${y}`,
+          startDate: new Date(Date.UTC(y, m, 1)), endDate: new Date(Date.UTC(y, m + 1, 0)),
+        })) },
+      },
+    });
   }
 
   const branch = await prisma.branch.upsert({ where: { code: 'MAIN' }, create: { code: 'MAIN', name: 'الفرع الرئيسي' }, update: {} });
