@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { auditActionLabel } from '@/lib/auditLabels';
 import { Lock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { usePagedList } from '@/lib/hooks';
@@ -45,7 +46,7 @@ export default function AuditLogs() {
           columns={[
             { key: 'createdAt', header: t('common.date'), cell: (r) => <span className="whitespace-nowrap text-xs tabular-nums">{fmtDateTime(r.createdAt)}</span> },
             { key: 'user', header: t('common.user'), cell: (r) => r.userName ?? '—' },
-            { key: 'action', header: t('audit.action'), cell: (r) => <Badge tone={r.action.includes('cancel') || r.action.includes('void') || r.action.includes('delete') || r.action.includes('failed') ? 'danger' : 'info'} dot={false}><span dir="ltr">{r.action}</span></Badge> },
+            { key: 'action', header: t('audit.action'), cell: (r) => <Badge tone={r.action.includes('cancel') || r.action.includes('void') || r.action.includes('delete') || r.action.includes('failed') ? 'danger' : 'info'} dot={false}><span title={r.action}>{auditActionLabel(r.action)}</span></Badge> },
             { key: 'entity', header: t('audit.entity'), cell: (r) => <span className="text-xs" dir="ltr">{r.entityType}</span>, hideOnMobile: true },
             { key: 'summary', header: t('audit.summary'), cell: (r) => <span className="line-clamp-1 text-xs text-ink-soft">{r.summary ?? '—'}</span> },
             { key: 'ip', header: t('audit.ip'), cell: (r) => <span className="text-xs text-ink-muted" dir="ltr">{r.ip ?? '—'}</span>, hideOnMobile: true },
@@ -53,7 +54,7 @@ export default function AuditLogs() {
         />
         {list.data && <Pagination {...list.data} onPage={list.setPage} />}
       </Card>
-      <Dialog open={!!sel} onClose={() => setSel(null)} size="lg" title={sel?.action ?? ''} subtitle={sel ? `${sel.userName ?? ''} · ${fmtDateTime(sel.createdAt)}` : ''}>
+      <Dialog open={!!sel} onClose={() => setSel(null)} size="lg" title={sel ? auditActionLabel(sel.action) : ''} subtitle={sel ? `${sel.userName ?? ''} · ${fmtDateTime(sel.createdAt)}` : ''}>
         {sel && (
           <div className="space-y-4 text-sm">
             {sel.summary && <p className="rounded-xl bg-surface-subtle p-3">{sel.summary}</p>}
