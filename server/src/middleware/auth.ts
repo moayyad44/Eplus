@@ -82,6 +82,13 @@ export const requirePerm =
     next();
   };
 
+/** Any staff member with at least one permission (shared lookups: catalogs, prices, staff names). */
+export const requireStaff = (req: Request, _res: Response, next: NextFunction) => {
+  if (!req.ctx) return next(unauthorized());
+  if (!req.ctx.perms.size) return next(forbidden());
+  next();
+};
+
 /** Requires ANY of the listed permissions. */
 export const requireAnyPerm =
   (...perms: PermissionKey[]) =>

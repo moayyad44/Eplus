@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { ah, pageQuery, paged, paginate } from '../../lib/http';
 import { parse } from '../../lib/validate';
-import { requirePerm } from '../../middleware/auth';
+import { requirePerm, requireStaff } from '../../middleware/auth';
 import { rangeFromQuery } from '../../lib/dates';
 import { can } from '../../auth/context';
 import { patientListSelect, patientSearchWhere } from '../patients/routes';
@@ -90,6 +90,7 @@ export const searchRouter = Router();
 
 searchRouter.get(
   '/',
+  requireStaff,
   ah(async (req, res) => {
     const { q } = parse(z.object({ q: z.string().trim().min(2).max(100) }), req.query);
     const ctx = req.ctx;

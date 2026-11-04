@@ -7,7 +7,7 @@ import { ah, nullableStr, pageQuery, paged, paginate, sortBy } from '../../lib/h
 import { parse } from '../../lib/validate';
 import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/errors';
-import { requirePerm } from '../../middleware/auth';
+import { requirePerm, requireStaff } from '../../middleware/auth';
 import { passwordSchema } from '../auth/routes';
 import { ALL_PERMISSIONS } from '../../auth/permissions';
 
@@ -35,6 +35,7 @@ const baseFields = {
 /** Lightweight staff lookup for dropdowns (doctors, nurses…) — any authenticated user. */
 usersRouter.get(
   '/lookup',
+  requireStaff,
   ah(async (req, res) => {
     const q = parse(z.object({ staffType: z.nativeEnum(StaffType).optional() }), req.query);
     const users = await prisma.user.findMany({

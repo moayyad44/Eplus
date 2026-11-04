@@ -41,3 +41,17 @@ describe('supplier payment void', () => {
     expect([row.voidReason, !!row.voidedById, !!row.voidedAt]).toEqual(['مكررة', true, true]);
   });
 });
+
+describe('accounts without any permission', () => {
+  it('cannot read catalogs, prices, staff names or search; their own account, attendance and notifications still work', async () => {
+    const { prisma } = await import('../src/lib/prisma');
+    const bcrypt = (await import('bcryptjs')).default;
+    const role = await prisma.role.create({ data: { key: 'no_perms_audit', name: 'بلا صلاحيات' } });
+    await prisma.user.create({ data: { username: 'no.perms', fullName: 'بلا صلاحيات', passwordHash: await bcrypt.hash('Test@12345', 4), roleId: role.id } });
+    const c = await login('no.perms');
+    for (const u of ['/api/settings/services', '/api/settings/payment-methods', '/api/settings/invoice-templates', '/api/users/lookup', '/api/search?q=ab']) expect((await c.get(u)).status, u).toBe(403);
+    for (const u of ['/api/auth/me', '/api/notifications', '/api/settings/public']) expect((await c.get(u)).status, u).toBe(200);
+    // Every real role still reads the shared lists.
+    for (const cl of [doctor, reception]) expect((await cl.get('/api/settings/services')).status).toBe(200);
+  });
+});

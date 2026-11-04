@@ -6,7 +6,7 @@ import { ah } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { audit } from '../../lib/audit';
 import { notFound } from '../../lib/errors';
-import { requirePerm } from '../../middleware/auth';
+import { requirePerm, requireStaff } from '../../middleware/auth';
 
 interface CatalogConfig {
   /** Prisma delegate name, e.g. "visitType" */
@@ -33,6 +33,7 @@ export function catalogRouter(cfg: CatalogConfig) {
 
   r.get(
     '/',
+    requireStaff,
     ah(async (req, res) => {
       const q = parse(z.object({ all: z.enum(['true', 'false']).optional(), q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(1000).optional() }), req.query);
       const where: Record<string, unknown> = { ...(cfg.baseWhere ?? {}) };

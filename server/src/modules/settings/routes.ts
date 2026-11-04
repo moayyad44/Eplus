@@ -7,7 +7,7 @@ import { ah, nullableStr } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/errors';
-import { requireAnyPerm, requirePerm } from '../../middleware/auth';
+import { requireAnyPerm, requirePerm, requireStaff } from '../../middleware/auth';
 import { getAllSettings, getSetting, settingSchemas, type SettingKey } from '../../lib/settings';
 import { catalogRouter } from './catalog';
 import { sniffMatches, storage } from '../../lib/storage';
@@ -173,6 +173,7 @@ const templateBody = z.object({
 
 settingsRouter.get(
   '/invoice-templates',
+  requireStaff,
   ah(async (req, res) => {
     const all = req.query.all === 'true';
     res.json(
