@@ -16,7 +16,7 @@ const body = z.object({
   amount: z.coerce.number().positive('المبلغ يجب أن يكون أكبر من صفر').max(10_000_000),
   expenseDate: requiredDate,
   paymentMethodId: z.string().uuid().nullable().optional(),
-  supplierId: z.string().uuid().nullable().optional(),
+  // Paying a supplier is recorded from the supplier page (it then counts here automatically), not as an expense line.
   description: z.string().trim().min(2, 'الوصف مطلوب').max(500),
   reference: nullableStr(100),
 });

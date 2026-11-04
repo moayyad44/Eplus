@@ -4,7 +4,7 @@ import { Ban, Paperclip, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation, usePagedList } from '@/lib/hooks';
-import { useCatalog, useSuppliersLookup } from '@/lib/catalogs';
+import { useCatalog } from '@/lib/catalogs';
 import { exportCsv } from '@/lib/export';
 import { fmtDay, money, num, ymd } from '@/lib/format';
 import { Badge, Button, Card, Checkbox, DataTable, DateRangePicker, Dialog, Field, IconButton, Input, PageHeader, Pagination, SearchInput, Select, StatCard, presetRange, useConfirm } from '@/components/ui';
@@ -88,13 +88,12 @@ function ExpenseDialog({ row, onClose }: { row: Partial<Row>; onClose: () => voi
   const { t } = useTranslation();
   const cats = useCatalog('expense-categories');
   const methods = usePaymentMethods();
-  const suppliers = useSuppliersLookup();
   const [v, setV] = useState({
     categoryId: row.categoryId ?? '', amount: row.amount != null ? String(row.amount) : '', expenseDate: row.expenseDate?.slice(0, 10) ?? ymd(), paymentMethodId: row.paymentMethodId ?? '',
-    supplierId: row.supplierId ?? '', description: row.description ?? '', reference: row.reference ?? '',
+    description: row.description ?? '', reference: row.reference ?? '',
   });
   const save = useApiMutation(() => {
-    const body = { ...v, amount: Number(v.amount), paymentMethodId: v.paymentMethodId || null, supplierId: v.supplierId || null };
+    const body = { ...v, amount: Number(v.amount), paymentMethodId: v.paymentMethodId || null };
     return row.id ? api.put(`/expenses/${row.id}`, body) : api.post('/expenses', body);
   }, { invalidate: [['expenses']], onSuccess: onClose });
   const fe = save.fieldErrors;
@@ -107,7 +106,7 @@ function ExpenseDialog({ row, onClose }: { row: Partial<Row>; onClose: () => voi
         <Field label={t('expenses.date')} required error={fe.expenseDate}><Input type="date" {...f('expenseDate')} /></Field>
         <Field label={t('expenses.method')}><Select {...f('paymentMethodId')} placeholder={t('common.select')}>{methods.data?.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</Select></Field>
         <Field label={t('expenses.description')} required error={fe.description} className="sm:col-span-2"><Input {...f('description')} invalid={!!fe.description} /></Field>
-        <Field label={t('expenses.supplier')}><Select {...f('supplierId')} placeholder={t('common.none')}>{suppliers.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+        <p className="text-xs text-ink-muted sm:col-span-2">{t('expenses.supplierHint')}</p>
         <Field label={t('expenses.reference')}><Input {...f('reference')} /></Field>
       </div>
     </Dialog>

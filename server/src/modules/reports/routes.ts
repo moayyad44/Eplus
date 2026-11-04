@@ -143,7 +143,10 @@ reportsRouter.get(
     res.json({
       summary,
       revenueByCategory: byCategory.map((c) => ({ category: c.category, amount: num(c.amount), quantity: num(c.qty) })),
-      expensesByCategory: expensesByCategory.map((e) => ({ name: e.name, amount: num(e.amount), count: Number(e.count) })),
+      expensesByCategory: [
+        ...expensesByCategory.map((e) => ({ name: e.name, amount: num(e.amount), count: Number(e.count) })),
+        ...(summary.supplierPaymentCount ? [{ name: 'دفعات الموردين', amount: summary.supplierPayments, count: summary.supplierPaymentCount }] : []),
+      ],
       invoices,
       discounts,
     });

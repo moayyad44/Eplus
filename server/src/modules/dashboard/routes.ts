@@ -50,7 +50,10 @@ dashboardRouter.get(
         FROM payments p WHERE p."voidedAt" IS NULL AND p."paidAt" >= ${since} GROUP BY 1 ORDER BY 1`,
       prisma.$queryRaw<{ day: string; amount: Prisma.Decimal }[]>`
         SELECT to_char("expenseDate", 'YYYY-MM-DD') AS day, SUM(amount) AS amount FROM expenses
-        WHERE "voidedAt" IS NULL AND "expenseDate" >= ${dateOnly(since)} GROUP BY 1 ORDER BY 1`,
+        WHERE "voidedAt" IS NULL AND "expenseDate" >= ${dateOnly(since)} GROUP BY 1
+        UNION ALL
+        SELECT to_char("paidAt" AT TIME ZONE 'UTC' AT TIME ZONE ${env.TZ}, 'YYYY-MM-DD') AS day, SUM(amount) AS amount FROM supplier_payments
+        WHERE "voidedAt" IS NULL AND "paidAt" >= ${since} GROUP BY 1`,
       prisma.visit.groupBy({ by: ['doctorId'], where: { queueDate: today, status: { notIn: ['CANCELLED', 'NO_SHOW'] } }, _count: true }),
     ]);
 
@@ -67,7 +70,7 @@ dashboardRouter.get(
       day,
       visits: Number(visitsSeries.find((v) => v.day === day)?.count ?? 0),
       revenue: num(revenueSeries.find((v) => v.day === day)?.amount),
-      expenses: num(expenseSeries.find((v) => v.day === day)?.amount),
+      expenses: expenseSeries.filter((v) => v.day === day).reduce((a, v) => a + num(v.amount), 0),
     }));
 
     res.json({

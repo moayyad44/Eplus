@@ -2,6 +2,7 @@ export default {
   expenses: {
     title: 'المصروفات', subtitle: 'تسجيل ومتابعة مصروفات العيادة', new: 'مصروف جديد', edit: 'تعديل المصروف', category: 'التصنيف', amount: 'المبلغ', date: 'التاريخ',
     method: 'طريقة الدفع', supplier: 'المورد', description: 'الوصف', reference: 'رقم الفاتورة / المرجع', attachment: 'المرفقات', void: 'إلغاء المصروف', voidReason: 'سبب الإلغاء',
+    supplierHint: 'الدفع لمورد يُسجَّل من صفحة المورد («تسجيل دفعة للمورد»)، ويُحسب تلقائياً ضمن المصروفات والصندوق وصافي الدخل.',
     total: 'إجمالي الفترة', voided: 'ملغى', includeVoided: 'إظهار الملغاة', createdBy: 'سجله',
   },
   inventory: {

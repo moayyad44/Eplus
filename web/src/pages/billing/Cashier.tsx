@@ -9,7 +9,7 @@ import { BarsChart, ShareBars } from '@/components/shared/charts';
 
 export interface FinanceSummary {
   invoiceCount: number; grossSales: number; discounts: number; tax: number; netSales: number; unpaidFromPeriod: number; collected: number; refunded: number;
-  netReceipts: number; expenses: number; netIncome: number; outstandingTotal: number; outstandingCount: number;
+  netReceipts: number; expenses: number; supplierPayments?: number; netIncome: number; outstandingTotal: number; outstandingCount: number;
   patientBilled: number; insuranceBilled: number; insuranceReceived: number; cashCollected: number; patientReceivables: number; insuranceReceivables: number;
   insuranceApproved: number; insuranceRejected: number; insuranceWrittenOff: number; insuranceTransferred: number;
   byMethod: { methodId: string; name: string; code: string; collected: number; refunded: number; count: number }[];
@@ -35,7 +35,7 @@ export default function Cashier() {
             <StatCard label={t('billing.netReceipts')} value={money(s.netReceipts)} tone="primary" icon={<Wallet className="h-5 w-5" />} />
             <StatCard label={t('billing.discounts')} value={money(s.discounts)} tone="warning" icon={<BadgePercent className="h-5 w-5" />} />
             <StatCard label={t('billing.unpaid')} value={money(s.unpaidFromPeriod)} tone="danger" hint={`${t('billing.totalOutstanding')}: ${money(s.outstandingTotal)}`} />
-            <StatCard label={t('billing.expenses')} value={money(s.expenses)} tone="neutral" icon={<TrendingDown className="h-5 w-5" />} />
+            <StatCard label={t('billing.expenses')} value={money(s.expenses)} hint={s.supplierPayments ? t('billing.ofWhichSuppliers', { amount: money(s.supplierPayments) }) : undefined} tone="neutral" icon={<TrendingDown className="h-5 w-5" />} />
             <StatCard label={t('billing.netIncome')} hint={t('billing.ins.netIncomeHint')} value={money(s.netIncome)} tone={s.netIncome >= 0 ? 'success' : 'danger'} icon={<TrendingUp className="h-5 w-5" />} />
           </div>
           <InsuranceFigures s={s} />

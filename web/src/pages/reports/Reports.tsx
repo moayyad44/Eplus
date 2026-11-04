@@ -190,7 +190,7 @@ function FinancialReport({ range }: { range: Range }) {
             <StatCard label={t('billing.collected')} value={money(d.summary.collected)} tone="success" />
             <StatCard label={t('billing.refunds')} value={money(d.summary.refunded)} tone="neutral" />
             <StatCard label={t('billing.unpaid')} value={money(d.summary.unpaidFromPeriod)} tone="danger" />
-            <StatCard label={t('billing.expenses')} value={money(d.summary.expenses)} tone="warning" />
+            <StatCard label={t('billing.expenses')} value={money(d.summary.expenses)} hint={d.summary.supplierPayments ? t('billing.ofWhichSuppliers', { amount: money(d.summary.supplierPayments) }) : undefined} tone="warning" />
             <StatCard label={t('billing.netIncome')} hint={t('billing.ins.netIncomeHint')} value={money(d.summary.netIncome)} tone={d.summary.netIncome >= 0 ? 'success' : 'danger'} />
           </div>
           <InsuranceFigures s={d.summary} />

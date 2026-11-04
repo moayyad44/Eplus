@@ -15,7 +15,7 @@ export const cashierRouter = Router();
 /** Financial summary for any period: sales, collections by method, refunds, discounts, unpaid, expenses, net. */
 export async function financialSummary(from: Date, to: Date, branchId?: string | null) {
   const branch = branchId ? Prisma.sql`AND i."branchId" = ${branchId}` : Prisma.empty;
-  const [sales, byMethod, expenses, outstanding, daily] = await Promise.all([
+  const [sales, byMethod, expenses, outstanding, daily, supplierPaid] = await Promise.all([
     prisma.invoice.aggregate({
       where: { status: { notIn: ['DRAFT', 'CANCELLED'] }, issuedAt: { gte: from, lte: to }, ...(branchId && { branchId }) },
       _sum: { subtotal: true, discountTotal: true, taxTotal: true, total: true, balance: true, patientShare: true, insuranceShare: true },
@@ -35,6 +35,8 @@ export async function financialSummary(from: Date, to: Date, branchId?: string |
       FROM payments p JOIN invoices i ON i.id = p."invoiceId"
       WHERE p."voidedAt" IS NULL AND p."paidAt" BETWEEN ${from} AND ${to} ${branch}
       GROUP BY 1 ORDER BY 1`,
+    // Money paid to suppliers leaves the clinic too: it counts with the expenses.
+    prisma.supplierPayment.aggregate({ where: { voidedAt: null, paidAt: { gte: from, lte: to } }, _sum: { amount: true }, _count: true }),
   ]);
 
   const methods = new Map<string, { methodId: string; name: string; code: string; collected: number; refunded: number; count: number }>();
@@ -45,7 +47,9 @@ export async function financialSummary(from: Date, to: Date, branchId?: string |
   }
   const collected = [...methods.values()].reduce((a, m) => a + m.collected, 0);
   const refunded = [...methods.values()].reduce((a, m) => a + m.refunded, 0);
-  const expenseTotal = num(expenses._sum.amount);
+  const generalExpenses = num(expenses._sum.amount);
+  const supplierPayments = num(supplierPaid._sum.amount);
+  const expenseTotal = D(generalExpenses).add(supplierPayments).toNumber();
   const netReceipts = D(collected).sub(refunded).toNumber();
   // Insurance money only counts as collected when the company actually pays it.
   const ins = await insuranceTotals(from, to);
@@ -63,7 +67,10 @@ export async function financialSummary(from: Date, to: Date, branchId?: string |
     netReceipts,
     byMethod: [...methods.values()],
     expenses: expenseTotal,
-    expenseCount: expenses._count,
+    expenseCount: expenses._count + supplierPaid._count,
+    generalExpenses,
+    supplierPayments,
+    supplierPaymentCount: supplierPaid._count,
     netIncome: D(cashCollected).sub(expenseTotal).toNumber(),
     outstandingTotal: num(outstanding._sum.balance),
     outstandingCount: outstanding._count,

@@ -202,3 +202,22 @@ describe('overpayment and expenses per day', () => {
     expect(after.expensesByCategory).toEqual([]);
   });
 });
+
+describe('supplier payments count as money paid out', () => {
+  it('a supplier payment shows in the expenses, the cash summary and the net income of its day; voiding removes it', async () => {
+    const ymdLocal = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const day = ymdLocal(350);
+    const sup = await prisma.supplier.findFirstOrThrow();
+    const r0 = (await admin.get(`/api/reports/financial?from=${day}&to=${day}`)).body;
+    const pay = await admin.post(`/api/suppliers/${sup.id}/payments`, { amount: 50, methodId: cashId, paidAt: new Date(`${day}T10:00:00`).toISOString() });
+    expect(pay.status, JSON.stringify(pay.body)).toBe(201);
+    const r1 = (await admin.get(`/api/reports/financial?from=${day}&to=${day}`)).body;
+    expect(r1.summary.expenses - r0.summary.expenses).toBe(50);
+    expect(r1.summary.supplierPayments).toBe(50);
+    expect(r0.summary.netIncome - r1.summary.netIncome).toBe(50);
+    expect(r1.expensesByCategory).toContainEqual({ name: 'دفعات الموردين', amount: 50, count: 1 });
+    expect((await admin.get(`/api/reports/financial?from=${ymdLocal(349)}&to=${ymdLocal(349)}`)).body.summary.supplierPayments).toBe(0);
+    expect((await admin.post(`/api/suppliers/payments/${pay.body.id}/void`, { reason: 'خطأ إدخال' })).status).toBe(200);
+    expect((await admin.get(`/api/reports/financial?from=${day}&to=${day}`)).body.summary.supplierPayments).toBe(0);
+  });
+});

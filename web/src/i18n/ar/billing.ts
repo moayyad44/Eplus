@@ -27,7 +27,7 @@ export default {
     paymentSaved: 'تم تسجيل الدفعة — إيصال {{number}}', refundSaved: 'تم تسجيل الإرجاع', refundReason: 'سبب الإرجاع', refunded: 'المسترد', voided: 'ملغاة',
     fullAmount: 'كامل المبلغ', overpaid: 'مدفوع بالزيادة', overpayNote: 'المبلغ أكبر من المتبقي: ستُسجَّل زيادة {{amount}} على هذه الفاتورة', outstanding: 'الفواتير غير المدفوعة', outstandingSubtitle: 'الذمم المستحقة على المرضى', debtAge: 'عمر الدين', lastPayment: 'آخر دفعة',
     days: '{{count}} يوم', totalOutstanding: 'إجمالي الذمم', minAge: 'عمر الدين أكثر من', cashier: 'الصندوق والحسابات اليومية', cashierSubtitle: 'ملخص المبيعات والمقبوضات حسب الفترة',
-    grossSales: 'إجمالي المبيعات', netSales: 'صافي المبيعات', discounts: 'الخصومات', collected: 'المقبوضات', refunds: 'المرتجعات', netReceipts: 'صافي المقبوضات',
+    grossSales: 'إجمالي المبيعات', netSales: 'صافي المبيعات', discounts: 'الخصومات', ofWhichSuppliers: 'منها دفعات للموردين {{amount}}', collected: 'المقبوضات', refunds: 'المرتجعات', netReceipts: 'صافي المقبوضات',
     unpaid: 'غير مدفوع من الفترة', expenses: 'المصروفات', netIncome: 'صافي الدخل', byMethod: 'المقبوضات حسب طريقة الدفع', daily: 'المقبوضات اليومية',
     invoiceCount: 'عدد الفواتير', paymentsTitle: 'سجل المدفوعات', paymentsSubtitle: 'جميع الإيصالات والمرتجعات', mine: 'مدفوعاتي فقط', noVisit: 'بدون زيارة',
     patientInfo: 'بيانات المريض', summary: 'الملخص', priceLocked: 'السعر محدد من قائمة الخدمات', editDraftOnly: 'لا يمكن تعديل فاتورة صادرة',
