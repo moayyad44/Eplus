@@ -12,6 +12,7 @@ import { nextCounter, pad } from '../../lib/counters';
 import { D } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
 import { recordMovement, resolveWarehouse } from './service';
+import { ensureActiveItems } from './routes';
 
 /** Warehouses and transfers of goods between them. Mounted under /inventory. */
 export const warehousesRouter = Router();
@@ -141,6 +142,7 @@ warehousesRouter.post(
     );
     if (body.fromWarehouseId === body.toWarehouseId) throw badRequest('المستودع المصدر والمستلم متطابقان');
     if (new Set(body.items.map((i) => i.itemId)).size !== body.items.length) throw badRequest('الصنف مكرر في سند النقل');
+    await ensureActiveItems(body.items.map((i) => i.itemId));
     const t = await prisma.$transaction(async (tx) => {
       const from = await resolveWarehouse(tx, body.fromWarehouseId);
       const to = await resolveWarehouse(tx, body.toWarehouseId);

@@ -72,7 +72,7 @@ export function ItemDialog({ item, onClose, onSaved }: { item?: Item; onClose: (
   );
 }
 
-const TYPES = ['PURCHASE', 'RECEIPT', 'ISSUE', 'CONSUMPTION', 'RETURN', 'ADJUSTMENT'] as const;
+const TYPES = ['RECEIPT', 'ISSUE', 'CONSUMPTION', 'RETURN', 'ADJUSTMENT'] as const;
 
 export function MovementDialog({ item, onClose }: { item: Item; onClose: () => void }) {
   const { t } = useTranslation();

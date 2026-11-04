@@ -15,6 +15,12 @@ import { recordMovement, resolveWarehouse } from './service';
 
 export const inventoryRouter = Router();
 
+/** A stopped (inactive) item takes no new manual movement or transfer; invoices, returns and counts still settle it. */
+export async function ensureActiveItems(ids: string[]) {
+  const off = await prisma.inventoryItem.findMany({ where: { id: { in: ids }, isActive: false }, select: { name: true } });
+  if (off.length) throw badRequest(`الصنف موقوف: ${off.map((i) => i.name).join('، ')}. فعّله أولاً`);
+}
+
 const itemBody = z.object({
   name: z.string().trim().min(2, 'اسم الصنف مطلوب').max(150),
   sku: z.string().trim().toUpperCase().min(1, 'SKU مطلوب').max(40),
@@ -157,7 +163,8 @@ inventoryRouter.delete(
 
 // ── Movements ──
 
-const MANUAL_TYPES = ['PURCHASE', 'RECEIPT', 'ISSUE', 'CONSUMPTION', 'RETURN', 'ADJUSTMENT'] as const;
+// Buying goes through purchase orders (they also update what is owed to the supplier); a manual entry is a «receipt».
+const MANUAL_TYPES = ['RECEIPT', 'ISSUE', 'CONSUMPTION', 'RETURN', 'ADJUSTMENT'] as const;
 
 inventoryRouter.post(
   '/transactions',
@@ -178,6 +185,7 @@ inventoryRouter.post(
       req.body,
     );
     if (body.type !== 'ADJUSTMENT' && body.quantity < 0) throw badRequest('الكمية يجب أن تكون موجبة');
+    await ensureActiveItems([body.itemId]);
     const txn = await prisma.$transaction((tx) => recordMovement(tx, req.ctx, { ...body, expiryDate: body.expiryDate ? dateOnly(body.expiryDate) : null, referenceType: 'manual' }));
     res.status(201).json(txn);
   }),
