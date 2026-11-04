@@ -7,6 +7,7 @@ import { nextCounter, pad } from '../../lib/counters';
 import { AppError, badRequest, forbidden, notFound } from '../../lib/errors';
 import { D, r3 } from '../../lib/money';
 import { ymd } from '../../lib/dates';
+import { enqueue, enqueueInvoicePayments } from '../accounting/link';
 
 /*
  * A claim's money is a ledger: every decision, payment, transfer or write-off is an append-only event
@@ -84,9 +85,15 @@ async function addEvent(
   d: Partial<Record<'dApproved' | 'dRejected' | 'dPaid' | 'dTransferred' | 'dWrittenOff' | 'dSubmitted' | 'dCancelled', Prisma.Decimal | number>> = {},
   extra: { reason?: string | null; notes?: string | null; allocationId?: string; fromStatus?: ClaimStatus; toStatus?: ClaimStatus } = {},
 ) {
-  return tx.insuranceClaimEvent.create({
+  const ev = await tx.insuranceClaimEvent.create({
     data: { claimId, type, ...d, reason: extra.reason ?? null, notes: extra.notes ?? null, allocationId: extra.allocationId, fromStatus: extra.fromStatus, toStatus: extra.toStatus, userId: ctx.userId, userName: ctx.userName },
   });
+  // Accounting: a transfer to the patient or a write-off moves the receivable; a transfer also changes what the patient owes.
+  if (type === 'TRANSFER_TO_PATIENT' || type === 'WRITE_OFF') {
+    await enqueue(tx, 'claim-event', ev.id);
+    if (type === 'TRANSFER_TO_PATIENT') { const c = await tx.insuranceClaim.findUnique({ where: { id: claimId }, select: { invoiceId: true } }); if (c) await enqueueInvoicePayments(tx, c.invoiceId); }
+  }
+  return ev;
 }
 
 /** Runs a claim action: lock → validate → events → recompute → audit (before/after). */
@@ -328,6 +335,7 @@ export async function recordCompanyPayment(tx: Tx, ctx: Ctx, input: CompanyPayme
     summary: `دفعة ${payment.receiptNumber} من ${company.nameAr} بقيمة ${total.toNumber()} (${method.name}) على ${lines.length} مطالبة`,
     after: { amount: total.toNumber(), method: method.name, reference: input.reference, allocations: lines.map((l) => ({ claimId: l.claimId, amount: l.amount.toNumber() })) },
   });
+  await enqueue(tx, 'ins-payment', payment.id);
   return payment;
 }
 
@@ -336,6 +344,7 @@ export async function voidCompanyPayment(tx: Tx, ctx: Ctx, paymentId: string, re
   if (!p) throw notFound();
   if (p.voidedAt) throw badRequest('الدفعة ملغاة مسبقاً');
   await tx.insurancePayment.update({ where: { id: p.id }, data: { voidedAt: new Date(), voidedById: ctx.userId, voidReason: reason } });
+  await enqueue(tx, 'ins-payment', p.id);
   for (const a of p.allocations) {
     await lockClaim(tx, a.claimId);
     await tx.insuranceClaimEvent.updateMany({ where: { allocationId: a.id, voidedAt: null }, data: { voidedAt: new Date() } });

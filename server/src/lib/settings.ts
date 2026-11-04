@@ -39,6 +39,18 @@ export const settingSchemas = {
     /** Operations of EmergencyPlus from this day on are posted automatically (null = not started yet). */
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().default(null),
     currency: z.string().default('JOD'),
+    /** PERPETUAL: every stock movement is valued in the books (inventory / cost of sales). PERIODIC: purchases go to expenses. */
+    inventoryMethod: z.enum(['PERPETUAL', 'PERIODIC']).default('PERPETUAL'),
+    /** A reason must be given when editing an entry or a voucher. */
+    requireReason: z.boolean().default(false),
+    /** Account chosen for each role used by the automatic entries (empty = the starting account of that role). */
+    accountMap: z.record(z.string(), z.string().uuid()).default({}),
+    /** Account that receives each payment method (cash box, bank, Visa clearing…). */
+    methodAccounts: z.record(z.string(), z.string().uuid()).default({}),
+    /** Expense account of each expense category. */
+    expenseAccounts: z.record(z.string(), z.string().uuid()).default({}),
+    /** Revenue account of each service type. */
+    revenueAccounts: z.record(z.string(), z.string().uuid()).default({}),
   }),
   inventory: z.object({
     expiryAlertDays: z.number().int().min(1).max(365).default(60),

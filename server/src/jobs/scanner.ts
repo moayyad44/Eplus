@@ -8,6 +8,7 @@ import { shiftWindow } from '../modules/staff/attendance';
 import { processQueue } from '../modules/einvoice/service';
 import { processExpiry } from '../modules/ecoin/wallet';
 import { evaluatePenalties } from '../modules/ecoin/penalty';
+import { processPending } from '../modules/accounting/link';
 import { expireStaleRequests } from '../modules/shiftx/actions';
 
 /**
@@ -96,6 +97,7 @@ export async function runScan(now = new Date()) {
   await processExpiry(now).catch((e) => console.error('[ecoin expiry]', e));
   await expireStaleRequests(now).catch((e) => console.error('[shift requests]', e));
   await evaluatePenalties(now).catch((e) => console.error('[ecoin penalties]', e));
+  await processPending().catch((e) => console.error('[accounting link]', e));
 
   // 7. Insurance memberships expiring within 7 days or already expired while still marked active (reception, once a week)
   const insExpiring = await prisma.patientInsurance.findMany({

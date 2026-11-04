@@ -11,6 +11,7 @@ import { nextCounter, pad } from '../../lib/counters';
 import { D, num, r3 } from '../../lib/money';
 import { dateOnly } from '../../lib/dates';
 import { recordMovement, resolveWarehouse } from './service';
+import { enqueue } from '../accounting/link';
 
 export const suppliersRouter = Router();
 
@@ -217,6 +218,7 @@ purchasesRouter.post(
         }
       }
       const row = await tx.purchaseOrder.update({ where: { id: before.id }, data: { status, ...(status === 'RECEIVED' && { receivedAt: new Date() }) } });
+      if (status === 'RECEIVED') await enqueue(tx, 'po', row.id);
       await audit(tx, req.ctx, { action: 'purchase_order.status', entityType: 'purchase_order', entityId: row.id, summary: `${row.poNumber}: ${before.status} → ${status}${into}` });
       return row;
     });
@@ -242,6 +244,7 @@ suppliersRouter.post(
         if (!po || po.supplierId !== s.id) throw badRequest('أمر الشراء لا يخص هذا المورد');
       }
       const row = await tx.supplierPayment.create({ data: { ...body, paidAt: body.paidAt ?? new Date(), supplierId: s.id, createdById: req.ctx.userId } });
+      await enqueue(tx, 'supplier-payment', row.id);
       await audit(tx, req.ctx, { action: 'supplier_payment.create', entityType: 'supplier', entityId: s.id, summary: `دفعة ${body.amount} للمورد ${s.name}`, after: row });
       return row;
     });
@@ -258,6 +261,7 @@ suppliersRouter.post(
       const p = await tx.supplierPayment.findUnique({ where: { id: req.params.paymentId } });
       if (!p || p.voidedAt) throw notFound();
       await tx.supplierPayment.update({ where: { id: p.id }, data: { voidedAt: new Date(), voidedById: req.ctx.userId, voidReason: reason } });
+      await enqueue(tx, 'supplier-payment', p.id);
       await audit(tx, req.ctx, { action: 'supplier_payment.void', entityType: 'supplier', entityId: p.supplierId, summary: `إلغاء دفعة ${p.amount}: ${reason}`, before: { amount: p.amount }, after: { voided: true, reason } });
     });
     res.json({ ok: true });

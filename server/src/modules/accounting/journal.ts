@@ -97,8 +97,8 @@ async function lock(tx: Tx, id: string) {
   return load(tx, id);
 }
 
-async function revision(tx: Tx, e: EntryFull, action: string, userId: string | null, changes?: unknown) {
-  await tx.journalRevision.create({ data: { entryId: e.id, version: e.version, action, snapshot: snapshot(e) as never, changes: (changes ?? undefined) as never, userId } });
+async function revision(tx: Tx, e: EntryFull, action: string, userId: string | null, changes?: unknown, reason?: string | null) {
+  await tx.journalRevision.create({ data: { entryId: e.id, version: e.version, action, snapshot: snapshot(e) as never, changes: (changes ?? undefined) as never, userId, reason: reason || null } });
 }
 
 const lineRows = (lines: Awaited<ReturnType<typeof checkLines>>['lines']) => lines.map((l) => ({
@@ -132,23 +132,34 @@ export async function createEntry(tx: Tx, ctx: Ctx | null, input: EntryInput, op
 }
 
 /** Edit an entry (also after posting). Automatic entries change only through their source operation. */
-export async function updateEntry(tx: Tx, ctx: Ctx | null, id: string, input: EntryInput, opts: { fromSource?: boolean } = {}) {
+export async function updateEntry(tx: Tx, ctx: Ctx | null, id: string, input: EntryInput, opts: { fromSource?: boolean; reason?: string | null } = {}) {
   const before = await lock(tx, id);
-  if (before.status === 'DELETED') throw badRequest('القيد محذوف');
+  // A source operation brought back (e.g. a voided payment restored) brings its entry back too.
+  const revive = before.status === 'DELETED' && opts.fromSource;
+  if (before.status === 'DELETED' && !revive) throw badRequest('القيد محذوف');
   if (before.sourceType && !opts.fromSource) throw badRequest('هذا القيد ناتج تلقائياً عن عملية في EmergencyPlus؛ عدّل العملية نفسها فيتحدّث القيد معها');
   const date = dayOf(input.date);
-  if (before.status === 'POSTED') { await ensureOpenPeriod(tx, before.date); await ensureOpenPeriod(tx, date); }
+  if (before.status === 'POSTED') await ensureOpenPeriod(tx, before.date);
+  if (before.status === 'POSTED' || revive) await ensureOpenPeriod(tx, date);
   if (!input.description?.trim()) throw badRequest('البيان مطلوب');
   const { lines, total } = await checkLines(tx, input.lines);
+  // Nothing actually changes (e.g. an operation processed again): leave the entry and its version alone.
+  const sig = (ls: { accountId: string; debit: Prisma.Decimal.Value; credit: Prisma.Decimal.Value; description?: string | null; partyId?: string | null; partyName?: string | null; doctorId?: string | null }[]) =>
+    JSON.stringify(ls.map((l) => [l.accountId, D(l.debit).toFixed(3), D(l.credit).toFixed(3), l.description || null, l.partyId || null, l.partyName || null, l.doctorId || null]));
+  if (!revive && dayStr(before.date) === dayStr(date) && (input.type ?? before.type) === before.type && input.description.trim() === before.description
+    && (input.reference || null) === before.reference && sig(before.lines) === sig(lines)) return before;
   await tx.journalLine.deleteMany({ where: { entryId: id } });
   await tx.journalEntry.update({
     where: { id },
-    data: { date, type: input.type ?? before.type, description: input.description.trim(), reference: input.reference || null, totalDebit: total, version: { increment: 1 }, updatedById: ctx?.userId ?? null, lines: { create: lineRows(lines) } },
+    data: {
+      date, type: input.type ?? before.type, description: input.description.trim(), reference: input.reference || null, totalDebit: total, version: { increment: 1 }, updatedById: ctx?.userId ?? null, lines: { create: lineRows(lines) },
+      ...(revive && { status: 'POSTED', deletedAt: null, deletedById: null, postedAt: new Date() }),
+    },
   });
   const after = await load(tx, id);
   const changes = changesOf(snapshot(before), snapshot(after));
   if (!changes.length) return after;
-  await revision(tx, after, opts.fromSource ? 'source_update' : 'update', ctx?.userId ?? null, changes);
+  await revision(tx, after, opts.fromSource ? 'source_update' : 'update', ctx?.userId ?? null, changes, opts.reason);
   await audit(tx, ctx, { action: 'journal.update', entityType: 'journal_entry', entityId: id, summary: `${after.number}: تعديل (${changes.map((c) => c.field).join('، ')})`, before: snapshot(before), after: snapshot(after) });
   return after;
 }

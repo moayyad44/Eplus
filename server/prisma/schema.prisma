@@ -2524,6 +2524,8 @@ model JournalRevision {
   action    String
   snapshot  Json
   changes   Json?
+  /// Optional reason given for an edit (required only when the setting says so).
+  reason    String?
   userId    String?
   createdAt DateTime @default(now())
 
@@ -2532,4 +2534,30 @@ model JournalRevision {
   @@unique([entryId, version, action])
   @@index([entryId])
   @@map("acc_journal_revisions")
+}
+
+enum AccountingEventStatus {
+  PENDING
+  DONE
+  FAILED
+  SKIPPED
+}
+
+/// Link queue between EmergencyPlus and the books: one row per source operation ("invoice:<id>"…), written in the
+/// same transaction as the operation itself, then turned into its journal entry. Re-queued on every change.
+model AccountingEvent {
+  id          String                @id @default(uuid())
+  sourceKey   String                @unique
+  kind        String
+  sourceId    String
+  status      AccountingEventStatus @default(PENDING)
+  attempts    Int                   @default(0)
+  lastError   String?
+  note        String?
+  entryId     String?
+  queuedAt    DateTime              @default(now())
+  processedAt DateTime?
+
+  @@index([status, queuedAt])
+  @@map("acc_events")
 }

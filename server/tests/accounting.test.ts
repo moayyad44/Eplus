@@ -40,13 +40,15 @@ describe('accounting core', () => {
   });
 
   it('a balanced entry saved by an approver is posted at once and shows in the trial balance', async () => {
+    const cash = async () => (await tb(d(1, 1), d(12, 31))).rows.find((x: { id: string }) => x.id === acc.CASH_MAIN)?.closing ?? 0;
+    const before = await cash();
     const r = await admin.post('/api/accounting/journal', entry([['CASH_MAIN', 1000, 0], ['CAPITAL', 0, 1000]], { type: 'OPENING', description: 'رأس المال' }));
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(r.body.status).toBe('POSTED');
     expect(r.body.number).toMatch(/^JV-\d{6}$/);
     const t = await tb(d(1, 1), d(12, 31));
     expect(t.balanced).toBe(true);
-    expect(t.rows.find((x: { id: string }) => x.id === acc.CASH_MAIN).closingDebit).toBe(1000);
+    expect(Number((await cash() - before).toFixed(3))).toBe(1000);
   });
 
   it('refuses unbalanced entries, one-sided or double-sided lines, and group accounts', async () => {

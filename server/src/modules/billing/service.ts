@@ -9,6 +9,7 @@ import { D, r3 } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
 import { addDays, ymd } from '../../lib/dates';
 import { recordMovement, saleWarehouse } from '../inventory/service';
+import { enqueue, enqueueInvoicePayments } from '../accounting/link';
 import { changeVisitStatus } from '../visits/service';
 import { computeCoverage, contractPrice, usableMembership, type MembershipWithContract } from '../insurance/coverage';
 import { cancelClaimWithInvoice, createClaimForInvoice } from '../insurance/claims';
@@ -214,6 +215,8 @@ export async function issueInvoice(tx: Tx, ctx: Ctx, invoiceId: string) {
   await prepareSaleDocs(tx, ctx, inv.id);
   // E Coin: one award to the ordering doctor when the invoice holds lab tests (never twice for an invoice).
   await awardForInvoice(tx, ctx, inv.id);
+  // Accounting: revenue and receivables (and the cost of sold items) go to the books.
+  await enqueue(tx, 'invoice', inv.id);
   // Nothing left for the patient to pay (e.g. fully covered) → the visit is done.
   if (updated.status === 'PAID' && inv.visitId) {
     const visit = await tx.visit.findUnique({ where: { id: inv.visitId }, select: { status: true } });
@@ -292,6 +295,7 @@ export async function addPayment(tx: Tx, ctx: Ctx, invoiceId: string, p: Payment
     const visit = await tx.visit.findUnique({ where: { id: inv.visitId }, select: { status: true } });
     if (visit?.status === 'WAITING_PAYMENT') await changeVisitStatus(tx, ctx, inv.visitId, 'COMPLETED', 'تم الدفع', { system: true });
   }
+  await enqueueInvoicePayments(tx, inv.id);
   return { payment, invoice: updated };
 }
 
@@ -313,6 +317,7 @@ export async function cancelInvoice(tx: Tx, ctx: Ctx, invoiceId: string, reason:
   });
   if (inv.invoiceNumber) await moveStockForInvoice(tx, ctx, inv.id, inv.invoiceNumber, true);
   await audit(tx, ctx, { action: 'invoice.cancel', entityType: 'invoice', entityId: inv.id, summary: `إلغاء الفاتورة ${inv.invoiceNumber ?? '(مسودة)'}: ${reason}`, before: { status: inv.status }, after: { status: 'CANCELLED', reason } });
+  await enqueue(tx, 'invoice-cancel', inv.id);
   return updated;
 }
 
@@ -377,6 +382,7 @@ export async function changeInvoiceDate(tx: Tx, ctx: Ctx, invoiceId: string, day
     before: { invoiceNumber: inv.invoiceNumber, invoiceDate: ymd(old) },
     after: { invoiceNumber: inv.invoiceNumber, invoiceDate: day, reason },
   });
+  await enqueue(tx, 'invoice', inv.id);
   return { oldDate: ymd(old), newDate: day };
 }
 
@@ -423,6 +429,7 @@ export async function changePaymentDate(tx: Tx, ctx: Ctx, paymentId: string, day
     summary: `تعديل تاريخ ${p.type === 'REFUND' ? 'الإرجاع' : 'الإيصال'} ${p.receiptNumber} (فاتورة ${p.invoice.invoiceNumber}) من ${old} إلى ${day}${reason ? ` — السبب: ${reason}` : ''}`,
     before: { paidAt: old }, after: { paidAt: day, reason },
   });
+  await enqueueInvoicePayments(tx, p.invoiceId);
   return { receiptNumber: p.receiptNumber, oldDate: old, newDate: day };
 }
 

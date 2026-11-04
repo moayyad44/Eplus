@@ -8,6 +8,7 @@ import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/errors';
 import { requirePerm } from '../../middleware/auth';
 import { dateOnly } from '../../lib/dates';
+import { enqueue } from '../accounting/link';
 
 export const expensesRouter = Router();
 
@@ -54,6 +55,7 @@ expensesRouter.post(
     const data = parse(body, req.body);
     const e = await prisma.$transaction(async (tx) => {
       const row = await tx.expense.create({ data: { ...data, expenseDate: dateOnly(data.expenseDate), branchId: req.ctx.branchId, createdById: req.ctx.userId } });
+      await enqueue(tx, 'expense', row.id);
       await audit(tx, req.ctx, { action: 'expense.create', entityType: 'expense', entityId: row.id, summary: `${data.description}: ${data.amount}`, after: row });
       return row;
     });
@@ -71,6 +73,7 @@ expensesRouter.put(
       if (!before) throw notFound();
       if (before.voidedAt) throw badRequest('المصروف ملغى');
       const row = await tx.expense.update({ where: { id: before.id }, data: { ...data, ...(data.expenseDate && { expenseDate: dateOnly(data.expenseDate) }) } });
+      await enqueue(tx, 'expense', row.id);
       await audit(tx, req.ctx, { action: 'expense.update', entityType: 'expense', entityId: row.id, before, after: row });
       return row;
     });
@@ -88,6 +91,7 @@ expensesRouter.post(
       if (!before) throw notFound();
       if (before.voidedAt) throw badRequest('المصروف ملغى مسبقاً');
       await tx.expense.update({ where: { id: before.id }, data: { voidedAt: new Date(), voidedById: req.ctx.userId, voidReason: reason } });
+      await enqueue(tx, 'expense', before.id);
       await audit(tx, req.ctx, { action: 'expense.void', entityType: 'expense', entityId: before.id, summary: `إلغاء مصروف ${before.description}: ${reason}` });
     });
     res.json({ ok: true });

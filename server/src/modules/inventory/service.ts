@@ -6,6 +6,7 @@ import { badRequest, notFound } from '../../lib/errors';
 import { D } from '../../lib/money';
 import { notifyPermission } from '../../lib/notify';
 import { getSetting } from '../../lib/settings';
+import { enqueue } from '../accounting/link';
 
 /** Direction of each movement type. ADJUSTMENT/STOCK_COUNT accept a signed quantity. */
 export const TXN_SIGN: Record<InventoryTxnType, 1 | -1 | 0> = {
@@ -92,6 +93,7 @@ export async function recordMovement(tx: Tx, ctx: Ctx | null, m: MovementInput) 
       batchNumber: m.batchNumber ?? null, expiryDate: m.expiryDate ?? null, userId: ctx?.userId,
     },
   });
+  if (['CONSUMPTION', 'ISSUE', 'RETURN', 'RECEIPT', 'ADJUSTMENT', 'STOCK_COUNT'].includes(m.type)) await enqueue(tx, 'inv-move', txn.id);
   await audit(tx, ctx, {
     action: 'inventory.movement', entityType: 'inventory_item', entityId: item.id,
     summary: `${item.name} (${wh.name}): ${m.type} ${delta.toNumber() > 0 ? '+' : ''}${delta.toNumber()} → ${whBalance.toNumber()} (الإجمالي ${balance.toNumber()})`,

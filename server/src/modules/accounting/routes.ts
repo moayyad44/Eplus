@@ -12,6 +12,7 @@ import { can } from '../../auth/context';
 import { NATURE_OF } from './chart';
 import { approveEntry, createEntry, dayOf, dayStr, deleteEntry, updateEntry } from './journal';
 import { accountBalances, accountStatement, balanceSheet, incomeStatement, parseDay, trialBalance } from './ledger';
+import { REVENUE_DEFAULT, ROLES, loadMapping, processPending, resyncFrom, retryFailed } from './link';
 
 /** EmergencyPlus Accounting API. Every route needs `accounting.access` plus its own permission. */
 export const accountingRouter = Router();
@@ -28,11 +29,71 @@ accountingRouter.get('/settings', ah(async (_req, res) => res.json(await getSett
 accountingRouter.put('/settings', requirePerm('accounting.settings'), ah(async (req, res) => {
   const current = await getSetting('accounting');
   const value = settingSchemas.accounting.parse({ ...current, ...req.body });
+  // Every mapped account must be a real, active sub-account.
+  const mapped = [...Object.values(value.accountMap), ...Object.values(value.methodAccounts), ...Object.values(value.expenseAccounts), ...Object.values(value.revenueAccounts)];
+  if (mapped.length) {
+    const found = await prisma.account.findMany({ where: { id: { in: mapped } } });
+    for (const id of new Set(mapped)) {
+      const a = found.find((x) => x.id === id);
+      if (!a) throw badRequest('أحد الحسابات المختارة غير موجود');
+      if (a.isGroup) throw badRequest(`«${a.name}» حساب رئيسي؛ اختر حساباً فرعياً`);
+      if (!a.isActive) throw badRequest(`الحساب «${a.name}» موقوف`);
+    }
+  }
+  if (current.startDate && value.startDate !== current.startDate && (await prisma.journalEntry.count({ where: { sourceType: { not: null }, status: 'POSTED' } }))) {
+    throw badRequest('بدأ الترحيل التلقائي بالفعل؛ لا يمكن تغيير تاريخ البدء');
+  }
   await prisma.$transaction(async (tx) => {
     await tx.setting.upsert({ where: { key: 'accounting' }, create: { key: 'accounting', value, updatedBy: req.ctx.userId }, update: { value, updatedBy: req.ctx.userId } });
     await audit(tx, req.ctx, { action: 'accounting.settings', entityType: 'setting', entityId: 'accounting', before: current, after: value });
   });
+  // Starting (or a new start date): queue every operation from that day on.
+  if (value.startDate && value.startDate !== current.startDate) { await resyncFrom(value.startDate); void processPending(); }
   res.json(value);
+}));
+
+// ───────────── Link with EmergencyPlus ─────────────
+
+/** What the mapping screen needs: every role / method / category with the account it uses now. */
+accountingRouter.get('/link/config', requirePerm('accounting.settings'), ah(async (_req, res) => {
+  const [m, methods, cats] = await Promise.all([loadMapping(), prisma.paymentMethod.findMany({ orderBy: { sortOrder: 'asc' } }), prisma.expenseCategory.findMany({ orderBy: { name: 'asc' } })]);
+  const safe = (f: () => string) => { try { return f(); } catch { return null; } };
+  res.json({
+    roles: ROLES.map((k) => ({ key: k, accountId: safe(() => m.role(k)), custom: !!m.cfg.accountMap[k] })),
+    methods: methods.map((x) => ({ id: x.id, code: x.code, name: x.name, isActive: x.isActive, accountId: safe(() => m.method(x.id)), custom: !!m.cfg.methodAccounts[x.id] })),
+    expenses: cats.map((x) => ({ id: x.id, name: x.name, isActive: x.isActive, accountId: safe(() => m.expense(x.id)), custom: !!m.cfg.expenseAccounts[x.id] })),
+    revenues: (Object.keys(REVENUE_DEFAULT) as (keyof typeof REVENUE_DEFAULT)[]).map((c) => ({ key: c, accountId: safe(() => m.revenue(c)), custom: !!m.cfg.revenueAccounts[c] })),
+  });
+}));
+
+accountingRouter.get('/link', requireAnyPerm('accounting.settings', 'accounting.journal.view'), ah(async (req, res) => {
+  const q = parse(pageQuery.extend({ status: z.enum(['PENDING', 'DONE', 'FAILED', 'SKIPPED']).optional(), kind: z.string().optional() }), req.query);
+  const where: Prisma.AccountingEventWhereInput = { ...(q.status && { status: q.status }), ...(q.kind && { kind: q.kind }) };
+  const [items, total, counts, cfg] = await Promise.all([
+    prisma.accountingEvent.findMany({ where, orderBy: { queuedAt: 'desc' }, ...paginate(q) }),
+    prisma.accountingEvent.count({ where }),
+    prisma.accountingEvent.groupBy({ by: ['status'], _count: true }),
+    getSetting('accounting'),
+  ]);
+  const entries = await prisma.journalEntry.findMany({ where: { id: { in: items.map((i) => i.entryId).filter(Boolean) as string[] } }, select: { id: true, number: true, status: true } });
+  res.json({
+    ...paged(items.map((i) => ({ ...i, entry: entries.find((e) => e.id === i.entryId) ?? null })), total, q),
+    counts: Object.fromEntries(counts.map((c) => [c.status, c._count])), startDate: cfg.startDate,
+  });
+}));
+
+accountingRouter.post('/link/retry', requirePerm('accounting.settings'), ah(async (req, res) => {
+  const { ids } = parse(z.object({ ids: z.array(z.string().uuid()).max(1000).optional() }), req.body);
+  res.json(await retryFailed(ids));
+}));
+
+accountingRouter.post('/link/resync', requirePerm('accounting.settings'), ah(async (req, res) => {
+  const cfg = await getSetting('accounting');
+  if (!cfg.startDate) throw badRequest('حدّد تاريخ بدء المحاسبة أولاً');
+  const queued = await resyncFrom(cfg.startDate);
+  await audit(prisma, req.ctx, { action: 'accounting.resync', entityType: 'setting', entityId: 'accounting', summary: `إعادة فحص الربط منذ ${cfg.startDate}: ${queued} عملية` });
+  const r = await processPending(5000);
+  res.json({ queued, ...r });
 }));
 
 // ───────────── Chart of accounts ─────────────
@@ -129,6 +190,8 @@ const lineBody = z.object({
 const entryBody = z.object({
   date: day, type: z.nativeEnum(JournalType).default('GENERAL'), description: z.string().trim().min(2, 'البيان مطلوب').max(500),
   reference: nullableStr(100), lines: z.array(lineBody).min(2, 'القيد يحتاج سطرين على الأقل').max(500),
+  /** Reason for an edit: optional unless the settings require it. */
+  reason: nullableStr(300),
 });
 const MANUAL_TYPES = new Set<JournalType>(['GENERAL', 'OPENING', 'ADJUSTMENT', 'CLOSING', 'EXPENSE', 'REVENUE', 'RECEIPT', 'PAYMENT', 'PAYROLL', 'PURCHASE', 'CHEQUE', 'BANK_RECONCILIATION', 'DEPRECIATION', 'CORRECTION']);
 
@@ -189,7 +252,8 @@ accountingRouter.put('/journal/:id', requireAnyPerm('accounting.journal.create',
     if (!cur) throw notFound('القيد غير موجود');
     if (cur.status === 'POSTED' && !can(req.ctx, 'accounting.journal.edit_posted')) throw forbidden('تعديل القيود المرحّلة يحتاج صلاحية «تعديل القيود بعد ترحيلها»');
     if (cur.status === 'DRAFT' && cur.createdById !== req.ctx.userId && !can(req.ctx, 'accounting.journal.approve')) throw forbidden('لا يمكنك تعديل قيد أنشأه غيرك');
-    return updateEntry(tx, req.ctx, cur.id, b);
+    if ((await getSetting('accounting', tx)).requireReason && !b.reason) throw badRequest('سبب التعديل مطلوب');
+    return updateEntry(tx, req.ctx, cur.id, b, { reason: b.reason });
   });
   res.json({ id: e.id, number: e.number, status: e.status, version: e.version });
 }));
