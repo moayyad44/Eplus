@@ -16,9 +16,12 @@ import { openingRouter } from './opening';
 import { treasuryRouter } from './treasury';
 import { visaRouter } from './visa';
 import { chequesRouter } from './cheques';
+import { accountBody, createAccount } from './accounts';
 import { payrollRouter } from './payroll';
 import { assetsRouter } from './assets';
 import { analyticsRouter } from './analytics';
+import { bankRecRouter } from './bankrec';
+import { importsRouter } from './imports';
 import { REVENUE_DEFAULT, ROLES, loadMapping, processPending, resyncFrom, retryFailed } from './link';
 
 /** EmergencyPlus Accounting API. Every route needs `accounting.access` plus its own permission. */
@@ -31,6 +34,8 @@ accountingRouter.use(chequesRouter);
 accountingRouter.use(payrollRouter);
 accountingRouter.use(assetsRouter);
 accountingRouter.use(analyticsRouter);
+accountingRouter.use(bankRecRouter);
+accountingRouter.use(importsRouter);
 
 const today = () => dayOf(new Date().toLocaleDateString('en-CA'));
 const monthStart = () => dayOf(`${new Date().toLocaleDateString('en-CA').slice(0, 7)}-01`);
@@ -123,34 +128,10 @@ accountingRouter.get('/accounts', requireAnyPerm('accounting.accounts.view', 'ac
   res.json(rows.map((r) => ({ ...r, lines: used.find((u) => u.accountId === r.id)?._count ?? 0 })));
 }));
 
-const accountBody = z.object({
-  code: z.string().trim().min(1, 'رقم الحساب مطلوب').max(20).regex(/^[0-9A-Za-z.-]+$/, 'رقم الحساب: أرقام وأحرف إنجليزية فقط'),
-  name: z.string().trim().min(2, 'اسم الحساب مطلوب').max(150),
-  parentId: z.string().uuid().nullable().optional(),
-  type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE']).optional(),
-  nature: z.enum(['DEBIT', 'CREDIT']).optional(),
-  isGroup: z.boolean().optional(),
-  description: nullableStr(500),
-});
 
 accountingRouter.post('/accounts', requirePerm('accounting.accounts.manage'), ah(async (req, res) => {
   const b = parse(accountBody, req.body);
-  const a = await prisma.$transaction(async (tx) => {
-    if (await tx.account.findUnique({ where: { code: b.code } })) throw badRequest('رقم الحساب مستخدم');
-    const parent = b.parentId ? await tx.account.findUnique({ where: { id: b.parentId } }) : null;
-    if (b.parentId && !parent) throw badRequest('الحساب الأب غير موجود');
-    if (parent && !parent.isGroup) {
-      // A leaf becoming a parent must not already carry entries (they would be hidden under a total).
-      if (await tx.journalLine.count({ where: { accountId: parent.id } })) throw badRequest(`«${parent.name}» عليه قيود؛ لا يمكن جعله حساباً رئيسياً`);
-      await tx.account.update({ where: { id: parent.id }, data: { isGroup: true } });
-    }
-    const type = parent?.type ?? b.type;
-    if (!type) throw badRequest('اختر نوع الحساب');
-    if (parent && b.type && b.type !== parent.type) throw badRequest('نوع الحساب الفرعي يتبع نوع الحساب الأب');
-    const created = await tx.account.create({ data: { code: b.code, name: b.name, type, nature: b.nature ?? (parent?.type === type && parent.nature !== NATURE_OF[type] ? parent.nature : NATURE_OF[type]), parentId: parent?.id ?? null, isGroup: !!b.isGroup, description: b.description } });
-    await audit(tx, req.ctx, { action: 'account.create', entityType: 'account', entityId: created.id, summary: `${created.code} ${created.name}`, after: created });
-    return created;
-  });
+  const a = await prisma.$transaction((tx) => createAccount(tx, req.ctx, b));
   res.status(201).json(a);
 }));
 

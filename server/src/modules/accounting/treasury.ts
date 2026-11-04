@@ -7,7 +7,7 @@ import { parse } from '../../lib/validate';
 import { audit } from '../../lib/audit';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { requireAnyPerm, requirePerm } from '../../middleware/auth';
-import { can } from '../../auth/context';
+import { can, type Ctx } from '../../auth/context';
 import { getSetting } from '../../lib/settings';
 import { D, r3 } from '../../lib/money';
 import { dateOnlyStr } from '../../lib/dates';
@@ -93,14 +93,14 @@ treasuryRouter.get('/treasuries/:id/statement', requireAnyPerm('accounting.treas
 
 // ───────────── Vouchers ─────────────
 
-const voucherBody = z.object({
+export const voucherBody = z.object({
   kind: z.nativeEnum(VoucherKind), date: day, method: z.nativeEnum(VoucherMethod), treasuryId: z.string().uuid().nullable().optional(),
   amount: z.coerce.number().positive('المبلغ يجب أن يكون أكبر من صفر').max(100_000_000), counterAccountId: z.string().uuid('اختر الحساب المقابل'),
   partyType: nullableStr(20), partyId: nullableStr(60), partyName: z.string().trim().min(2, 'اسم الدافع / المستفيد مطلوب').max(150),
   purpose: z.string().trim().min(2, 'السبب مطلوب').max(300), reference: nullableStr(100), notes: nullableStr(1000), reason: nullableStr(300),
   cheque: z.object({ number: z.string().trim().min(1, 'رقم الشيك مطلوب').max(40), bankName: z.string().trim().min(2, 'البنك مطلوب').max(100), drawer: nullableStr(150), accountNumber: nullableStr(60), issueDate: day.nullable().optional(), dueDate: day }).optional(),
 });
-type VoucherInput = z.infer<typeof voucherBody>;
+export type VoucherInput = z.infer<typeof voucherBody>;
 const snap = (v: Prisma.VoucherGetPayload<object>) => ({ date: dateOnlyStr(v.date), method: v.method, treasuryId: v.treasuryId, amount: D(v.amount).toNumber(), counterAccountId: v.counterAccountId, partyName: v.partyName, purpose: v.purpose, reference: v.reference, notes: v.notes, status: v.status });
 
 async function checkVoucher(tx: Tx, b: VoucherInput) {
@@ -157,21 +157,24 @@ treasuryRouter.get('/vouchers/:id', requireAnyPerm('accounting.vouchers.view', '
 }));
 
 /** Issue a voucher: saved and posted together (a closed period refuses both). */
+/** Issue a voucher inside a transaction: checked, numbered, posted (used by the screen and by the Excel import). */
+export async function issueVoucher(tx: Tx, ctx: Ctx, b: VoucherInput) {
+  await checkVoucher(tx, b);
+  const number = await docNumber(tx, b.kind === 'RECEIPT' ? 'RV' : 'PV');
+  const { cheque, reason: _r, ...data } = b;
+  const created = await tx.voucher.create({ data: { ...data, number, date: dayOf(b.date), amount: r3(b.amount), treasuryId: b.method === 'VISA' || (b.method === 'CHEQUE' && b.kind === 'RECEIPT') ? null : b.treasuryId ?? null, createdById: ctx.userId } });
+  if (cheque) await createChequeForVoucher(tx, ctx, created, cheque);
+  if (b.method === 'VISA') await trackVisa(tx, 'voucher', created.id);
+  await postDoc(tx, 'voucher', created.id);
+  await docRevision(tx, 'voucher', created.id, 1, 'create', snap(created), ctx.userId);
+  await audit(tx, ctx, { action: 'voucher.create', entityType: 'voucher', entityId: created.id, summary: `${number}: ${b.partyName} — ${b.amount}` });
+  return created;
+}
+
+/** Issue a voucher: saved and posted together (a closed period refuses both). */
 treasuryRouter.post('/vouchers', requirePerm('accounting.vouchers.create'), ah(async (req, res) => {
   const b = parse(voucherBody, req.body);
-  const v = await prisma.$transaction(async (tx) => {
-    await checkVoucher(tx, b);
-    const number = await docNumber(tx, b.kind === 'RECEIPT' ? 'RV' : 'PV');
-    const { cheque, reason: _r, ...data } = b;
-    const created = await tx.voucher.create({ data: { ...data, number, date: dayOf(b.date), amount: r3(b.amount), treasuryId: b.method === 'VISA' || (b.method === 'CHEQUE' && b.kind === 'RECEIPT') ? null : b.treasuryId ?? null, createdById: req.ctx.userId } });
-    if (cheque) await createChequeForVoucher(tx, req.ctx, created, cheque);
-    if (b.method === 'VISA') await trackVisa(tx, 'voucher', created.id);
-    await postDoc(tx, 'voucher', created.id);
-    await docRevision(tx, 'voucher', created.id, 1, 'create', snap(created), req.ctx.userId);
-    await audit(tx, req.ctx, { action: 'voucher.create', entityType: 'voucher', entityId: created.id, summary: `${number}: ${b.partyName} — ${b.amount}` });
-    return created;
-  });
-  res.status(201).json(v);
+  res.status(201).json(await prisma.$transaction((tx) => issueVoucher(tx, req.ctx, b)));
 }));
 
 /** Edit after posting: the entry follows; old and new values are kept (reason optional unless required by the settings). */
@@ -231,19 +234,23 @@ treasuryRouter.get('/transfers', requireAnyPerm('accounting.treasury.view', 'acc
   res.json(paged(items.map((t) => ({ ...t, date: dateOnlyStr(t.date), from: ts.find((x) => x.id === t.fromId)?.name, to: ts.find((x) => x.id === t.toId)?.name })), total, q));
 }));
 
-treasuryRouter.post('/transfers', requirePerm('accounting.treasury.manage'), ah(async (req, res) => {
-  const b = parse(z.object({ date: day, fromId: z.string().uuid('اختر المصدر'), toId: z.string().uuid('اختر الوجهة'), amount: z.coerce.number().positive().max(100_000_000), fee: z.coerce.number().min(0).default(0), reference: nullableStr(100), notes: nullableStr(500) }), req.body);
+export const transferBody = z.object({ date: day, fromId: z.string().uuid('اختر المصدر'), toId: z.string().uuid('اختر الوجهة'), amount: z.coerce.number().positive().max(100_000_000), fee: z.coerce.number().min(0).default(0), reference: nullableStr(100), notes: nullableStr(500) });
+
+/** Transfer between two boxes / bank accounts inside a transaction (screen and Excel import). */
+export async function createTransfer(tx: Tx, ctx: Ctx, b: z.infer<typeof transferBody>) {
   if (b.fromId === b.toId) throw badRequest('المصدر والوجهة متطابقان');
-  const t = await prisma.$transaction(async (tx) => {
-    const [f, to] = await Promise.all([tx.treasury.findUnique({ where: { id: b.fromId } }), tx.treasury.findUnique({ where: { id: b.toId } })]);
-    if (!f?.isActive || !to?.isActive) throw badRequest('الصندوق أو الحساب غير متاح');
-    const created = await tx.treasuryTransfer.create({ data: { ...b, date: dayOf(b.date), amount: r3(b.amount), fee: r3(b.fee), number: await docNumber(tx, 'TT'), createdById: req.ctx.userId } });
-    await postDoc(tx, 'transfer', created.id);
-    await docRevision(tx, 'transfer', created.id, 1, 'create', { ...b }, req.ctx.userId);
-    await audit(tx, req.ctx, { action: 'treasury.transfer', entityType: 'treasury_transfer', entityId: created.id, summary: `${created.number}: ${f.name} → ${to.name} ${b.amount}` });
-    return created;
-  });
-  res.status(201).json(t);
+  const [f, to] = await Promise.all([tx.treasury.findUnique({ where: { id: b.fromId } }), tx.treasury.findUnique({ where: { id: b.toId } })]);
+  if (!f?.isActive || !to?.isActive) throw badRequest('الصندوق أو الحساب غير متاح');
+  const created = await tx.treasuryTransfer.create({ data: { ...b, date: dayOf(b.date), amount: r3(b.amount), fee: r3(b.fee), number: await docNumber(tx, 'TT'), createdById: ctx.userId } });
+  await postDoc(tx, 'transfer', created.id);
+  await docRevision(tx, 'transfer', created.id, 1, 'create', { ...b }, ctx.userId);
+  await audit(tx, ctx, { action: 'treasury.transfer', entityType: 'treasury_transfer', entityId: created.id, summary: `${created.number}: ${f.name} → ${to.name} ${b.amount}` });
+  return created;
+}
+
+treasuryRouter.post('/transfers', requirePerm('accounting.treasury.manage'), ah(async (req, res) => {
+  const b = parse(transferBody, req.body);
+  res.status(201).json(await prisma.$transaction((tx) => createTransfer(tx, req.ctx, b)));
 }));
 
 treasuryRouter.post('/transfers/:id/cancel', requirePerm('accounting.treasury.manage'), ah(async (req, res) => {
