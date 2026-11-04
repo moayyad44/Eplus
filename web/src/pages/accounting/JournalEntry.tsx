@@ -17,7 +17,7 @@ interface Entry {
   id: string; number: string; date: string; type: string; status: string; description: string; reference: string | null; sourceType: string | null; sourceId: string | null; version: number;
   createdById: string | null; createdBy: string | null; updatedBy: string | null; postedBy: string | null; deletedBy: string | null; createdAt: string; updatedAt: string; postedAt: string | null; deletedAt: string | null; totalDebit: string;
   lines: { id: string; accountId: string; debit: string; credit: string; description: string | null; partyName: string | null; account: { code: string; name: string } }[];
-  revisions: { id: string; version: number; action: string; createdAt: string; user: string | null; changes: { field: string; from: unknown; to: unknown }[] | null }[];
+  revisions: { id: string; version: number; action: string; createdAt: string; user: string | null; reason: string | null; changes: { field: string; from: unknown; to: unknown }[] | null }[];
 }
 const blank = (): Line => ({ accountId: '', debit: '', credit: '', description: '', partyName: '' });
 
@@ -37,11 +37,12 @@ function Editor({ entry, copyFrom }: { entry?: Entry; copyFrom: string | null })
   const { can } = useAuth();
   const nav = useNavigate();
   const accounts = useAccounts();
-  const settings = useQuery({ queryKey: ['acc', 'settings'], queryFn: () => api.get<{ requireApproval: boolean }>('/accounting/settings') });
+  const settings = useQuery({ queryKey: ['acc', 'settings'], queryFn: () => api.get<{ requireApproval: boolean; requireReason: boolean }>('/accounting/settings') });
   const copy = useQuery({ queryKey: ['acc', 'entry', copyFrom], queryFn: () => api.get<Entry>(`/accounting/journal/${copyFrom}`), enabled: !!copyFrom });
   const [head, setHead] = useState({ date: entry?.date ?? today(), type: entry?.type ?? 'GENERAL', description: entry?.description ?? '', reference: entry?.reference ?? '' });
   const [lines, setLines] = useState<Line[]>(entry ? entry.lines.map((l) => ({ accountId: l.accountId, debit: Number(l.debit) ? String(Number(l.debit)) : '', credit: Number(l.credit) ? String(Number(l.credit)) : '', description: l.description ?? '', partyName: l.partyName ?? '' })) : [blank(), blank()]);
   const [dirty, setDirty] = useState(false);
+  const [reason, setReason] = useState('');
   useEffect(() => {
     if (copy.data) { setHead({ date: today(), type: copy.data.type, description: copy.data.description, reference: '' }); setLines(copy.data.lines.map((l) => ({ accountId: l.accountId, debit: Number(l.debit) ? String(Number(l.debit)) : '', credit: Number(l.credit) ? String(Number(l.credit)) : '', description: l.description ?? '', partyName: l.partyName ?? '' }))); }
   }, [copy.data]);
@@ -56,7 +57,7 @@ function Editor({ entry, copyFrom }: { entry?: Entry; copyFrom: string | null })
   const diff = Math.round((debit - credit) * 1000) / 1000;
   const posts = !settings.data?.requireApproval || can('accounting.journal.approve');
   const save = useApiMutation(() => {
-    const body = { ...head, reference: head.reference || null, lines: lines.filter((l) => l.accountId || l.debit || l.credit).map((l) => ({ accountId: l.accountId, debit: l.debit || 0, credit: l.credit || 0, description: l.description || null, partyName: l.partyName || null })) };
+    const body = { ...head, reference: head.reference || null, ...(entry && { reason: reason || null }), lines: lines.filter((l) => l.accountId || l.debit || l.credit).map((l) => ({ accountId: l.accountId, debit: l.debit || 0, credit: l.credit || 0, description: l.description || null, partyName: l.partyName || null })) };
     return entry ? api.put<{ id: string; number: string; status: string }>(`/accounting/journal/${entry.id}`, body) : api.post<{ id: string; number: string; status: string }>('/accounting/journal', body);
   }, {
     invalidate: [['acc'], ['acc-journal']], success: false,
@@ -108,9 +109,10 @@ function Editor({ entry, copyFrom }: { entry?: Entry; copyFrom: string | null })
           </table>
         </div>
         {save.fieldErrors.lines && <p className="mt-2 text-xs text-danger-600">{save.fieldErrors.lines}</p>}
+        {entry && <Field label={settings.data?.requireReason ? t('acc.journal.reason') : t('acc.journal.reasonOptional')} required={settings.data?.requireReason} className="mt-4 max-w-xl"><Input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => (!dirty || window.confirm(t('acc.journal.unsaved'))) && nav(entry ? `/accounting/journal/${entry.id}` : '/accounting/journal')}>{t('common.cancel')}</Button>
-          <Button loading={save.isPending} disabled={diff !== 0 || debit <= 0 || !head.description.trim()} onClick={() => save.mutate(undefined)}>{entry ? t('common.saveChanges') : posts ? t('acc.journal.save') : t('acc.journal.saveDraft')}</Button>
+          <Button loading={save.isPending} disabled={diff !== 0 || debit <= 0 || !head.description.trim() || (!!entry && !!settings.data?.requireReason && !reason.trim())} onClick={() => save.mutate(undefined)}>{entry ? t('common.saveChanges') : posts ? t('acc.journal.save') : t('acc.journal.saveDraft')}</Button>
         </div>
       </Card>
     </div>
@@ -166,7 +168,8 @@ function View({ entry: e }: { entry: Entry }) {
         <ol className="space-y-2">
           {e.revisions.map((r) => (
             <li key={r.id} className="rounded-xl border border-line px-3 py-2 text-sm">
-              <p className="flex flex-wrap items-center gap-2"><b>{t(`acc.journal.act.${r.action}`)}</b><span className="text-xs text-ink-muted">{t('acc.journal.v', { v: r.version })} · {r.user ?? ''} · {fmtDateTime(r.createdAt)}</span></p>
+              <p className="flex flex-wrap items-center gap-2"><b>{t(`acc.journal.act.${r.action}`)}</b><span className="text-xs text-ink-muted">{t('acc.journal.v', { v: r.version })} · {r.user ?? t('acc.journal.system')} · {fmtDateTime(r.createdAt)}</span></p>
+              {r.reason && <p className="mt-0.5 text-xs"><b>{t('acc.journal.reason')}:</b> {r.reason}</p>}
               {r.changes?.map((c) => (
                 <div key={c.field} className={clsx('mt-1 text-xs', c.field === 'lines' && 'space-y-1')}>
                   <span className="font-semibold">{t(`acc.journal.field.${c.field}`)}:</span>{' '}

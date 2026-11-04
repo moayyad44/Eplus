@@ -110,6 +110,7 @@ export const PERMISSIONS = {
   'accounting.journal.delete': { module: 'accounting', description: 'حذف القيود (يبقى سجلها محفوظاً)' },
   'accounting.reports.view': { module: 'accounting', description: 'التقارير المحاسبية (الميزان، كشوف الحسابات…)' },
   'accounting.export': { module: 'accounting', description: 'تصدير البيانات المحاسبية إلى Excel' },
+  'accounting.import': { module: 'accounting', description: 'استيراد البيانات من Excel (الأرصدة الافتتاحية…)' },
   'accounting.periods.manage': { module: 'accounting', description: 'إنشاء السنوات المالية وإغلاق الفترات' },
   'accounting.periods.reopen': { module: 'accounting', description: 'إعادة فتح فترة مغلقة (بسبب)' },
   'accounting.settings': { module: 'accounting', description: 'إعدادات النظام المحاسبي' },

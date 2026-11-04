@@ -71,6 +71,8 @@ const AccIncome = p(() => import('./pages/accounting/Reports').then((m) => ({ de
 const AccBalance = p(() => import('./pages/accounting/Reports').then((m) => ({ default: m.BalanceSheet })));
 const AccPeriods = p(() => import('./pages/accounting/Periods'));
 const AccSettings = p(() => import('./pages/accounting/Settings'));
+const AccLink = p(() => import('./pages/accounting/Integration'));
+const AccOpening = p(() => import('./pages/accounting/Opening'));
 
 /** Route guard: the API enforces permissions; this just avoids showing screens the user cannot use. */
 function Guard({ any, children }: { any: string[]; children: ReactNode }) {
@@ -122,6 +124,8 @@ export default function App() {
         <Route path="balance-sheet" element={<Guard any={['accounting.reports.view']}><AccBalance /></Guard>} />
         <Route path="periods" element={<AccPeriods />} />
         <Route path="settings" element={<Guard any={['accounting.settings']}><AccSettings /></Guard>} />
+        <Route path="integration" element={<Guard any={['accounting.settings', 'accounting.journal.view']}><AccLink /></Guard>} />
+        <Route path="opening" element={<Guard any={['accounting.import']}><AccOpening /></Guard>} />
       </Route>
       <Route element={<AppLayout />}>
         <Route index element={<Home />} />

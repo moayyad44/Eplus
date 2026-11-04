@@ -12,11 +12,13 @@ import { can } from '../../auth/context';
 import { NATURE_OF } from './chart';
 import { approveEntry, createEntry, dayOf, dayStr, deleteEntry, updateEntry } from './journal';
 import { accountBalances, accountStatement, balanceSheet, incomeStatement, parseDay, trialBalance } from './ledger';
+import { openingRouter } from './opening';
 import { REVENUE_DEFAULT, ROLES, loadMapping, processPending, resyncFrom, retryFailed } from './link';
 
 /** EmergencyPlus Accounting API. Every route needs `accounting.access` plus its own permission. */
 export const accountingRouter = Router();
 accountingRouter.use(requirePerm('accounting.access'));
+accountingRouter.use(openingRouter);
 
 const today = () => dayOf(new Date().toLocaleDateString('en-CA'));
 const monthStart = () => dayOf(`${new Date().toLocaleDateString('en-CA').slice(0, 7)}-01`);

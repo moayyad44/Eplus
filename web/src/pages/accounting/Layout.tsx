@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { ArrowRight, BookOpen, CalendarRange, Calculator, FileSpreadsheet, LayoutDashboard, ListTree, Menu, Scale, Settings, X, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarRange, Calculator, FileSpreadsheet, LayoutDashboard, ListTree, Menu, Scale, Settings, X, Link2, FileUp, type LucideIcon } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { EmptyState, PageLoader } from '@/components/ui';
 
@@ -28,6 +28,8 @@ const NAV: { label: string; items: { to: string; label: string; icon: LucideIcon
   {
     label: 'acc.nav.setup',
     items: [
+      { to: '/accounting/integration', label: 'acc.nav.link', icon: Link2, any: ['accounting.settings', 'accounting.journal.view'] },
+      { to: '/accounting/opening', label: 'acc.nav.opening', icon: FileUp, any: ['accounting.import'] },
       { to: '/accounting/periods', label: 'acc.nav.periods', icon: CalendarRange, any: ['accounting.access'] },
       { to: '/accounting/settings', label: 'acc.nav.settings', icon: Settings, any: ['accounting.settings'] },
     ],
