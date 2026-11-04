@@ -17,5 +17,6 @@ import insurance from './insurance';
 import einvoice from './einvoice';
 import ecoin from './ecoin';
 import accounting from './accounting';
+import accountingOps from './accountingOps';
 
-export default { ...common, ...enums, ...patients, ...queue, ...visit, ...appointments, ...lab, ...billing, ...dashboard, ...inventory, ...staff, ...reports, ...settings, ...system, ...print, ...insurance, ...einvoice, ...ecoin, ...accounting };
+export default { ...common, ...enums, ...patients, ...queue, ...visit, ...appointments, ...lab, ...billing, ...dashboard, ...inventory, ...staff, ...reports, ...settings, ...system, ...print, ...insurance, ...einvoice, ...ecoin, ...accounting, ...accountingOps };

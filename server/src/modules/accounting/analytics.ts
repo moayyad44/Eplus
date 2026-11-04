@@ -178,7 +178,7 @@ analyticsRouter.get('/dashboard', requirePerm('accounting.access'), ah(async (_r
     chqOver && { level: 'danger', key: 'chequesOverdue', n: chqOver, link: '/accounting/cheques?alert=overdue' },
     chqCollect && { level: 'warning', key: 'chequesCollecting', n: chqCollect, link: '/accounting/cheques?alert=collecting' },
     bounced && { level: 'danger', key: 'chequesBounced', n: bounced, link: '/accounting/cheques?alert=bounced' },
-    countsPending && { level: 'warning', key: 'cashCounts', n: countsPending, link: '/accounting/cash' },
+    countsPending && { level: 'warning', key: 'cashCounts', n: countsPending, link: '/accounting/treasury?tab=counts' },
     overdueInv && { level: 'info', key: 'overdueInvoices', n: overdueInv, link: '/accounting/aging?type=patients' },
     failed && { level: 'danger', key: 'linkFailed', n: failed, link: '/accounting/integration?status=FAILED' },
     waiting && { level: 'warning', key: 'draftEntries', n: waiting, link: '/accounting/journal?status=DRAFT' },

@@ -18,6 +18,8 @@ export default function Periods() {
   const [adding, setAdding] = useState(false);
   const close = useApiMutation((id: string) => api.post(`/accounting/periods/${id}/close`), { invalidate: [['acc']] });
   const reopen = useApiMutation((v: { id: string; reason: string }) => api.post(`/accounting/periods/${v.id}/reopen`, { reason: v.reason }), { invalidate: [['acc']] });
+  const closeYear = useApiMutation((id: string) => api.post(`/accounting/fiscal-years/${id}/close`), { invalidate: [['acc']] });
+  const reopenYear = useApiMutation((v: { id: string; reason: string }) => api.post(`/accounting/fiscal-years/${v.id}/reopen`, { reason: v.reason }), { invalidate: [['acc']] });
   if (q.isLoading) return <PageLoader />;
   if (q.error) return <ErrorState error={q.error} />;
   return (
@@ -26,7 +28,10 @@ export default function Periods() {
       <div className="space-y-4">
         {q.data!.map((y) => (
           <Card key={y.id}>
-            <CardHeader title={y.name} subtitle={`${y.startDate} → ${y.endDate}`} />
+            <CardHeader title={<>{y.name} {y.status === 'CLOSED' && <Badge dot={false}>{t('ao.year.closed')}</Badge>}</>} subtitle={`${y.startDate} → ${y.endDate}`} actions={<>
+              {y.status !== 'CLOSED' && can('accounting.periods.manage') && <Button size="sm" variant="outline" icon={<Lock className="h-3.5 w-3.5" />} onClick={async () => (await confirm({ message: t('ao.year.closeConfirm', { n: y.name }) })) && closeYear.mutate(y.id)}>{t('ao.year.close')}</Button>}
+              {y.status === 'CLOSED' && can('accounting.periods.reopen') && <Button size="sm" variant="ghost" icon={<LockOpen className="h-3.5 w-3.5" />} onClick={async () => { const reason = await confirm({ message: t('ao.year.reopenConfirm', { n: y.name }), reason: { label: t('acc.periods.reopenReason'), required: true } }); if (reason) reopenYear.mutate({ id: y.id, reason }); }}>{t('ao.year.reopen')}</Button>}
+            </>} />
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {y.periods.map((p) => (
                 <div key={p.id} className="rounded-xl border border-line px-3 py-2 text-sm">

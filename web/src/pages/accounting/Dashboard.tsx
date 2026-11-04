@@ -1,56 +1,78 @@
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Info } from 'lucide-react';
-import { api, type Paged } from '@/lib/api';
-import { amt0, monthStart, today, yearStart, type AccountRow } from '@/lib/accounting';
-import { Card, ErrorState, PageHeader, PageLoader, StatCard } from '@/components/ui';
+import clsx from 'clsx';
+import { AlertTriangle, Info, OctagonAlert } from 'lucide-react';
+import { api } from '@/lib/api';
+import { amt0 } from '@/lib/accounting';
+import { Card, CardHeader, ErrorState, PageHeader, PageLoader, StatCard } from '@/components/ui';
+import { BarsChart, ShareBars } from '@/components/shared/charts';
 
-/** Real figures from the posted books only; every figure opens the statement behind it. */
+interface Dash {
+  revenue: Record<'today' | 'month' | 'year', number>; expense: Record<'today' | 'month' | 'year', number>;
+  balances: Record<'cash' | 'banks' | 'visaClearing' | 'arPatients' | 'arInsurance' | 'ap' | 'salariesPayable' | 'inventory' | 'fixedAssets' | 'chequesOnHand' | 'chequesCollecting' | 'chequesIssued', number>;
+  visa: { notReached: number; count: number; fees: number; reached: number };
+  cheques: Record<'inReceived' | 'inSafe' | 'collecting' | 'collected' | 'bounced' | 'outUnpaid', number>;
+  charts: { months: { month: string; revenue: number; expense: number; profit: number }[]; byMethod: { label: string; value: number }[]; byCategory: { label: string; value: number }[]; byDoctor: { label: string; value: number }[] };
+  alerts: { level: 'info' | 'warning' | 'danger'; key: string; n: number; link: string }[]; startDate: string | null;
+}
+
+/** Real figures from the books and from EmergencyPlus — every tile and alert opens the screen behind it. */
 export default function AccountingDashboard() {
   const { t } = useTranslation();
   const nav = useNavigate();
-  const month = useQuery({ queryKey: ['acc', 'accounts', 'month'], queryFn: () => api.get<AccountRow[]>('/accounting/accounts', { from: monthStart(), to: today() }) });
-  const year = useQuery({ queryKey: ['acc', 'accounts', 'year'], queryFn: () => api.get<AccountRow[]>('/accounting/accounts', { from: yearStart(), to: today() }) });
-  const waiting = useQuery({ queryKey: ['acc', 'waiting'], queryFn: () => api.get<Paged<unknown>>('/accounting/journal', { status: 'DRAFT', pageSize: 1 }) });
-  const settings = useQuery({ queryKey: ['acc', 'settings'], queryFn: () => api.get<{ startDate: string | null }>('/accounting/settings') });
-  if (month.isLoading || year.isLoading) return <PageLoader />;
-  if (month.error || year.error) return <ErrorState error={month.error ?? year.error} />;
-  const m = month.data!, y = year.data!;
-  const key = (rows: AccountRow[], k: string) => rows.find((r) => r.systemKey === k);
-  const root = (rows: AccountRow[], type: string) => rows.find((r) => r.type === type && r.level === 0);
-  const pl = (rows: AccountRow[], type: string) => { const r = root(rows, type); return r ? (type === 'REVENUE' ? r.credit - r.debit : r.debit - r.credit) : 0; };
-  const open = (r: AccountRow | undefined, from = monthStart()) => r && nav(`/accounting/statement?accountId=${r.id}&from=${from}&to=${today()}`);
-  const bal = (k: string) => key(m, k)?.closing ?? 0;
-  const tile = (label: string, k: string, tone: 'primary' | 'success' | 'warning' | 'danger' | 'violet' | 'neutral' = 'primary') => <StatCard label={label} value={amt0(bal(k))} tone={tone} onClick={() => open(key(m, k), yearStart())} />;
-  const revM = pl(m, 'REVENUE'), expM = pl(m, 'EXPENSE'), revY = pl(y, 'REVENUE'), expY = pl(y, 'EXPENSE');
-  const any = y.some((r) => r.debit || r.credit || r.opening);
+  const q = useQuery({ queryKey: ['acc', 'dashboard'], queryFn: () => api.get<Dash>('/accounting/dashboard'), refetchInterval: 120_000 });
+  if (q.isLoading) return <PageLoader />;
+  if (q.error) return <ErrorState error={q.error} />;
+  const d = q.data!, b = d.balances;
+  const icon = { info: Info, warning: AlertTriangle, danger: OctagonAlert };
+  const tone = { info: 'bg-primary-50 text-primary-800', warning: 'bg-warning-50 text-warning-700', danger: 'bg-danger-50 text-danger-700' };
+  const tile = (k: keyof Dash['balances'], to: string, c: 'primary' | 'success' | 'warning' | 'danger' | 'violet' | 'neutral' = 'primary') => <StatCard key={k} label={t(`ao.dash.b.${k}`)} value={amt0(b[k])} tone={c} onClick={() => nav(to)} />;
   return (
     <div>
       <PageHeader title={t('acc.dash.title')} subtitle={t('acc.dash.subtitle')} />
-      {!settings.data?.startDate && <p className="mb-3 flex items-center gap-2 rounded-xl bg-primary-50 px-3 py-2 text-sm text-primary-800"><Info className="h-4 w-4" />{t('acc.dash.notStarted')}</p>}
-      {!!waiting.data?.total && <button type="button" onClick={() => nav('/accounting/journal')} className="mb-3 flex w-full items-center gap-2 rounded-xl bg-warning-50 px-3 py-2 text-start text-sm font-semibold text-warning-700"><AlertTriangle className="h-4 w-4" />{t('acc.dash.waiting', { n: waiting.data.total })}</button>}
-      {!any && <p className="mb-3 rounded-xl bg-surface-subtle px-3 py-2 text-sm text-ink-muted">{t('acc.dash.empty')}</p>}
+      {d.alerts.length > 0 && <div className="mb-4 grid gap-2 md:grid-cols-2">{d.alerts.map((a) => { const I = icon[a.level]; return (
+        <button key={a.key} type="button" onClick={() => nav(a.link)} className={clsx('flex items-center gap-2 rounded-xl px-3 py-2 text-start text-sm font-semibold', tone[a.level])}><I className="h-4 w-4 shrink-0" />{t(`ao.dash.alert.${a.key}`, { n: a.n })}</button>
+      ); })}</div>}
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label={t('acc.dash.revMonth')} value={amt0(revM)} tone="success" onClick={() => open(root(m, 'REVENUE'))} />
-        <StatCard label={t('acc.dash.expMonth')} value={amt0(expM)} tone="warning" onClick={() => open(root(m, 'EXPENSE'))} />
-        <StatCard label={t('acc.dash.netMonth')} value={amt0(revM - expM)} tone={revM - expM >= 0 ? 'primary' : 'danger'} onClick={() => nav('/accounting/income-statement')} />
-        <StatCard label={t('acc.dash.netYear')} value={amt0(revY - expY)} hint={`${t('acc.dash.revYear')}: ${amt0(revY)}`} tone="violet" onClick={() => nav('/accounting/income-statement')} />
+        <StatCard label={t('ao.dash.revToday')} value={amt0(d.revenue.today)} hint={`${t('ao.dash.expToday')}: ${amt0(d.expense.today)}`} tone="success" onClick={() => nav('/accounting/revenue?by=day')} />
+        <StatCard label={t('acc.dash.revMonth')} value={amt0(d.revenue.month)} hint={`${t('acc.dash.expMonth')}: ${amt0(d.expense.month)}`} tone="primary" onClick={() => nav('/accounting/income-statement')} />
+        <StatCard label={t('acc.dash.netMonth')} value={amt0(d.revenue.month - d.expense.month)} tone={d.revenue.month >= d.expense.month ? 'success' : 'danger'} onClick={() => nav('/accounting/income-statement')} />
+        <StatCard label={t('acc.dash.netYear')} value={amt0(d.revenue.year - d.expense.year)} hint={`${t('acc.dash.revYear')}: ${amt0(d.revenue.year)}`} tone="violet" onClick={() => nav('/accounting/income-statement')} />
       </div>
-      <Card>
+      <Card className="mb-4">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {tile(t('acc.dash.cash'), 'CASH_GROUP', 'success')}
-          {tile(t('acc.dash.banks'), 'BANK_GROUP', 'primary')}
-          {tile(t('acc.dash.visa'), 'VISA_CLEARING', 'warning')}
-          {tile(t('acc.dash.ar'), 'AR_PATIENTS', 'primary')}
-          {tile(t('acc.dash.ins'), 'AR_INSURANCE', 'primary')}
-          {tile(t('acc.dash.ap'), 'AP_SUPPLIERS', 'danger')}
-          {tile(t('acc.dash.chequesOnHand'), 'CHEQUES_ON_HAND', 'neutral')}
-          {tile(t('acc.dash.chequesCollecting'), 'CHEQUES_UNDER_COLLECTION', 'neutral')}
-          {tile(t('acc.dash.inventory'), 'INVENTORY', 'violet')}
-          {tile(t('acc.dash.fixedAssets'), 'FIXED_ASSETS_GROUP', 'violet')}
+          {tile('cash', '/accounting/treasury', 'success')}{tile('banks', '/accounting/treasury', 'primary')}{tile('visaClearing', '/accounting/visa', 'warning')}{tile('arPatients', '/accounting/aging?type=patients')}
+          {tile('arInsurance', '/accounting/aging?type=insurance')}{tile('ap', '/accounting/aging?type=suppliers', 'danger')}{tile('salariesPayable', '/accounting/payroll', 'warning')}{tile('chequesOnHand', '/accounting/cheques', 'neutral')}
+          {tile('chequesCollecting', '/accounting/cheques?alert=collecting', 'neutral')}{tile('chequesIssued', '/accounting/cheques?tab=OUT', 'neutral')}{tile('inventory', '/accounting/accounts', 'violet')}{tile('fixedAssets', '/accounting/assets', 'violet')}
         </div>
       </Card>
+      <div className="mb-4 grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title={t('ao.dash.monthly')} />
+          {d.charts.months.length ? <BarsChart data={d.charts.months} x="month" series={[{ key: 'revenue', label: t('acc.is.revenue') }, { key: 'expense', label: t('acc.is.expense') }]} format={(v) => amt0(v)} /> : <p className="py-10 text-center text-sm text-ink-muted">{t('acc.dash.empty')}</p>}
+        </Card>
+        <Card>
+          <CardHeader title={t('ao.dash.visa')} />
+          <dl className="space-y-2 text-sm">
+            <p className="flex justify-between"><span>{t('ao.visa.notReached')}</span><b>{amt0(d.visa.notReached)}</b></p>
+            <p className="flex justify-between"><span>{t('ao.visa.reached')}</span><b>{amt0(d.visa.reached)}</b></p>
+            <p className="flex justify-between"><span>{t('ao.visa.fees')}</span><b>{amt0(d.visa.fees)}</b></p>
+          </dl>
+          <CardHeader className="mt-4" title={t('ao.dash.cheques')} />
+          <dl className="space-y-2 text-sm">
+            {(['inSafe', 'collecting', 'collected', 'bounced', 'outUnpaid'] as const).map((k) => <p key={k} className="flex justify-between"><span>{t(`ao.dash.c.${k}`)}</span><b className={k === 'bounced' && d.cheques[k] ? 'text-danger-700' : ''}>{amt0(d.cheques[k])}</b></p>)}
+          </dl>
+        </Card>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {(['byMethod', 'byCategory', 'byDoctor'] as const).map((k) => (
+          <Card key={k}>
+            <CardHeader title={t(`ao.dash.${k}`)} subtitle={t('ao.dash.thisMonth')} />
+            {d.charts[k].length ? <ShareBars rows={k === 'byCategory' ? d.charts[k].map((r) => ({ ...r, label: t(`enum.ServiceCategory.${r.label}`, { defaultValue: r.label }) })) : d.charts[k]} format={(v) => amt0(v)} /> : <p className="py-6 text-center text-sm text-ink-muted">—</p>}
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

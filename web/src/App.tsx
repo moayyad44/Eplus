@@ -73,6 +73,21 @@ const AccPeriods = p(() => import('./pages/accounting/Periods'));
 const AccSettings = p(() => import('./pages/accounting/Settings'));
 const AccLink = p(() => import('./pages/accounting/Integration'));
 const AccOpening = p(() => import('./pages/accounting/Opening'));
+const AccTreasury = p(() => import('./pages/accounting/Treasury'));
+const AccVouchers = p(() => import('./pages/accounting/Vouchers'));
+const AccVoucherForm = p(() => import('./pages/accounting/Vouchers').then((m) => ({ default: m.VoucherForm })));
+const AccVoucherView = p(() => import('./pages/accounting/Vouchers').then((m) => ({ default: m.VoucherView })));
+const AccVisa = p(() => import('./pages/accounting/Visa'));
+const AccCheques = p(() => import('./pages/accounting/Cheques'));
+const AccPayroll = p(() => import('./pages/accounting/Payroll'));
+const AccPayrollRun = p(() => import('./pages/accounting/Payroll').then((m) => ({ default: m.PayrollRun })));
+const AccAssets = p(() => import('./pages/accounting/Assets'));
+const AccAging = p(() => import('./pages/accounting/Analysis').then((m) => ({ default: m.Aging })));
+const AccRevenue = p(() => import('./pages/accounting/Analysis').then((m) => ({ default: m.Revenue })));
+const AccCashFlow = p(() => import('./pages/accounting/Analysis').then((m) => ({ default: m.CashFlow })));
+const AccBankRec = p(() => import('./pages/accounting/BankRec'));
+const AccImports = p(() => import('./pages/accounting/Imports'));
+const AccAudit = p(() => import('./pages/accounting/Audit'));
 
 /** Route guard: the API enforces permissions; this just avoids showing screens the user cannot use. */
 function Guard({ any, children }: { any: string[]; children: ReactNode }) {
@@ -126,6 +141,22 @@ export default function App() {
         <Route path="settings" element={<Guard any={['accounting.settings']}><AccSettings /></Guard>} />
         <Route path="integration" element={<Guard any={['accounting.settings', 'accounting.journal.view']}><AccLink /></Guard>} />
         <Route path="opening" element={<Guard any={['accounting.import']}><AccOpening /></Guard>} />
+        <Route path="treasury" element={<Guard any={['accounting.treasury.view', 'accounting.treasury.manage', 'accounting.cash.count', 'accounting.cash.approve']}><AccTreasury /></Guard>} />
+        <Route path="vouchers" element={<Guard any={['accounting.vouchers.view', 'accounting.vouchers.create']}><AccVouchers /></Guard>} />
+        <Route path="vouchers/new" element={<Guard any={['accounting.vouchers.create']}><AccVoucherForm /></Guard>} />
+        <Route path="vouchers/:id" element={<Guard any={['accounting.vouchers.view', 'accounting.vouchers.create']}><AccVoucherView /></Guard>} />
+        <Route path="vouchers/:id/edit" element={<Guard any={['accounting.vouchers.edit']}><AccVoucherForm /></Guard>} />
+        <Route path="visa" element={<Guard any={['accounting.visa.manage', 'accounting.reports.view']}><AccVisa /></Guard>} />
+        <Route path="cheques" element={<Guard any={['accounting.cheques.view', 'accounting.cheques.manage']}><AccCheques /></Guard>} />
+        <Route path="payroll" element={<Guard any={['accounting.payroll.view', 'accounting.payroll.manage']}><AccPayroll /></Guard>} />
+        <Route path="payroll/:id" element={<Guard any={['accounting.payroll.view', 'accounting.payroll.manage']}><AccPayrollRun /></Guard>} />
+        <Route path="assets" element={<Guard any={['accounting.assets.manage', 'accounting.reports.view']}><AccAssets /></Guard>} />
+        <Route path="aging" element={<Guard any={['accounting.reports.view']}><AccAging /></Guard>} />
+        <Route path="revenue" element={<Guard any={['accounting.reports.view']}><AccRevenue /></Guard>} />
+        <Route path="cash-flow" element={<Guard any={['accounting.reports.view']}><AccCashFlow /></Guard>} />
+        <Route path="bank-reconciliation" element={<Guard any={['accounting.reconcile']}><AccBankRec /></Guard>} />
+        <Route path="import" element={<Guard any={['accounting.import']}><AccImports /></Guard>} />
+        <Route path="audit" element={<Guard any={['accounting.settings']}><AccAudit /></Guard>} />
       </Route>
       <Route element={<AppLayout />}>
         <Route index element={<Home />} />

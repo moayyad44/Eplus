@@ -2,13 +2,30 @@ import { Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { ArrowRight, BookOpen, CalendarRange, Calculator, FileSpreadsheet, LayoutDashboard, ListTree, Menu, Scale, Settings, X, Link2, FileUp, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarRange, Calculator, FileSpreadsheet, LayoutDashboard, ListTree, Menu, Scale, Settings, X, Link2, FileUp, Wallet, Receipt, CreditCard, ScrollText, Users, Building, Hourglass, TrendingUp, Waves, Landmark, Upload, History, type LucideIcon } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { EmptyState, PageLoader } from '@/components/ui';
 
 /** Separate workspace of EmergencyPlus Accounting (same sign-in as EmergencyPlus). */
 const NAV: { label: string; items: { to: string; label: string; icon: LucideIcon; any: string[] }[] }[] = [
   { label: 'acc.nav.main', items: [{ to: '/accounting', label: 'acc.nav.dashboard', icon: LayoutDashboard, any: ['accounting.access'] }] },
+  {
+    label: 'ao.nav.treasury',
+    items: [
+      { to: '/accounting/vouchers', label: 'ao.nav.vouchers', icon: Receipt, any: ['accounting.vouchers.view', 'accounting.vouchers.create'] },
+      { to: '/accounting/treasury', label: 'ao.nav.treasury', icon: Wallet, any: ['accounting.treasury.view', 'accounting.treasury.manage', 'accounting.cash.count', 'accounting.cash.approve'] },
+      { to: '/accounting/visa', label: 'ao.nav.visa', icon: CreditCard, any: ['accounting.visa.manage', 'accounting.reports.view'] },
+      { to: '/accounting/cheques', label: 'ao.nav.cheques', icon: ScrollText, any: ['accounting.cheques.view', 'accounting.cheques.manage'] },
+      { to: '/accounting/bank-reconciliation', label: 'ao.nav.bankRec', icon: Landmark, any: ['accounting.reconcile'] },
+    ],
+  },
+  {
+    label: 'ao.nav.ops',
+    items: [
+      { to: '/accounting/payroll', label: 'ao.nav.payroll', icon: Users, any: ['accounting.payroll.view', 'accounting.payroll.manage'] },
+      { to: '/accounting/assets', label: 'ao.nav.assets', icon: Building, any: ['accounting.assets.manage', 'accounting.reports.view'] },
+    ],
+  },
   {
     label: 'acc.nav.books',
     items: [
@@ -23,6 +40,9 @@ const NAV: { label: string; items: { to: string; label: string; icon: LucideIcon
       { to: '/accounting/trial-balance', label: 'acc.nav.trialBalance', icon: Scale, any: ['accounting.reports.view'] },
       { to: '/accounting/income-statement', label: 'acc.nav.income', icon: Calculator, any: ['accounting.reports.view'] },
       { to: '/accounting/balance-sheet', label: 'acc.nav.balanceSheet', icon: Scale, any: ['accounting.reports.view'] },
+      { to: '/accounting/cash-flow', label: 'ao.nav.cashFlow', icon: Waves, any: ['accounting.reports.view'] },
+      { to: '/accounting/revenue', label: 'ao.nav.revenue', icon: TrendingUp, any: ['accounting.reports.view'] },
+      { to: '/accounting/aging', label: 'ao.nav.aging', icon: Hourglass, any: ['accounting.reports.view'] },
     ],
   },
   {
@@ -30,6 +50,8 @@ const NAV: { label: string; items: { to: string; label: string; icon: LucideIcon
     items: [
       { to: '/accounting/integration', label: 'acc.nav.link', icon: Link2, any: ['accounting.settings', 'accounting.journal.view'] },
       { to: '/accounting/opening', label: 'acc.nav.opening', icon: FileUp, any: ['accounting.import'] },
+      { to: '/accounting/import', label: 'ao.nav.import', icon: Upload, any: ['accounting.import'] },
+      { to: '/accounting/audit', label: 'ao.nav.audit', icon: History, any: ['accounting.settings'] },
       { to: '/accounting/periods', label: 'acc.nav.periods', icon: CalendarRange, any: ['accounting.access'] },
       { to: '/accounting/settings', label: 'acc.nav.settings', icon: Settings, any: ['accounting.settings'] },
     ],
