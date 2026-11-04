@@ -5,7 +5,7 @@ import { badRequest, conflict } from '../../lib/errors';
 import { penaltyCoverage } from './penalty';
 import { getSetting } from '../../lib/settings';
 import { notifyUsers } from '../../lib/notify';
-import { addDays } from '../../lib/dates';
+import { addDays, ymd } from '../../lib/dates';
 
 /**
  * E Coin wallet engine. Every movement runs inside one database transaction with the wallet row locked
@@ -50,7 +50,7 @@ export async function expireDueLocked(tx: Tx, userId: string, now = new Date()) 
     const txn = await tx.eCoinTxn.create({
       data: {
         userId, type: 'EXPIRE', amount: -lot.remaining, balanceBefore: before, balanceAfter: balance, lotId: lot.id, invoiceId: lot.invoiceId,
-        reason: `انتهاء صلاحية ${lot.remaining} E Coin مكتسبة في ${lot.earnedAt.toISOString().slice(0, 10)}`,
+        reason: `انتهاء صلاحية ${lot.remaining} E Coin مكتسبة في ${ymd(lot.earnedAt)}`,
       },
     });
     await tx.eCoinLotUse.create({ data: { txnId: txn.id, lotId: lot.id, amount: lot.remaining } });
@@ -183,7 +183,7 @@ export async function processExpiry(now = new Date()) {
   const soon = await prisma.eCoinLot.findMany({ where: { remaining: { gt: 0 }, warnedAt: null, expiresAt: { gt: now, lte: addDays(now, expiryWarnDays) } } });
   for (const lot of soon) {
     await notifyUsers([lot.userId], {
-      type: 'ECOIN', title: `${lot.remaining} E Coin تنتهي قريباً`, body: `تنتهي صلاحيتها في ${lot.expiresAt.toISOString().slice(0, 10)}. استخدمها قبل ذلك`, link: '/ecoin', dedupeKey: `ecoin-warn:${lot.id}`,
+      type: 'ECOIN', title: `${lot.remaining} E Coin تنتهي قريباً`, body: `تنتهي صلاحيتها في ${ymd(lot.expiresAt)}. استخدمها قبل ذلك`, link: '/ecoin', dedupeKey: `ecoin-warn:${lot.id}`,
     });
     await prisma.eCoinLot.update({ where: { id: lot.id }, data: { warnedAt: now } });
   }
