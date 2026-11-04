@@ -122,7 +122,7 @@ describe('accounting core', () => {
 
   it('accounts: add sub-accounts, stop instead of delete when used, never delete system accounts', async () => {
     const parent = await prisma.account.findFirstOrThrow({ where: { code: '1102' } });
-    const bank = await admin.post('/api/accounting/accounts', { code: '110201', name: 'البنك العربي', parentId: parent.id });
+    const bank = await admin.post('/api/accounting/accounts', { code: '110250', name: 'البنك العربي', parentId: parent.id });
     expect(bank.status, JSON.stringify(bank.body)).toBe(201);
     expect([bank.body.type, bank.body.nature]).toEqual(['ASSET', 'DEBIT']);
     await admin.post('/api/accounting/journal', { date: d(3), description: 'إيداع', lines: [{ accountId: bank.body.id, debit: 200 }, { accountId: acc.CASH_MAIN, credit: 200 }] });

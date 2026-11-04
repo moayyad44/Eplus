@@ -5,7 +5,7 @@ import { login, type Client } from './helpers';
 
 let admin: Client, cashier: Client, reception: Client;
 const Y = new Date().getFullYear();
-const D1 = `${Y}-03-10`;
+const D1 = `${Y}-04-10`;
 const acc: Record<string, string> = {};
 let box: { id: string; accountId: string }, bank: { id: string; accountId: string };
 const H = { 'X-Requested-With': 'EmergencyPlus' };
@@ -57,7 +57,7 @@ describe('cash boxes, banks and vouchers', () => {
     expect((await voucher({ kind: 'PAYMENT', method: 'VISA', amount: 10, counterAccountId: acc.EXP_RENT })).status).toBe(400);
     const r = await cashier.post('/api/accounting/vouchers', { kind: 'RECEIPT', date: D1, method: 'CASH', treasuryId: box.id, amount: 1000, counterAccountId: acc.CAPITAL, partyName: 'المالك', purpose: 'تمويل' });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
-    const p = await voucher({ kind: 'PAYMENT', method: 'TRANSFER', treasuryId: bank.id, amount: 40, counterAccountId: acc.EXP_TELECOM, partyName: 'شركة الاتصالات', purpose: 'فاتورة إنترنت' });
+    const p = await voucher({ kind: 'PAYMENT', method: 'TRANSFER', treasuryId: bank.id, amount: 40, counterAccountId: acc.EXP_MAINTENANCE, partyName: 'شركة الصيانة', purpose: 'صيانة' });
     expect(net(await entryOf(`voucher:${p.body.id}`), bank.accountId)).toBe(-40);
   });
 
@@ -109,9 +109,9 @@ describe('Visa box', () => {
     const txs = await prisma.visaTransaction.findMany({ where: { posReference: { in: ['POS-111', 'POS-222'] } }, orderBy: { posReference: 'asc' } });
     const [t1, t2] = txs;
     const k0 = await bal(bank.id);
-    const over = await admin.post('/api/accounting/visa/settlements', { date: `${Y}-03-11`, treasuryId: bank.id, fee: 0.5, lines: [{ transactionId: t1.id, amount: n(t1.amount) + 1 }] });
+    const over = await admin.post('/api/accounting/visa/settlements', { date: `${Y}-04-11`, treasuryId: bank.id, fee: 0.5, lines: [{ transactionId: t1.id, amount: n(t1.amount) + 1 }] });
     expect(over.status).toBe(400);
-    const s = await admin.post('/api/accounting/visa/settlements', { date: `${Y}-03-11`, treasuryId: bank.id, fee: 0.5, reference: 'BATCH-77', lines: [{ transactionId: t1.id, amount: n(t1.amount) }, { transactionId: t2.id, amount: 5 }] });
+    const s = await admin.post('/api/accounting/visa/settlements', { date: `${Y}-04-11`, treasuryId: bank.id, fee: 0.5, reference: 'BATCH-77', lines: [{ transactionId: t1.id, amount: n(t1.amount) }, { transactionId: t2.id, amount: 5 }] });
     expect(s.status, JSON.stringify(s.body)).toBe(201);
     const gross = n(t1.amount) + 5;
     expect(await bal(bank.id)).toBe(Number((k0 + gross - 0.5).toFixed(3)));
@@ -144,7 +144,7 @@ describe('cheques', () => {
   let inA: string, inB: string, out: string, vA: string;
   it('an incoming cheque is registered with its receipt voucher and stays in the safe (not in the bank)', async () => {
     const k0 = await bal(bank.id);
-    const r = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 700, counterAccountId: acc.AR_INSURANCE, partyName: 'شركة التأمين', purpose: 'دفعة مطالبات', cheque: { number: '100200', bankName: 'بنك الإسكان', dueDate: `${Y}-03-20` } });
+    const r = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 700, counterAccountId: acc.AR_INSURANCE, partyName: 'شركة التأمين', purpose: 'دفعة مطالبات', cheque: { number: '100200', bankName: 'بنك الإسكان', dueDate: `${Y}-04-20` } });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     vA = r.body.id;
     expect(net(await entryOf(`voucher:${r.body.id}`), acc.CHEQUES_ON_HAND)).toBe(700);
@@ -152,23 +152,23 @@ describe('cheques', () => {
     const ch = await prisma.cheque.findFirstOrThrow({ where: { number: '100200' } });
     expect(ch.status).toBe('RECEIVED');
     inA = ch.id;
-    const dup = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 5, counterAccountId: acc.AR_OTHER, cheque: { number: '100200', bankName: 'بنك الإسكان', dueDate: `${Y}-03-20` } });
+    const dup = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 5, counterAccountId: acc.AR_OTHER, cheque: { number: '100200', bankName: 'بنك الإسكان', dueDate: `${Y}-04-20` } });
     expect(dup.status).toBe(409);
-    const r2 = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 300, counterAccountId: acc.AR_OTHER, partyName: 'مراجع', cheque: { number: '555', bankName: 'البنك العربي', dueDate: `${Y}-03-15` } });
+    const r2 = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 300, counterAccountId: acc.AR_OTHER, partyName: 'مراجع', cheque: { number: '555', bankName: 'البنك العربي', dueDate: `${Y}-04-15` } });
     inB = (await prisma.cheque.findFirstOrThrow({ where: { number: '555' } })).id;
     expect(r2.status).toBe(201);
   });
 
   it('deposit → under collection (still not in the bank) → collected (now in the bank); a bounce re-opens the receivable', async () => {
     const k0 = await bal(bank.id);
-    const d = await admin.post('/api/accounting/cheques/deposits', { date: `${Y}-03-12`, treasuryId: bank.id, chequeIds: [inA, inB], slipNumber: 'SLIP-9' });
+    const d = await admin.post('/api/accounting/cheques/deposits', { date: `${Y}-04-12`, treasuryId: bank.id, chequeIds: [inA, inB], slipNumber: 'SLIP-9' });
     expect(d.status, JSON.stringify(d.body)).toBe(201);
     expect(await bal(bank.id)).toBe(k0);
     expect((await admin.post(`/api/accounting/vouchers/${vA}/cancel`, {})).status).toBe(400); // the cheque has moved
-    expect((await admin.post(`/api/accounting/cheques/${inA}/status`, { to: 'COLLECTED', date: `${Y}-03-14` })).status).toBe(200);
+    expect((await admin.post(`/api/accounting/cheques/${inA}/status`, { to: 'COLLECTED', date: `${Y}-04-14` })).status).toBe(200);
     expect(await bal(bank.id)).toBe(k0 + 700);
-    expect((await admin.post(`/api/accounting/cheques/${inB}/status`, { to: 'BOUNCED', date: `${Y}-03-14`, fee: 3 })).status).toBe(400); // reason
-    expect((await admin.post(`/api/accounting/cheques/${inB}/status`, { to: 'BOUNCED', date: `${Y}-03-14`, fee: 3, note: 'رصيد غير كافٍ' })).status).toBe(200);
+    expect((await admin.post(`/api/accounting/cheques/${inB}/status`, { to: 'BOUNCED', date: `${Y}-04-14`, fee: 3 })).status).toBe(400); // reason
+    expect((await admin.post(`/api/accounting/cheques/${inB}/status`, { to: 'BOUNCED', date: `${Y}-04-14`, fee: 3, note: 'رصيد غير كافٍ' })).status).toBe(200);
     expect(await bal(bank.id)).toBe(k0 + 697);
     const c = (await admin.get(`/api/accounting/cheques/${inB}`)).body;
     expect(c.events.map((e: { toStatus: string }) => e.toStatus)).toEqual(['RECEIVED', 'UNDER_COLLECTION', 'BOUNCED']);
@@ -179,22 +179,22 @@ describe('cheques', () => {
 
   it('an outgoing cheque is a liability until it is cashed; then it leaves the bank', async () => {
     const k0 = await bal(bank.id);
-    const r = await voucher({ kind: 'PAYMENT', method: 'CHEQUE', treasuryId: bank.id, amount: 120, counterAccountId: acc.AP_SUPPLIERS, partyName: 'مورد', purpose: 'دفعة', cheque: { number: 'OUT-1', bankName: 'البنك الأهلي', dueDate: `${Y}-03-25` } });
+    const r = await voucher({ kind: 'PAYMENT', method: 'CHEQUE', treasuryId: bank.id, amount: 120, counterAccountId: acc.AP_SUPPLIERS, partyName: 'مورد', purpose: 'دفعة', cheque: { number: 'OUT-1', bankName: 'البنك الأهلي', dueDate: `${Y}-04-25` } });
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     out = (await prisma.cheque.findFirstOrThrow({ where: { number: 'OUT-1' } })).id;
     expect(await bal(bank.id)).toBe(k0);
     expect(net(await entryOf(`voucher:${r.body.id}`), acc.CHEQUES_ISSUED)).toBe(-120);
-    expect((await admin.post(`/api/accounting/cheques/${out}/status`, { to: 'CLEARED', date: `${Y}-03-26` })).status).toBe(200);
+    expect((await admin.post(`/api/accounting/cheques/${out}/status`, { to: 'CLEARED', date: `${Y}-04-26` })).status).toBe(200);
     expect(await bal(bank.id)).toBe(k0 - 120);
   });
 
   it('cheque inventory: every expected cheque is checked; a missing one leaves the count pending approval', async () => {
-    const r3 = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 50, counterAccountId: acc.AR_OTHER, partyName: 'مراجع', cheque: { number: '777', bankName: 'بنك القاهرة', dueDate: `${Y}-04-01` } });
+    const r3 = await voucher({ kind: 'RECEIPT', method: 'CHEQUE', amount: 50, counterAccountId: acc.AR_OTHER, partyName: 'مراجع', cheque: { number: '777', bankName: 'بنك القاهرة', dueDate: `${Y}-05-01` } });
     expect(r3.status).toBe(201);
     const expected = (await admin.get('/api/accounting/cheque-counts/expected')).body as { id: string; number: string }[];
     expect(expected.map((c) => c.number)).toContain('777');
-    expect((await admin.post('/api/accounting/cheque-counts', { date: `${Y}-04-02`, lines: [] })).status).toBe(400);
-    const c = await admin.post('/api/accounting/cheque-counts', { date: `${Y}-04-02`, lines: expected.map((x) => ({ chequeId: x.id, result: x.number === '777' ? 'MISSING' : 'FOUND' })), extra: [{ number: '9999', amount: 10 }] });
+    expect((await admin.post('/api/accounting/cheque-counts', { date: `${Y}-05-02`, lines: [] })).status).toBe(400);
+    const c = await admin.post('/api/accounting/cheque-counts', { date: `${Y}-05-02`, lines: expected.map((x) => ({ chequeId: x.id, result: x.number === '777' ? 'MISSING' : 'FOUND' })), extra: [{ number: '9999', amount: 10 }] });
     expect(c.status, JSON.stringify(c.body)).toBe(201);
     expect(c.body.status).toBe('PENDING');
     expect((await admin.post(`/api/accounting/cheque-counts/${c.body.id}/approve`)).status).toBe(200);
