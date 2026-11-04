@@ -29,7 +29,7 @@ export default function SupplierDetail() {
   const [pv, setPv] = useState({ amount: '', methodId: '', purchaseOrderId: '', reference: '' });
   const q = useQuery({ queryKey: ['suppliers', id], queryFn: () => api.get<Detail>(`/suppliers/${id}`) });
   const addPay = useApiMutation(() => api.post(`/suppliers/${id}/payments`, { ...pv, amount: Number(pv.amount), purchaseOrderId: pv.purchaseOrderId || null }), { invalidate: [['suppliers']], onSuccess: () => { setPay(false); setPv({ amount: '', methodId: '', purchaseOrderId: '', reference: '' }); } });
-  const voidPay = useApiMutation((pid: string) => api.post(`/suppliers/payments/${pid}/void`), { invalidate: [['suppliers']] });
+  const voidPay = useApiMutation((v: { id: string; reason: string }) => api.post(`/suppliers/payments/${v.id}/void`, { reason: v.reason }), { invalidate: [['suppliers']] });
   if (q.isLoading) return <PageLoader />;
   if (q.error || !q.data) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const s = q.data;
@@ -68,7 +68,7 @@ export default function SupplierDetail() {
             { key: 'a', header: t('common.amount'), cell: (r) => <b>{money(r.amount)}</b> },
             { key: 'm', header: t('common.paymentMethod'), cell: (r) => r.method.name },
             { key: 'po', header: t('suppliers.poNumber'), cell: (r) => r.purchaseOrder?.poNumber ?? '—' },
-            { key: 'x', header: '', cell: (r) => !r.voidedAt && can('suppliers.manage') && <Button size="sm" variant="ghost" onClick={async () => (await confirm({ message: money(r.amount), danger: true })) && voidPay.mutate(r.id)}>{t('billing.voidPayment')}</Button> },
+            { key: 'x', header: '', cell: (r) => !r.voidedAt && can('suppliers.manage') && <Button size="sm" variant="ghost" onClick={async () => { const reason = await confirm({ message: money(r.amount), danger: true, reason: { label: t('common.reason'), required: true } }); if (reason) voidPay.mutate({ id: r.id, reason }); }}>{t('billing.voidPayment')}</Button> },
           ]} />
         </Card>
       </div>

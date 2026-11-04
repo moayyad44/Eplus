@@ -28,3 +28,16 @@ describe('inventory fixes from the full review', () => {
     expect((await admin.post('/api/inventory/transfers', { fromWarehouseId: main.id, toWarehouseId: wh.id, items: [{ itemId: it1.id, quantity: 1 }] })).status).toBe(400);
   });
 });
+
+describe('supplier payment void', () => {
+  it('needs a reason and records who voided it', async () => {
+    const { prisma } = await import('../src/lib/prisma');
+    const sup = await prisma.supplier.findFirstOrThrow();
+    const cash = await prisma.paymentMethod.findUniqueOrThrow({ where: { code: 'CASH' } });
+    const p = (await admin.post(`/api/suppliers/${sup.id}/payments`, { amount: 7, methodId: cash.id })).body;
+    expect((await admin.post(`/api/suppliers/payments/${p.id}/void`, {})).status).toBe(400);
+    expect((await admin.post(`/api/suppliers/payments/${p.id}/void`, { reason: 'مكررة' })).status).toBe(200);
+    const row = await prisma.supplierPayment.findUniqueOrThrow({ where: { id: p.id } });
+    expect([row.voidReason, !!row.voidedById, !!row.voidedAt]).toEqual(['مكررة', true, true]);
+  });
+});

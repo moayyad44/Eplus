@@ -1721,6 +1721,8 @@ model SupplierPayment {
   paidAt          DateTime  @default(now())
   createdById     String?
   voidedAt        DateTime?
+  voidedById      String?
+  voidReason      String?
   createdAt       DateTime  @default(now())
 
   supplier      Supplier       @relation(fields: [supplierId], references: [id])

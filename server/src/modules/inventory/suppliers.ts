@@ -253,11 +253,12 @@ suppliersRouter.post(
   '/payments/:paymentId/void',
   requirePerm('suppliers.manage'),
   ah(async (req, res) => {
+    const { reason } = parse(z.object({ reason: z.string().trim().min(3, 'يرجى ذكر سبب الإلغاء').max(300) }), req.body);
     await prisma.$transaction(async (tx) => {
       const p = await tx.supplierPayment.findUnique({ where: { id: req.params.paymentId } });
       if (!p || p.voidedAt) throw notFound();
-      await tx.supplierPayment.update({ where: { id: p.id }, data: { voidedAt: new Date() } });
-      await audit(tx, req.ctx, { action: 'supplier_payment.void', entityType: 'supplier', entityId: p.supplierId, summary: `إلغاء دفعة ${p.amount}` });
+      await tx.supplierPayment.update({ where: { id: p.id }, data: { voidedAt: new Date(), voidedById: req.ctx.userId, voidReason: reason } });
+      await audit(tx, req.ctx, { action: 'supplier_payment.void', entityType: 'supplier', entityId: p.supplierId, summary: `إلغاء دفعة ${p.amount}: ${reason}`, before: { amount: p.amount }, after: { voided: true, reason } });
     });
     res.json({ ok: true });
   }),
