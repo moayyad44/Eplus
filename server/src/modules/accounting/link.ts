@@ -5,6 +5,8 @@ import { ymd, dateOnlyStr } from '../../lib/dates';
 import { D, r3 } from '../../lib/money';
 import { notifyPermission } from '../../lib/notify';
 import { createEntry, deleteEntry, ensureOpenPeriod, dayOf, updateEntry, type LineInput } from './journal';
+import { planDoc } from './docs';
+import { trackVisa } from './visa';
 
 /**
  * Link between EmergencyPlus and the books.
@@ -16,7 +18,8 @@ import { createEntry, deleteEntry, ensureOpenPeriod, dayOf, updateEntry, type Li
  * is closed). Failures are kept with their reason and can be retried.
  */
 
-export type Kind = 'invoice' | 'invoice-cancel' | 'payment' | 'expense' | 'supplier-payment' | 'po' | 'inv-move' | 'ins-payment' | 'claim-event';
+export type Kind = 'invoice' | 'invoice-cancel' | 'payment' | 'expense' | 'supplier-payment' | 'po' | 'inv-move' | 'ins-payment' | 'claim-event' | DocKind;
+export type DocKind = 'voucher' | 'transfer' | 'cash-count' | 'visa-settlement' | 'cheque-event' | 'advance' | 'payroll' | 'payroll-pay' | 'asset' | 'depreciation' | 'asset-disposal' | 'year-close';
 
 /** Queue (or re-queue) an operation. Call inside the operation's own transaction. */
 export async function enqueue(tx: Db, kind: Kind, sourceId: string) {
@@ -48,7 +51,11 @@ export function kick() {
 export const ROLES = [
   'CASH_MAIN', 'VISA_CLEARING', 'EPAY_CLEARING', 'AR_PATIENTS', 'AR_INSURANCE', 'PATIENT_CREDITS', 'DISCOUNTS_GIVEN', 'SALES_TAX',
   'AP_SUPPLIERS', 'INVENTORY', 'COGS', 'EXP_MEDICAL_SUPPLIES', 'EXP_PURCHASES', 'COUNT_DIFFERENCES', 'BAD_DEBTS', 'EXP_OTHER', 'OPENING_BALANCES',
+  'CHEQUES_ON_HAND', 'CHEQUES_UNDER_COLLECTION', 'CHEQUES_ISSUED', 'AR_OTHER', 'BANK_CHARGES', 'VISA_FEES', 'SALARIES', 'SALARIES_PAYABLE', 'EMPLOYEE_ADVANCES',
+  'DEPRECIATION', 'ACCUM_DEPRECIATION', 'GAIN_ON_DISPOSAL', 'LOSS_ON_DISPOSAL', 'RETAINED_EARNINGS',
 ] as const;
+/** Roles without an account of their own in the starting chart use this one until mapped. */
+const ROLE_FALLBACK: Record<string, string> = { GAIN_ON_DISPOSAL: 'REV_OTHER', LOSS_ON_DISPOSAL: 'EXP_OTHER' };
 export const REVENUE_DEFAULT: Record<ServiceCategory, string> = {
   EXAMINATION: 'REV_CONSULTATION', CONSULTATION: 'REV_CONSULTATION', PROCEDURE: 'REV_SERVICES', LAB: 'REV_LAB', NURSING: 'REV_SERVICES', MEDICATION: 'REV_MEDICATION', OTHER: 'REV_OTHER',
 };
@@ -60,7 +67,7 @@ export async function loadMapping(db: Db = prisma) {
   const byKey = new Map(keyed.map((a) => [a.systemKey!, a.id]));
   const methods = await db.paymentMethod.findMany({ select: { id: true, code: true, name: true } });
   const role = (k: string) => {
-    const id = cfg.accountMap[k] ?? byKey.get(k);
+    const id = cfg.accountMap[k] ?? byKey.get(k) ?? (ROLE_FALLBACK[k] ? byKey.get(ROLE_FALLBACK[k]) : undefined);
     if (!id) throw new Error(`لم يُحدَّد حساب للدور ${k} في إعدادات الربط`);
     return id;
   };
@@ -77,18 +84,18 @@ export async function loadMapping(db: Db = prisma) {
     methodName: (methodId: string | null | undefined) => methods.find((m) => m.id === methodId)?.name ?? '',
   };
 }
-type Mapping = Awaited<ReturnType<typeof loadMapping>>;
+export type Mapping = Awaited<ReturnType<typeof loadMapping>>;
 
 // ───────────── What each operation should look like in the books ─────────────
 
-type Plan =
+export type Plan =
   | { do: 'post'; date: string; type: JournalType; description: string; reference?: string | null; lines: LineInput[] }
   | { do: 'undo'; why: string }
   | { do: 'skip'; note: string };
 
-const L = (accountId: string, debit: Prisma.Decimal.Value, credit: Prisma.Decimal.Value, extra: Partial<LineInput> = {}): LineInput =>
+export const L = (accountId: string, debit: Prisma.Decimal.Value, credit: Prisma.Decimal.Value, extra: Partial<LineInput> = {}): LineInput =>
   ({ accountId, debit: r3(D(debit)), credit: r3(D(credit)), ...extra });
-const nonZero = (lines: LineInput[]) => lines.filter((l) => D(l.debit).gt(0) || D(l.credit).gt(0));
+export const nonZero = (lines: LineInput[]) => lines.filter((l) => D(l.debit).gt(0) || D(l.credit).gt(0));
 
 /** How each payment of an invoice splits: what settles the receivable, what is an overpayment, what a refund takes back. */
 async function paymentSplits(db: Db, invoiceId: string) {
@@ -201,6 +208,9 @@ async function plan(db: Db, kind: Kind, id: string, m: Mapping): Promise<Plan> {
       const party = { partyType: 'INSURANCE', partyId: p.companyId, partyName: p.company.nameAr };
       return { do: 'post', date: ymd(p.paidAt), type: 'RECEIPT', description: `دفعة من ${p.company.nameAr} — ${p.receiptNumber}`, reference: p.reference ?? p.receiptNumber, lines: [L(m.method(p.methodId), p.amount, 0, { description: m.methodName(p.methodId) }), L(m.role('AR_INSURANCE'), 0, p.amount, party)] };
     }
+    case 'voucher': case 'transfer': case 'cash-count': case 'visa-settlement': case 'cheque-event': case 'advance': case 'payroll': case 'payroll-pay':
+    case 'asset': case 'depreciation': case 'asset-disposal': case 'year-close':
+      return planDoc(db, kind, id, m);
     case 'claim-event': {
       const ev = await db.insuranceClaimEvent.findUnique({ where: { id }, include: { claim: { include: { invoice: { select: { invoiceNumber: true, patientId: true, patient: { select: { fullName: true } } } }, company: { select: { nameAr: true } } } } } });
       if (!ev || ev.voidedAt) return { do: 'undo', why: 'حركة مطالبة ملغاة' };
@@ -217,7 +227,7 @@ async function plan(db: Db, kind: Kind, id: string, m: Mapping): Promise<Plan> {
 
 // ───────────── Turning the queue into entries ─────────────
 
-async function apply(tx: Tx, key: string, kind: Kind, sourceId: string, p: Plan, startDate: string): Promise<{ status: 'DONE' | 'SKIPPED'; note?: string; entryId?: string | null }> {
+export async function apply(tx: Tx, key: string, kind: Kind, sourceId: string, p: Plan, startDate: string): Promise<{ status: 'DONE' | 'SKIPPED'; note?: string; entryId?: string | null }> {
   const existing = await tx.journalEntry.findUnique({ where: { sourceKey: key } });
   const remove = async (why: string) => {
     if (!existing || existing.status === 'DELETED') return null;
@@ -306,5 +316,18 @@ export async function resyncFrom(startDate: string) {
     await q('ins-payment', await prisma.insurancePayment.findMany({ where: { paidAt: { gte: from } }, select: { id: true } })),
     await q('claim-event', await prisma.insuranceClaimEvent.findMany({ where: { createdAt: { gte: from }, type: { in: ['TRANSFER_TO_PATIENT', 'WRITE_OFF'] } }, select: { id: true } })),
   ].reduce((a, b) => a + b, 0);
+  // Card payments from the start date on enter the Visa box (followed until they reach the bank).
+  const visa = await prisma.payment.findMany({ where: { paidAt: { gte: from }, method: { code: 'VISA' } }, select: { id: true } });
+  for (const p of visa) await prisma.$transaction((tx) => trackVisa(tx, 'payment', p.id));
   return n;
+}
+
+/**
+ * Accounting documents (vouchers, transfers, cheques, payroll, assets…) are posted inside their own transaction:
+ * the document and its entry are saved together or not at all (e.g. a closed period refuses both).
+ */
+export async function postDoc(tx: Tx, kind: DocKind, id: string) {
+  const m = await loadMapping(tx);
+  const p = await plan(tx, kind, id, m);
+  return apply(tx, `${kind}:${id}`, kind, id, p, '0000-00-00');
 }

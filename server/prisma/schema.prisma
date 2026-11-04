@@ -2493,19 +2493,22 @@ model JournalEntry {
 }
 
 model JournalLine {
-  id          String  @id @default(uuid())
-  entryId     String
-  lineNo      Int
-  accountId   String
-  debit       Decimal @default(0) @db.Decimal(14, 3)
-  credit      Decimal @default(0) @db.Decimal(14, 3)
-  description String?
+  id           String    @id @default(uuid())
+  entryId      String
+  lineNo       Int
+  accountId    String
+  debit        Decimal   @default(0) @db.Decimal(14, 3)
+  credit       Decimal   @default(0) @db.Decimal(14, 3)
+  description  String?
   /// Optional sub-ledger party: PATIENT / SUPPLIER / INSURANCE / EMPLOYEE / OTHER
-  partyType   String?
-  partyId     String?
-  partyName   String?
+  partyType    String?
+  partyId      String?
+  partyName    String?
   /// Optional analysis: the doctor behind a revenue line.
-  doctorId    String?
+  doctorId     String?
+  /// Set when the line was matched with the bank statement.
+  reconciledAt DateTime?
+  reconId      String?
 
   entry   JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   account Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
@@ -2560,4 +2563,489 @@ model AccountingEvent {
 
   @@index([status, queuedAt])
   @@map("acc_events")
+}
+
+// ───── Accounting: treasury (cash boxes & bank accounts), vouchers, transfers, cash counts ─────
+
+enum TreasuryKind {
+  CASH
+  BANK
+}
+
+/// A cash box or a bank account, each backed by its own ledger account (balance = that account's balance).
+model Treasury {
+  id            String       @id @default(uuid())
+  kind          TreasuryKind
+  name          String
+  accountId     String       @unique
+  custodianId   String?
+  bankName      String?
+  branch        String?
+  accountNumber String?
+  iban          String?
+  holderName    String?
+  currency      String       @default("JOD")
+  notes         String?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("acc_treasuries")
+}
+
+enum VoucherKind {
+  RECEIPT
+  PAYMENT
+}
+
+enum VoucherMethod {
+  CASH
+  VISA
+  CLIQ
+  TRANSFER
+  CHEQUE
+  OTHER
+}
+
+enum DocStatus {
+  ACTIVE
+  CANCELLED
+}
+
+/// Receipt (سند قبض) or payment (سند صرف) voucher. Posted on save; editing it updates its entry; cancelling keeps it.
+model Voucher {
+  id               String        @id @default(uuid())
+  number           String        @unique
+  kind             VoucherKind
+  date             DateTime      @db.Date
+  method           VoucherMethod
+  treasuryId       String?
+  amount           Decimal       @db.Decimal(14, 3)
+  counterAccountId String
+  partyType        String?
+  partyId          String?
+  partyName        String
+  purpose          String
+  reference        String?
+  notes            String?
+  chequeId         String?       @unique
+  status           DocStatus     @default(ACTIVE)
+  version          Int           @default(1)
+  cancelReason     String?
+  cancelledAt      DateTime?
+  cancelledById    String?
+  createdById      String?
+  updatedById      String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([date])
+  @@index([kind, date])
+  @@index([treasuryId])
+  @@map("acc_vouchers")
+}
+
+/// Money moved between two treasuries (cash → bank deposit, bank → cash withdrawal, box → box, bank → bank).
+model TreasuryTransfer {
+  id           String    @id @default(uuid())
+  number       String    @unique
+  date         DateTime  @db.Date
+  fromId       String
+  toId         String
+  amount       Decimal   @db.Decimal(14, 3)
+  fee          Decimal   @default(0) @db.Decimal(14, 3)
+  reference    String?
+  notes        String?
+  status       DocStatus @default(ACTIVE)
+  cancelReason String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+
+  @@index([date])
+  @@map("acc_treasury_transfers")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Physical count of a cash box (also its daily close). A difference changes the books only once approved.
+model CashCount {
+  id            String         @id @default(uuid())
+  number        String         @unique
+  treasuryId    String
+  date          DateTime       @db.Date
+  denominations Json
+  counted       Decimal        @db.Decimal(14, 3)
+  book          Decimal        @db.Decimal(14, 3)
+  difference    Decimal        @db.Decimal(14, 3)
+  reason        String?
+  isClose       Boolean        @default(false)
+  status        ApprovalStatus @default(PENDING)
+  countedById   String?
+  approvedById  String?
+  approvedAt    DateTime?
+  decisionNote  String?
+  createdAt     DateTime       @default(now())
+
+  @@index([treasuryId, date])
+  @@map("acc_cash_counts")
+}
+
+/// History of accounting documents (vouchers, transfers, cheques, assets, payroll…): one snapshot per change. Append-only.
+model DocRevision {
+  id        String   @id @default(uuid())
+  docType   String
+  docId     String
+  version   Int
+  action    String
+  snapshot  Json
+  changes   Json?
+  reason    String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([docType, docId])
+  @@map("acc_doc_revisions")
+}
+
+// ───── Visa (card payments) until they reach the bank ─────
+
+enum VisaStatus {
+  PENDING
+  PARTIAL
+  SETTLED
+  CANCELLED
+  REFUNDED
+  REVIEW
+}
+
+/// One card payment, from the swipe until the money reaches the bank.
+model VisaTransaction {
+  id            String     @id @default(uuid())
+  sourceType    String
+  sourceId      String
+  date          DateTime
+  amount        Decimal    @db.Decimal(14, 3)
+  settled       Decimal    @default(0) @db.Decimal(14, 3)
+  posReference  String?
+  terminal      String?
+  provider      String?
+  invoiceNumber String?
+  patientName   String?
+  recordedBy    String?
+  status        VisaStatus @default(PENDING)
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  lines VisaSettlementLine[]
+
+  @@unique([sourceType, sourceId])
+  @@index([status, date])
+  @@index([posReference])
+  @@map("acc_visa_transactions")
+}
+
+/// A transfer received from the card company / bank covering one or more card payments (gross − fee = net).
+model VisaSettlement {
+  id          String    @id @default(uuid())
+  number      String    @unique
+  date        DateTime  @db.Date
+  treasuryId  String
+  gross       Decimal   @db.Decimal(14, 3)
+  fee         Decimal   @default(0) @db.Decimal(14, 3)
+  net         Decimal   @db.Decimal(14, 3)
+  reference   String?
+  notes       String?
+  status      DocStatus @default(ACTIVE)
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  lines VisaSettlementLine[]
+
+  @@index([date])
+  @@map("acc_visa_settlements")
+}
+
+model VisaSettlementLine {
+  id            String  @id @default(uuid())
+  settlementId  String
+  transactionId String
+  amount        Decimal @db.Decimal(14, 3)
+
+  settlement  VisaSettlement  @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  transaction VisaTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId])
+  @@index([settlementId])
+  @@map("acc_visa_settlement_lines")
+}
+
+// ───── Cheques ─────
+
+enum ChequeDirection {
+  IN
+  OUT
+}
+
+enum ChequeStatus {
+  RECEIVED
+  IN_SAFE
+  READY
+  DEPOSITED
+  UNDER_COLLECTION
+  COLLECTED
+  BOUNCED
+  CANCELLED
+  REPLACED
+  RETURNED_TO_OWNER
+  DRAFT
+  ISSUED
+  DELIVERED
+  DUE
+  CLEARED
+  STOPPED
+}
+
+model Cheque {
+  id               String          @id @default(uuid())
+  ref              String          @unique
+  direction        ChequeDirection
+  number           String
+  bankName         String
+  drawer           String
+  counterparty     String
+  accountNumber    String?
+  issueDate        DateTime?       @db.Date
+  dueDate          DateTime        @db.Date
+  amount           Decimal         @db.Decimal(14, 3)
+  currency         String          @default("JOD")
+  reason           String?
+  reference        String?
+  treasuryId       String?
+  counterAccountId String
+  status           ChequeStatus
+  depositId        String?
+  replacedById     String?
+  fees             Decimal         @default(0) @db.Decimal(14, 3)
+  notes            String?
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  events ChequeEvent[]
+
+  @@unique([direction, bankName, number])
+  @@index([status, dueDate])
+  @@map("acc_cheques")
+}
+
+/// Every status change of a cheque (who, when, why) and its accounting effect. Append-only.
+model ChequeEvent {
+  id         String        @id @default(uuid())
+  chequeId   String
+  fromStatus ChequeStatus?
+  toStatus   ChequeStatus
+  date       DateTime      @db.Date
+  treasuryId String?
+  fee        Decimal       @default(0) @db.Decimal(14, 3)
+  note       String?
+  userId     String?
+  createdAt  DateTime      @default(now())
+
+  cheque Cheque @relation(fields: [chequeId], references: [id], onDelete: Restrict)
+
+  @@index([chequeId])
+  @@map("acc_cheque_events")
+}
+
+model ChequeDeposit {
+  id          String   @id @default(uuid())
+  number      String   @unique
+  date        DateTime @db.Date
+  treasuryId  String
+  slipNumber  String?
+  reference   String?
+  notes       String?
+  total       Decimal  @db.Decimal(14, 3)
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@map("acc_cheque_deposits")
+}
+
+/// Physical count of the cheques held: found / missing / not registered. Changes no balance by itself.
+model ChequeCount {
+  id           String         @id @default(uuid())
+  number       String         @unique
+  date         DateTime       @db.Date
+  lines        Json
+  extra        Json?
+  notes        String?
+  status       ApprovalStatus @default(PENDING)
+  countedById  String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@map("acc_cheque_counts")
+}
+
+// ───── Payroll (real money only — E Coin is never money) ─────
+
+model SalaryProfile {
+  userId        String   @id
+  jobTitle      String?
+  basic         Decimal  @default(0) @db.Decimal(12, 3)
+  allowances    Json     @default("[]")
+  paymentMethod String   @default("TRANSFER")
+  treasuryId    String?
+  isActive      Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+
+  @@map("acc_salary_profiles")
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PAID
+}
+
+model PayrollRun {
+  id           String        @id @default(uuid())
+  month        String        @unique
+  status       PayrollStatus @default(DRAFT)
+  dueDate      DateTime?     @db.Date
+  paidDate     DateTime?     @db.Date
+  treasuryId   String?
+  notes        String?
+  createdById  String?
+  approvedById String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  slips Payslip[]
+
+  @@map("acc_payroll_runs")
+}
+
+model Payslip {
+  id               String  @id @default(uuid())
+  runId            String
+  userId           String
+  jobTitle         String?
+  basic            Decimal @default(0) @db.Decimal(12, 3)
+  allowances       Decimal @default(0) @db.Decimal(12, 3)
+  commission       Decimal @default(0) @db.Decimal(12, 3)
+  bonus            Decimal @default(0) @db.Decimal(12, 3)
+  overtime         Decimal @default(0) @db.Decimal(12, 3)
+  absenceDays      Decimal @default(0) @db.Decimal(6, 2)
+  lateMinutes      Int     @default(0)
+  absenceDeduction Decimal @default(0) @db.Decimal(12, 3)
+  deductions       Decimal @default(0) @db.Decimal(12, 3)
+  advance          Decimal @default(0) @db.Decimal(12, 3)
+  net              Decimal @default(0) @db.Decimal(12, 3)
+  notes            String?
+
+  run PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, userId])
+  @@map("acc_payslips")
+}
+
+model EmployeeAdvance {
+  id          String    @id @default(uuid())
+  number      String    @unique
+  userId      String
+  date        DateTime  @db.Date
+  amount      Decimal   @db.Decimal(12, 3)
+  installment Decimal   @db.Decimal(12, 3)
+  recovered   Decimal   @default(0) @db.Decimal(12, 3)
+  treasuryId  String
+  notes       String?
+  status      DocStatus @default(ACTIVE)
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@map("acc_employee_advances")
+}
+
+// ───── Fixed assets ─────
+
+enum AssetStatus {
+  ACTIVE
+  DISPOSED
+  SOLD
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  DECLINING
+}
+
+model FixedAsset {
+  id                String             @id @default(uuid())
+  code              String             @unique
+  name              String
+  accountId         String
+  purchaseDate      DateTime           @db.Date
+  cost              Decimal            @db.Decimal(14, 3)
+  salvage           Decimal            @default(0) @db.Decimal(14, 3)
+  usefulLifeMonths  Int
+  method            DepreciationMethod @default(STRAIGHT_LINE)
+  rate              Decimal?           @db.Decimal(6, 2)
+  supplierId        String?
+  fundingAccountId  String
+  location          String?
+  notes             String?
+  status            AssetStatus        @default(ACTIVE)
+  disposedAt        DateTime?          @db.Date
+  proceeds          Decimal?           @db.Decimal(14, 3)
+  proceedsAccountId String?
+  createdById       String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  depreciations AssetDepreciation[]
+
+  @@map("acc_fixed_assets")
+}
+
+/// Depreciation of one asset for one month (one entry per month for all assets).
+model AssetDepreciation {
+  id      String  @id @default(uuid())
+  assetId String
+  month   String
+  amount  Decimal @db.Decimal(14, 3)
+
+  asset FixedAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([assetId, month])
+  @@index([month])
+  @@map("acc_asset_depreciations")
+}
+
+// ───── Bank reconciliation ─────
+
+model BankReconciliation {
+  id               String         @id @default(uuid())
+  number           String         @unique
+  treasuryId       String
+  statementDate    DateTime       @db.Date
+  statementBalance Decimal        @db.Decimal(14, 3)
+  bookBalance      Decimal        @db.Decimal(14, 3)
+  lines            Json
+  status           ApprovalStatus @default(PENDING)
+  notes            String?
+  createdById      String?
+  approvedById     String?
+  approvedAt       DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@map("acc_bank_reconciliations")
 }

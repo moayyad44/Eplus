@@ -11,6 +11,7 @@ import { ageFrom, rangeFromQuery } from '../../lib/dates';
 import { flushInvoice } from '../einvoice/service';
 import { addPayment, buildInvoice, cancelInvoice, changeInvoiceDate, changePaymentDate, issueInvoice, overpaidOf, recomputeInvoice, requestedInvoiceDate } from './service';
 import { enqueueInvoicePayments } from '../accounting/link';
+import { trackVisa } from '../accounting/visa';
 
 export const billingRouter = Router();
 
@@ -332,6 +333,7 @@ billingRouter.post(
       await tx.payment.update({ where: { id: p.id }, data: { voidedAt: new Date(), voidedById: req.ctx.userId, voidReason: reason } });
       const updated = await recomputeInvoice(tx, p.invoiceId);
       await enqueueInvoicePayments(tx, p.invoiceId);
+      await trackVisa(tx, 'payment', p.id);
       await audit(tx, req.ctx, { action: 'payment.void', entityType: 'invoice', entityId: p.invoiceId, summary: `إلغاء الإيصال ${p.receiptNumber} (${p.amount}): ${reason}`, before: { status: 'active' }, after: { status: 'voided', invoiceStatus: updated.status } });
       return updated;
     });

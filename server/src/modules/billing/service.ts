@@ -10,6 +10,7 @@ import { getSetting } from '../../lib/settings';
 import { addDays, ymd } from '../../lib/dates';
 import { recordMovement, saleWarehouse } from '../inventory/service';
 import { enqueue, enqueueInvoicePayments } from '../accounting/link';
+import { trackVisa } from '../accounting/visa';
 import { changeVisitStatus } from '../visits/service';
 import { computeCoverage, contractPrice, usableMembership, type MembershipWithContract } from '../insurance/coverage';
 import { cancelClaimWithInvoice, createClaimForInvoice } from '../insurance/claims';
@@ -296,6 +297,7 @@ export async function addPayment(tx: Tx, ctx: Ctx, invoiceId: string, p: Payment
     if (visit?.status === 'WAITING_PAYMENT') await changeVisitStatus(tx, ctx, inv.visitId, 'COMPLETED', 'تم الدفع', { system: true });
   }
   await enqueueInvoicePayments(tx, inv.id);
+  await trackVisa(tx, 'payment', payment.id);
   return { payment, invoice: updated };
 }
 
@@ -430,6 +432,7 @@ export async function changePaymentDate(tx: Tx, ctx: Ctx, paymentId: string, day
     before: { paidAt: old }, after: { paidAt: day, reason },
   });
   await enqueueInvoicePayments(tx, p.invoiceId);
+  await trackVisa(tx, 'payment', p.id);
   return { receiptNumber: p.receiptNumber, oldDate: old, newDate: day };
 }
 

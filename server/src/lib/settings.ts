@@ -43,6 +43,10 @@ export const settingSchemas = {
     inventoryMethod: z.enum(['PERPETUAL', 'PERIODIC']).default('PERPETUAL'),
     /** A reason must be given when editing an entry or a voucher. */
     requireReason: z.boolean().default(false),
+    /** Alerts: card payments not reaching the bank after N days; cheques due within N days; under collection longer than N days. */
+    visaLateDays: z.number().int().min(1).max(60).default(3),
+    chequeDueDays: z.number().int().min(1).max(60).default(7),
+    collectionLateDays: z.number().int().min(1).max(90).default(10),
     /** Account chosen for each role used by the automatic entries (empty = the starting account of that role). */
     accountMap: z.record(z.string(), z.string().uuid()).default({}),
     /** Account that receives each payment method (cash box, bank, Visa clearing…). */
