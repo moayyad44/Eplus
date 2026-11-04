@@ -123,7 +123,7 @@ export default function App() {
         <Route path="insurance/claims" element={<Guard any={['insurance.view']}><InsuranceClaims /></Guard>} />
         <Route path="insurance/claims/:id" element={<Guard any={['insurance.view']}><InsuranceClaimDetail /></Guard>} />
         <Route path="insurance/authorizations" element={<Guard any={['insurance.view']}><InsuranceAuthorizations /></Guard>} />
-        <Route path="insurance/payments" element={<Guard any={['insurance.view']}><InsurancePayments /></Guard>} />
+        <Route path="insurance/payments" element={<Guard any={['insurance.payment.create', 'insurance.payment.void', 'insurance.report.view']}><InsurancePayments /></Guard>} />
         <Route path="insurance/companies" element={<Guard any={['insurance.view']}><InsuranceCompanies /></Guard>} />
         <Route path="insurance/companies/:id" element={<Guard any={['insurance.view']}><InsuranceCompanyDetail /></Guard>} />
         <Route path="insurance/reports" element={<Guard any={['insurance.report.view']}><InsuranceReports /></Guard>} />

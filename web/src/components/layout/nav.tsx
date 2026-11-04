@@ -49,7 +49,7 @@ export const NAV: NavSection[] = [
       { to: '/insurance', label: 'nav.insDashboard', icon: i(ShieldCheck), any: ['insurance.report.view'] },
       { to: '/insurance/claims', label: 'nav.insClaims', icon: i(FileStack), any: ['insurance.view'] },
       { to: '/insurance/authorizations', label: 'nav.insAuthorizations', icon: i(BadgeCheck), any: ['insurance.view'] },
-      { to: '/insurance/payments', label: 'nav.insPayments', icon: i(Landmark), any: ['insurance.view'] },
+      { to: '/insurance/payments', label: 'nav.insPayments', icon: i(Landmark), any: ['insurance.payment.create', 'insurance.payment.void', 'insurance.report.view'] },
       { to: '/insurance/companies', label: 'nav.insCompanies', icon: i(Building2), any: ['insurance.view'] },
       { to: '/insurance/reports', label: 'nav.insReports', icon: i(PieChart), any: ['insurance.report.view'] },
     ],

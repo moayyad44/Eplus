@@ -135,7 +135,7 @@ claimsRouter.post('/:id/notes', requireAnyPerm('insurance.claim.create', 'insura
 
 insurancePaymentsRouter.get(
   '/',
-  requirePerm('insurance.view'),
+  requireAnyPerm('insurance.payment.create', 'insurance.payment.void', 'insurance.report.view'), // company money: not for clinical staff
   ah(async (req, res) => {
     const q = parse(pageQuery.extend({ companyId: z.string().uuid().optional(), from: z.string().optional(), to: z.string().optional() }), req.query);
     const where: Prisma.InsurancePaymentWhereInput = {
@@ -154,7 +154,7 @@ insurancePaymentsRouter.get(
 
 insurancePaymentsRouter.get(
   '/:id',
-  requirePerm('insurance.view'),
+  requireAnyPerm('insurance.payment.create', 'insurance.payment.void', 'insurance.report.view'), // company money: not for clinical staff
   ah(async (req, res) => {
     const p = await prisma.insurancePayment.findUnique({
       where: { id: req.params.id },
