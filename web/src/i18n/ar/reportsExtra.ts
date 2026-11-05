@@ -1,5 +1,17 @@
 /** Labels of the additional clinic reports. */
 export default {
+  rd: {
+    search: 'رقم الفاتورة، المريض، الهاتف، رقم الملف…', payer: 'الجهة الدافعة', company: 'شركة التأمين', st: { open: 'غير مدفوعة', paid: 'مدفوعة', cancelled: 'ملغاة' },
+    allColumns: 'كل الأعمدة', expand: 'فتح كل التفاصيل', collapse: 'طي التفاصيل', invoices: 'عدد الفواتير', ofCancelled: 'منها {{n}} ملغاة (غير محسوبة)', total: 'قيمة الفاتورة',
+    insuranceShare: 'حصة التأمين', patientShare: 'حصة المريض', labRevenue: 'قيمة المختبر', labCost: 'كلفة المختبر الخارجي', materialsCost: 'كلفة المواد',
+    truncated: 'عُرضت أول 3000 فاتورة — ضيّق الفترة', invoice: 'الفاتورة', dateTime: 'التاريخ والوقت', patient: 'المريض', nurse: 'الممرض', methodRef: 'طريقة الدفع / المرجع',
+    visit: 'زيارة', years: 'سنة', sec: { patient: 'المريض والزيارة', services: 'الخدمات والإجراءات والمواد', money: 'المبالغ والدفع والتأمين' },
+    dob: 'تاريخ الميلاد', gender: 'الجنس', nationalId: 'الرقم الوطني', visitType: 'نوع الزيارة', complaint: 'الشكوى', vitals: 'العلامات الحيوية', diagnosis: 'التشخيص',
+    examination: 'الفحص السريري', plan: 'الخطة العلاجية', prescription: 'الروشيتة', report: 'تقرير المريض', services: 'الكشف / الاستشارة', procedures: 'الإجراءات',
+    tests: 'الفحوصات المفوترة', orderedTests: 'الفحوصات المطلوبة', materials: 'المواد', fromStock: 'صُرفت من المخزون', subtotal: 'قبل الخصم', tax: 'الضريبة', refunded: 'المرتجع',
+    payment: 'دفعة', refund: 'إرجاع', program: 'برنامج التأمين', member: 'رقم المنتفع', card: 'رقم البطاقة', claim: 'المطالبة', einvoice: 'الفوترة الوطنية', createdBy: 'أنشأها',
+    cancelReason: 'سبب الإلغاء', notes: 'ملاحظات',
+  },
   rx: {
     groups: { clinical: 'المرضى والتشغيل', financial: 'المالية', other: 'أخرى' },
     code: 'الرمز', service: 'الخدمة', category: 'التصنيف', qty: 'العدد', invoices: 'فاتورة', gross: 'قبل الخصم', net: 'صافي الإيراد', insuranceShare: 'حصة التأمين', patientShare: 'حصة المريض',

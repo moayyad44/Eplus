@@ -10,9 +10,11 @@ import { num } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
 import { financialSummary } from '../billing/cashier';
 import { extraReportsRouter } from './extra';
+import { invoiceDetailsRouter } from './invoiceDetails';
 
 export const reportsRouter = Router();
 reportsRouter.use(extraReportsRouter);
+reportsRouter.use(invoiceDetailsRouter);
 
 const rangeQuery = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

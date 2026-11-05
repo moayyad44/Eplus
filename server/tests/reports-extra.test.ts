@@ -71,5 +71,40 @@ describe('extra clinic reports', () => {
     const rc = (await admin.get('/api/reports/receivables')).body;
     expect(rc.rows.find((x: { id: string }) => x.id === a.body.id)).toMatchObject({ balance: 6 }); // the invoice's own balance: 36 − 30
     expect(rc.byPatient.find((x: { patientId: string }) => x.patientId === p.id).oldest).toBeGreaterThanOrEqual(699);
+
+    const det = (await admin.get(`/api/reports/invoice-details?from=${DAY}&to=${DAY}`)).body;
+    const row = det.rows.find((x: { id: string }) => x.id === a.body.id);
+    expect(row).toMatchObject({ discount: 4, total: 36, paid: 30, refunded: 5, balance: 6, patient: { name: 'مريض التقارير الإضافية', phone: '0795554433', gender: 'أنثى' }, methods: [expect.any(String)] });
+    expect(row.payments[0]).toMatchObject({ amount: 30 });
+    expect(row.refunds[0]).toMatchObject({ amount: 5, notes: 'إرجاع جزء' });
+    expect(det.rows.find((x: { id: string }) => x.id === b.body.id)).toMatchObject({ status: 'CANCELLED', cancelReason: 'فاتورة مكررة' });
+    expect(det.totals.total).toBe(36); // the cancelled invoice is listed but not counted
+    const x = await admin.get(`/api/reports/invoice-details?from=${DAY}&to=${DAY}&format=xlsx`);
+    expect([x.status, x.headers['content-type']]).toEqual([200, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    expect((await reception.get(`/api/reports/invoice-details?from=${DAY}&to=${DAY}`)).status).toBe(403);
+  });
+
+  it('the detailed invoice report gathers the visit: nurse, diagnosis, prescription, medical report, lab tests and cost', async () => {
+    const d = new Date(); d.setDate(d.getDate() - 710); const DAY = d.toISOString().slice(0, 10);
+    const [doc, nurse] = await Promise.all([prisma.user.findUniqueOrThrow({ where: { username: 'dr.ahmad' } }), prisma.user.findUniqueOrThrow({ where: { username: 'nurse.sara' } })]);
+    const pt = (await admin.post('/api/patients', { fullName: 'مريض التقرير المفصل', phone: '0796667788', gender: 'MALE', dateOfBirth: '1990-05-01' })).body;
+    const lt = await prisma.labTest.findFirstOrThrow({ where: { serviceId: { not: null } } });
+    await prisma.labTest.update({ where: { id: lt.id }, data: { labCost: 3.5 } });
+    const v = await prisma.visit.create({ data: { visitNumber: `V-RX-${Date.now()}`, patientId: pt.id, doctorId: doc.id, status: 'COMPLETED', queueDate: new Date(`${DAY}T00:00:00Z`), arrivedAt: new Date(`${DAY}T09:00:00`), chiefComplaint: 'صداع' } });
+    await prisma.vitalSigns.create({ data: { visitId: v.id, patientId: pt.id, bpSystolic: 120, bpDiastolic: 80, recordedById: nurse.id } });
+    await prisma.diagnosis.create({ data: { visitId: v.id, patientId: pt.id, icd10Code: 'R51', description: 'صداع', type: 'PRIMARY' } });
+    await prisma.prescription.create({ data: { visitId: v.id, patientId: pt.id, doctorId: doc.id, items: { create: [{ drugName: 'Paracetamol 500mg', dose: '1 حبة', frequency: 'كل 8 ساعات', duration: '3 أيام', sortOrder: 0 }] } } });
+    await prisma.medicalReport.create({ data: { visitId: v.id, patientId: pt.id, doctorId: doc.id, title: 'تقرير طبي', content: 'المريض بحاجة لراحة يومين' } });
+    await prisma.labOrder.create({ data: { orderNumber: `LO-RX-${Date.now()}`, visitId: v.id, patientId: pt.id, doctorId: doc.id, requestedAt: new Date(`${DAY}T09:30:00`), items: { create: [{ labTestId: lt.id, testName: lt.name }] } } });
+    const templateId = (await prisma.invoiceTemplate.findFirstOrThrow({ where: { isDefault: false } })).id;
+    const inv = await admin.post('/api/billing/invoices', { patientId: pt.id, visitId: v.id, doctorId: doc.id, templateId, items: [{ serviceId: lt.serviceId, quantity: 1 }], invoiceDate: DAY });
+    expect(inv.status, JSON.stringify(inv.body)).toBe(201);
+    const row = (await admin.get(`/api/reports/invoice-details?from=${DAY}&to=${DAY}`)).body.rows.find((x: { id: string }) => x.id === inv.body.id);
+    expect(row).toMatchObject({ doctor: doc.fullName, nurses: [nurse.fullName], visitNumber: v.visitNumber, chiefComplaint: 'صداع', diagnoses: ['R51 صداع'], labCost: 3.5, orderedTests: [lt.name], patient: { dateOfBirth: '1990-05-01' } });
+    expect(row.prescription[0]).toContain('Paracetamol 500mg');
+    expect(row.reports[0]).toMatchObject({ title: 'تقرير طبي' });
+    expect(row.labTests).toHaveLength(1);
+    expect(row.labRevenue).toBe(row.total);
+    expect(row.vitals).toContain('120/80');
   });
 });

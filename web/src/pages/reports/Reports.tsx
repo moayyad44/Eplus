@@ -8,13 +8,14 @@ import { exportCsv } from '@/lib/export';
 import { fmtDate, fmtDateTime, fmtDay, money, num, qty } from '@/lib/format';
 import clsx from 'clsx';
 import { Badge, Button, Card, CardHeader, DataTable, DateRangePicker, EmptyState, ErrorState, PageHeader, PageLoader, SearchInput, Select, StatCard, presetRange, type Range } from '@/components/ui';
+import { InvoiceDetailsReport } from './InvoiceDetails';
 import { AppointmentsReport, CollectionsReport, ControlReport, ExpensesReport, LabReport, OperationsReport, ReceivablesReport, ServicesReport } from './ReportsExtra';
 import { BarsChart, ShareBars } from '@/components/shared/charts';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useDoctors } from '@/components/shared/VisitQueueForm';
 import { InsuranceFigures, type FinanceSummary } from '../billing/Cashier';
 
-type Tab = 'patients' | 'doctors' | 'financial' | 'lab-costs' | 'inventory' | 'attendance' | 'services' | 'collections' | 'receivables' | 'control' | 'appointments' | 'operations' | 'lab' | 'expenses';
+type Tab = 'patients' | 'doctors' | 'financial' | 'lab-costs' | 'inventory' | 'attendance' | 'services' | 'collections' | 'receivables' | 'control' | 'appointments' | 'operations' | 'lab' | 'expenses' | 'invoice-details';
 
 function useReport<T>(name: Tab, params: Record<string, string | undefined>, enabled: boolean) {
   return useQuery({ queryKey: ['report', name, params], queryFn: () => api.get<T>(`/reports/${name}`, params), enabled });
@@ -38,7 +39,7 @@ export default function Reports() {
   const { can, me } = useAuth();
   const groups: { label: string; items: { key: Tab; perm: string }[] }[] = [
     { label: t('rx.groups.clinical'), items: [{ key: 'patients', perm: 'reports.patients' }, { key: 'doctors', perm: 'reports.doctors' }, { key: 'appointments', perm: 'reports.patients' }, { key: 'operations', perm: 'reports.patients' }, { key: 'lab', perm: 'reports.patients' }] },
-    { label: t('rx.groups.financial'), items: [{ key: 'financial', perm: 'reports.financial' }, { key: 'services', perm: 'reports.financial' }, { key: 'collections', perm: 'reports.financial' }, { key: 'receivables', perm: 'reports.financial' }, { key: 'expenses', perm: 'reports.financial' }, { key: 'control', perm: 'reports.financial' }, { key: 'lab-costs', perm: 'reports.financial' }] },
+    { label: t('rx.groups.financial'), items: [{ key: 'financial', perm: 'reports.financial' }, { key: 'invoice-details', perm: 'reports.financial' }, { key: 'services', perm: 'reports.financial' }, { key: 'collections', perm: 'reports.financial' }, { key: 'receivables', perm: 'reports.financial' }, { key: 'expenses', perm: 'reports.financial' }, { key: 'control', perm: 'reports.financial' }, { key: 'lab-costs', perm: 'reports.financial' }] },
     { label: t('rx.groups.other'), items: [{ key: 'inventory', perm: 'reports.inventory' }, { key: 'attendance', perm: 'reports.attendance' }] },
   ];
   const visible = groups.map((g) => ({ ...g, items: g.items.filter((i) => can(i.perm as never)) })).filter((g) => g.items.length);
@@ -77,6 +78,7 @@ export default function Reports() {
       {tab === 'operations' && <OperationsReport range={range} />}
       {tab === 'lab' && <LabReport range={range} />}
       {tab === 'expenses' && <ExpensesReport range={range} />}
+      {tab === 'invoice-details' && <InvoiceDetailsReport range={range} />}
     </div>
   );
 }
