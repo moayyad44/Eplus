@@ -1,4 +1,5 @@
 import { useWarehouses } from '@/lib/catalogs';
+import { NursingPresetsCard } from '@/components/shared/NursingPresets';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -38,6 +39,7 @@ export default function Settings() {
       {tab === 'medical' && (
         <div className="space-y-4">
           <KeyValueForm settingKey="medical" fields={[['defaultAppointmentMinutes', 'number'], ['prescriptionFooter', 'textarea'], ['reportDoctorName', 'text']]} ns="medicalS" />
+          <NursingPresetsCard />
           <KeyValueForm settingKey="attendance" fields={[['graceMinutes', 'number'], ['autoAbsent', 'checkbox']]} ns="attendanceS" />
         </div>
       )}

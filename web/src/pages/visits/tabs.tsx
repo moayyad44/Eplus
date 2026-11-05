@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import clsx from 'clsx';
+import { Check, Pencil, Plus, Printer, Receipt, Trash2, X } from 'lucide-react';
 import { api, type Paged } from '@/lib/api';
 import { useApiMutation } from '@/lib/hooks';
+import { useAuth } from '@/lib/auth';
 import { fmtDateTime, money, num, textMatch } from '@/lib/format';
 import type { ReportFields, RxItem, TimelineVisit } from '@/lib/clinical';
 import { Badge, Button, Card, CardHeader, Checkbox, DataTable, Dialog, EmptyState, Field, IconButton, Input, PageLoader, Pagination, SearchInput, Select, Textarea, useConfirm } from '@/components/ui';
@@ -11,6 +13,7 @@ import { Autocomplete } from '@/components/shared/Autocomplete';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { VitalsStrip } from '@/components/shared/VitalsStrip';
 import { VisitTimelineItem } from '@/components/shared/VisitTimeline';
+import { NursingPresetsDialog, useNursingPresets } from '@/components/shared/NursingPresets';
 import type { VisitDetail } from './VisitWorkspace';
 
 interface TabProps { visit: VisitDetail; onSaved: () => void; readOnly: boolean }
@@ -133,27 +136,68 @@ export function VitalsTab({ visit, onSaved, readOnly }: TabProps) {
 }
 
 // ── Nursing procedures ──
-const NURSING_PRESETS = ['حقنة عضل', 'حقنة وريد', 'تركيب كانيولا', 'تركيب محلول وريدي', 'جلسة بخار', 'غيار جرح', 'قياس سكر', 'تخطيط قلب ECG', 'سحب عينة دم'];
-
+/** Quick procedures come from the settings (editable); several can be picked and recorded with one press.
+ *  A procedure linked to a service is suggested on the visit's invoice (two injections → quantity 2). */
 export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
   const { t } = useTranslation();
-  const [v, setV] = useState({ procedure: '', notes: '' });
-  const save = useApiMutation(() => api.post(`/visits/${visit.id}/nursing-notes`, v), { success: t('common.created'), onSuccess: () => { setV({ procedure: '', notes: '' }); onSaved(); } });
+  const { can } = useAuth();
+  const presets = useNursingPresets();
+  const [picked, setPicked] = useState<{ procedure: string; serviceId: string | null; n: number }[]>([]);
+  const [custom, setCustom] = useState('');
+  const [notes, setNotes] = useState('');
+  const [editing, setEditing] = useState(false);
+  const total = picked.reduce((s, p) => s + p.n, 0);
+  const save = useApiMutation(() => api.post(`/visits/${visit.id}/nursing-notes`, { procedures: picked.flatMap((p) => Array.from({ length: p.n }, () => ({ procedure: p.procedure, ...(p.serviceId !== undefined && { serviceId: p.serviceId }) }))), notes: notes || null }), {
+    success: t('visit.nursing.saved', { n: total }), onSuccess: () => { setPicked([]); setNotes(''); onSaved(); },
+  });
   const confirm = useConfirm();
   const remove = useApiMutation((id: string) => api.del(`/nursing-notes/${id}`), { success: t('common.done'), onSuccess: onSaved });
+  const toggle = (name: string, serviceId: string | null) => setPicked(picked.some((p) => p.procedure === name) ? picked.filter((p) => p.procedure !== name) : [...picked, { procedure: name, serviceId, n: 1 }]);
+  const bump = (name: string, d: number) => setPicked(picked.map((p) => (p.procedure === name ? { ...p, n: Math.max(1, Math.min(10, p.n + d)) } : p)));
+  const addCustom = () => {
+    const name = custom.trim();
+    if (name.length < 2 || picked.some((p) => p.procedure === name)) return;
+    const preset = presets.data?.find((x) => x.name === name);
+    setPicked([...picked, { procedure: name, serviceId: preset?.serviceId ?? null, n: 1 }]);
+    setCustom('');
+  };
   return (
     <Card>
       {!readOnly && (
         <div className="mb-5 space-y-3">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-ink-muted">{t('visit.nursing.presets')}:</span>
-            {NURSING_PRESETS.map((p) => <button key={p} onClick={() => setV({ ...v, procedure: p })} className="rounded-full bg-surface-sunken px-2.5 py-1 text-xs hover:bg-primary-100">{p}</button>)}
+            {(presets.data ?? []).map((p) => {
+              const sel = picked.find((x) => x.procedure === p.name);
+              return (
+                <span key={p.name} className={clsx('inline-flex items-center rounded-full text-xs', sel ? 'bg-primary-600 text-white' : 'bg-surface-sunken hover:bg-primary-100')}>
+                  <button type="button" aria-pressed={!!sel} onClick={() => toggle(p.name, p.serviceId)} className="flex items-center gap-1 px-2.5 py-1">
+                    {sel && <Check className="h-3.5 w-3.5" />}{p.name}{p.serviceId && <Receipt className={clsx('h-3 w-3', sel ? 'text-white/80' : 'text-primary-500')} aria-label={t('visit.nursing.billed')} />}
+                  </button>
+                  {sel && <span className="flex items-center gap-0.5 pe-1.5">
+                    <button type="button" className="rounded px-1 hover:bg-white/20" aria-label="-" onClick={() => bump(p.name, -1)}>−</button>
+                    <b className="tabular-nums">×{sel.n}</b>
+                    <button type="button" className="rounded px-1 hover:bg-white/20" aria-label="+" onClick={() => bump(p.name, 1)}>+</button>
+                  </span>}
+                </span>
+              );
+            })}
+            {can('settings.manage') && <button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-1 rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs text-ink-muted hover:bg-surface-subtle"><Pencil className="h-3 w-3" />{t('visit.nursing.editList')}</button>}
           </div>
+          {picked.some((p) => !presets.data?.some((x) => x.name === p.procedure)) && (
+            <div className="flex flex-wrap gap-1.5">{picked.filter((p) => !presets.data?.some((x) => x.name === p.procedure)).map((p) => (
+              <span key={p.procedure} className="inline-flex items-center gap-1 rounded-full bg-primary-600 px-2.5 py-1 text-xs text-white">{p.procedure} ×{p.n}<button type="button" onClick={() => toggle(p.procedure, null)} aria-label={t('common.delete')}><X className="h-3 w-3" /></button></span>
+            ))}</div>
+          )}
           <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
-            <Input placeholder={t('visit.nursing.procedure')} value={v.procedure} onChange={(e) => setV({ ...v, procedure: e.target.value })} />
-            <Input placeholder={t('common.notes')} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} />
-            <Button loading={save.isPending} disabled={v.procedure.trim().length < 2} onClick={() => save.mutate(undefined)}>{t('visit.nursing.add')}</Button>
+            <div className="flex gap-2">
+              <Input placeholder={t('visit.nursing.other')} value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustom())} />
+              <Button variant="outline" disabled={custom.trim().length < 2} onClick={addCustom}>{t('visit.nursing.addOther')}</Button>
+            </div>
+            <Input placeholder={t('common.notes')} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Button loading={save.isPending} disabled={!total} onClick={() => save.mutate(undefined)}>{total ? t('visit.nursing.addN', { n: total }) : t('visit.nursing.add')}</Button>
           </div>
+          {picked.some((p) => p.serviceId) && <p className="text-xs text-primary-700">{t('visit.nursing.invoiceHint')}</p>}
         </div>
       )}
       {!visit.nursingNotes?.length ? <EmptyState title={t('visit.nursing.none')} className="!py-4" /> : (
@@ -161,7 +205,7 @@ export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
           {visit.nursingNotes.map((n) => (
             <li key={n.id} className="flex gap-3 py-2.5 text-sm">
               <span className="w-32 shrink-0 text-xs tabular-nums text-ink-muted">{fmtDateTime(n.performedAt)}</span>
-              <span className="flex-1"><b>{n.procedure}</b>{n.notes && <span className="text-ink-soft"> — {n.notes}</span>}</span>
+              <span className="flex-1"><b>{n.procedure}</b>{n.notes && <span className="text-ink-soft"> — {n.notes}</span>}{n.service && <span className="ms-2 inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-700"><Receipt className="h-3 w-3" />{t('visit.nursing.onInvoice', { s: n.service.name })}</span>}</span>
               {!readOnly && (
                 <IconButton size="sm" label={t('common.delete')} onClick={async () => (await confirm({ message: t('visit.nursing.deleteConfirm', { name: n.procedure }), danger: true, confirmLabel: t('common.delete') })) && remove.mutate(n.id)}>
                   <Trash2 className="h-4 w-4 text-danger-600" />
@@ -171,6 +215,7 @@ export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
           ))}
         </ul>
       )}
+      {editing && <NursingPresetsDialog onClose={() => setEditing(false)} />}
     </Card>
   );
 }

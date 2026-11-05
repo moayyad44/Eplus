@@ -142,7 +142,7 @@ billingRouter.get(
   }),
 );
 
-/** Suggested lines for a visit: template mandatory items + ordered lab tests (not yet billed). */
+/** Suggested lines for a visit: ordered lab tests and nursing procedures linked to a service (not yet billed). */
 billingRouter.get(
   '/invoices/suggest',
   requirePerm('invoices.create'),
@@ -150,14 +150,20 @@ billingRouter.get(
     const q = parse(z.object({ visitId: z.string().uuid(), templateId: z.string().uuid().optional() }), req.query);
     const visit = await prisma.visit.findUnique({
       where: { id: q.visitId },
-      include: { labOrders: { where: { status: { not: 'CANCELLED' } }, include: { items: { include: { labTest: { include: { service: true } } } } } } },
+      include: {
+        labOrders: { where: { status: { not: 'CANCELLED' } }, include: { items: { include: { labTest: { include: { service: true } } } } } },
+        nursingNotes: { where: { serviceId: { not: null }, service: { isActive: true, deletedAt: null } }, select: { serviceId: true } },
+      },
     });
     if (!visit) throw notFound();
     const billed = await prisma.invoiceItem.findMany({ where: { invoice: { visitId: visit.id, status: { not: 'CANCELLED' } } }, select: { serviceId: true } });
     const billedIds = new Set(billed.map((b) => b.serviceId));
     const labServices = visit.labOrders.flatMap((o) => o.items.map((i) => i.labTest.service).filter(Boolean)) as { id: string }[];
-    const serviceIds = [...new Set(labServices.map((s) => s.id))].filter((id) => !billedIds.has(id));
-    res.json({ patientId: visit.patientId, doctorId: visit.doctorId, alreadyInvoiced: billed.length > 0, items: serviceIds.map((serviceId) => ({ serviceId, quantity: 1 })) });
+    const qty = new Map<string, number>();
+    for (const s of labServices) qty.set(s.id, 1);
+    // Each recorded procedure counts once (two injections → quantity 2).
+    for (const n of visit.nursingNotes) qty.set(n.serviceId!, (qty.get(n.serviceId!) ?? 0) + 1);
+    res.json({ patientId: visit.patientId, doctorId: visit.doctorId, alreadyInvoiced: billed.length > 0, items: [...qty].filter(([id]) => !billedIds.has(id)).map(([serviceId, quantity]) => ({ serviceId, quantity })) });
   }),
 );
 

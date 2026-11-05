@@ -40,6 +40,12 @@ settingsRouter.put(
     if (!(key in settingSchemas)) throw notFound('إعداد غير معروف');
     const current = await getSetting(key);
     const value = (settingSchemas[key] as z.AnyZodObject).parse({ ...current, ...req.body });
+    if (key === 'medical') {
+      const ids = [...new Set((value.nursingProcedures as { serviceId: string | null }[]).map((x) => x.serviceId).filter(Boolean) as string[])];
+      if (ids.length && (await prisma.service.count({ where: { id: { in: ids }, deletedAt: null } })) !== ids.length) throw badRequest('خدمة مرتبطة بأحد الإجراءات غير موجودة');
+      const names = (value.nursingProcedures as { name: string }[]).map((x) => x.name);
+      if (new Set(names).size !== names.length) throw badRequest('اسم إجراء مكرر في القائمة');
+    }
     if (key === 'inventory' && value.saleWarehouseId) {
       const w = await prisma.warehouse.findUnique({ where: { id: value.saleWarehouseId } });
       if (!w?.isActive) throw badRequest('مستودع صرف الفواتير غير موجود أو غير فعّال');

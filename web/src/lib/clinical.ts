@@ -10,7 +10,7 @@ export interface LabResult { id: string; parameterName: string; value: string; u
 export interface LabOrderItem { id: string; testName: string; notes: string | null; results: LabResult[]; labTest?: { code: string; unit: string | null; referenceRange: string | null; parameters: { name: string; unit?: string; referenceRange?: string }[] | null; sampleType: string | null; category: string | null } }
 export interface LabOrder { id: string; orderNumber: string; status: string; priority: string; clinicalNotes: string | null; requestedAt: string; completedAt: string | null; items: LabOrderItem[] }
 export interface Consultation { chiefComplaint: string | null; presentIllness: string | null; examination: string | null; clinicalNotes: string | null; treatmentPlan: string | null; followUpDate: string | null }
-export interface NursingNote { id: string; procedure: string; notes: string | null; performedAt: string }
+export interface NursingNote { id: string; procedure: string; notes: string | null; performedAt: string; serviceId?: string | null; service?: { id: string; name: string } | null }
 export interface ReportFields { complaint: string; since: string; given: string; advised: string; diagnosis: string }
 export interface MedicalReport { id: string; title: string; content?: string; fields?: ReportFields | null; createdAt: string }
 

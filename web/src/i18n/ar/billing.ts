@@ -4,7 +4,7 @@ export default {
     template: 'نموذج الفاتورة', templateHint: 'جميع النماذج تستخدم نفس الترقيم التسلسلي', visit: 'الزيارة', service: 'المادة / الخدمة', addItem: 'إضافة مادة',
     itemSearch: 'ابحث عن مادة بالاسم أو الرمز', mandatory: 'إجبارية', unitPrice: 'سعر الوحدة', lineTotal: 'المجموع', invoiceDiscount: 'خصم على الفاتورة',
     itemsDiscount: 'خصم البنود', total: 'الإجمالي', saveDraft: 'حفظ كمسودة', issue: 'إصدار الفاتورة', issueAndPay: 'إصدار وتسجيل الدفع', payNow: 'الدفع الآن',
-    leaveUnpaid: 'ترحيل كذمة (غير مدفوعة)', noItems: 'لم تتم إضافة مواد بعد', issued: 'تم إصدار الفاتورة {{number}}', suggestedLoaded: 'تمت إضافة التحاليل المطلوبة في الزيارة',
+    leaveUnpaid: 'ترحيل كذمة (غير مدفوعة)', noItems: 'لم تتم إضافة مواد بعد', issued: 'تم إصدار الفاتورة {{number}}', suggestedLoaded: 'تمت إضافة التحاليل والإجراءات المسجلة في الزيارة — راجعها قبل الإصدار',
     alreadyInvoiced: 'لهذه الزيارة فاتورة سابقة', dueDate: 'تاريخ الاستحقاق', issuedAt: 'تاريخ الإصدار', invoiceDate: 'تاريخ الفاتورة',
     invoiceDateLocked: 'تاريخ اليوم — تحديد تاريخ سابق يحتاج صلاحية من المدير',
     paidAtLabel: 'تاريخ القبض',

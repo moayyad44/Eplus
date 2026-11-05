@@ -31,6 +31,9 @@ export const settingSchemas = {
     prescriptionFooter: z.string().max(500).default(''),
     /** Doctor name printed at the end of every medical report form, whoever wrote it. */
     reportDoctorName: z.string().max(120).default('Dr. Mus\u2019ab Odeh'),
+    /** Quick nursing procedures shown in the visit; a linked service is added to the visit's invoice. */
+    nursingProcedures: z.array(z.object({ name: z.string().trim().min(2).max(100), serviceId: z.string().uuid().nullable().default(null) })).max(60)
+      .default(['حقنة عضل', 'حقنة وريد', 'تركيب كانيولا', 'تركيب محلول وريدي', 'جلسة بخار', 'غيار جرح', 'قياس سكر', 'تخطيط قلب ECG', 'سحب عينة دم'].map((name) => ({ name, serviceId: null }))),
   }),
   /** EmergencyPlus Accounting */
   accounting: z.object({

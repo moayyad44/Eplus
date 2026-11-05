@@ -354,6 +354,8 @@ model Service {
   authorizations InsuranceAuthorization[]
   claimItems     InsuranceClaimItem[]
 
+  nursingNotes NursingNote[]
+
   @@index([category, isActive])
   @@index([inventoryItemId])
   @@map("services")
@@ -578,13 +580,17 @@ model NursingNote {
   id            String   @id @default(uuid())
   visitId       String
   procedure     String
+  /// Service billed for this procedure (added to the visit's invoice); null = record only.
+  serviceId     String?
   notes         String?
   performedById String?
   performedAt   DateTime @default(now())
 
-  visit Visit @relation(fields: [visitId], references: [id])
+  visit   Visit    @relation(fields: [visitId], references: [id])
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
   @@index([visitId])
+  @@index([serviceId])
   @@map("nursing_notes")
 }
 

@@ -8,6 +8,7 @@ import { audit } from '../../lib/audit';
 import { badRequest, notFound } from '../../lib/errors';
 import { requirePerm } from '../../middleware/auth';
 import { ageFrom } from '../../lib/dates';
+import { getSetting } from '../../lib/settings';
 
 export const clinicalRouter = Router();
 
@@ -62,14 +63,25 @@ clinicalRouter.post(
   '/visits/:id/nursing-notes',
   requirePerm('nursing.record'),
   ah(async (req, res) => {
-    const body = parse(z.object({ procedure: z.string().trim().min(2).max(200), notes: nullableStr(2000) }), req.body);
-    const row = await prisma.$transaction(async (tx) => {
+    // One procedure ({ procedure }) or several picked together ({ procedures: [...] }), recorded in one go.
+    const one = z.object({ procedure: z.string().trim().min(2).max(200), serviceId: z.string().uuid().nullable().optional() });
+    const body = parse(z.object({ procedure: z.string().optional(), serviceId: z.string().uuid().nullable().optional(), procedures: z.array(one).min(1).max(30).optional(), notes: nullableStr(2000) }), req.body);
+    const list = body.procedures ?? [parse(one, { procedure: body.procedure, serviceId: body.serviceId })];
+    const { nursingProcedures } = await getSetting('medical');
+    const rows = await prisma.$transaction(async (tx) => {
       const v = await loadVisit(tx, req.params.id);
-      const created = await tx.nursingNote.create({ data: { ...body, visitId: v.id, performedById: req.ctx.userId } });
-      await audit(tx, req.ctx, { action: 'nursing_note.create', entityType: 'visit', entityId: v.id, summary: body.procedure, after: created });
-      return created;
+      const out = [];
+      for (const p of list) {
+        // A name from the configured list brings its service (so it reaches the invoice) unless one was given.
+        const serviceId = p.serviceId !== undefined ? p.serviceId : nursingProcedures.find((x) => x.name === p.procedure)?.serviceId ?? null;
+        if (serviceId && !(await tx.service.findFirst({ where: { id: serviceId, isActive: true, deletedAt: null } }))) throw badRequest(`الخدمة المرتبطة بـ«${p.procedure}» غير متاحة`);
+        const created = await tx.nursingNote.create({ data: { procedure: p.procedure, serviceId, notes: body.notes ?? null, visitId: v.id, performedById: req.ctx.userId } });
+        await audit(tx, req.ctx, { action: 'nursing_note.create', entityType: 'visit', entityId: v.id, summary: p.procedure, after: created });
+        out.push(created);
+      }
+      return out;
     });
-    res.status(201).json(row);
+    res.status(201).json(body.procedures ? rows : rows[0]);
   }),
 );
 

@@ -87,8 +87,10 @@ export default function InvoiceEditor() {
     const def = templates.data.find((x) => x.isDefault) ?? templates.data[0];
     setTemplateId(def?.id ?? '');
     const base = templateLines(def);
-    const extra = (suggest.data?.items ?? []).map((i) => svcById.get(i.serviceId)).filter(Boolean).map((s) => toLine(s!));
-    setLines([...base, ...extra.filter((e) => !base.some((b) => b.serviceId === e.serviceId))]);
+    // Suggested lines (lab tests, nursing procedures) keep their count; a line already in the template takes the larger quantity.
+    const extra = (suggest.data?.items ?? []).filter((i) => svcById.has(i.serviceId)).map((i) => toLine(svcById.get(i.serviceId)!, i.quantity));
+    const merged = base.map((b) => { const e = extra.find((x) => x.serviceId === b.serviceId); return e && num(e.quantity) > num(b.quantity) ? { ...b, quantity: e.quantity } : b; });
+    setLines([...merged, ...extra.filter((e) => !base.some((b) => b.serviceId === e.serviceId))]);
     if (extra.length) toast.info(t('billing.suggestedLoaded'));
     if (visit.data) {
       setPatient(visit.data.patient);
