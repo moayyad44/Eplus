@@ -41,6 +41,11 @@ export async function accountBalances(from: Date, to: Date): Promise<BalanceRow[
     const s = sums.find((x) => x.accountId === a.id);
     raw.set(a.id, { net0: D(PL.has(a.type) ? s?.before_year : s?.before_all), dr: D(s?.debit), cr: D(s?.credit) });
   }
+  // Revenues and expenses of earlier years start each year at zero; a result not (yet) closed by a closing entry
+  // belongs to retained earnings, so the opening balances stay balanced.
+  const carried = accounts.filter((a) => PL.has(a.type)).reduce((t, a) => { const s = sums.find((x) => x.accountId === a.id); return t.add(D(s?.before_all).sub(D(s?.before_year))); }, D(0));
+  const re = accounts.find((a) => a.systemKey === 'RETAINED_EARNINGS');
+  if (re && !carried.eq(0)) raw.get(re.id)!.net0 = raw.get(re.id)!.net0.add(carried);
   // Roll leaf amounts up to every ancestor (debit-positive), then express each row on its own natural side.
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const agg = new Map(accounts.map((a) => [a.id, { net0: D(0), dr: D(0), cr: D(0) }]));

@@ -118,5 +118,10 @@ describe('reports, dashboard, export and year closing', () => {
     expect((await admin.post(`/api/accounting/fiscal-years/${fy.body.id}/reopen`, {})).status).toBe(400);
     expect((await admin.post(`/api/accounting/fiscal-years/${fy.body.id}/reopen`, { reason: 'تصحيح قيد' })).status).toBe(200);
     expect((await entryOf(`year-close:${fy.body.id}`))!.status).toBe('DELETED');
+    // The next year still opens balanced: the unclosed result is carried in retained earnings.
+    const next = await admin.get(`/api/accounting/reports/trial-balance?from=${OLD + 1}-01-01&to=${OLD + 1}-12-31`);
+    expect(next.body.balanced, JSON.stringify(next.body.totals)).toBe(true);
+    const re = next.body.rows.find((r: { id: string }) => r.id === acc.RETAINED_EARNINGS);
+    expect(re.openingCredit).toBe(300);
   });
 });

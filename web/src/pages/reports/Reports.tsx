@@ -6,13 +6,15 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { exportCsv } from '@/lib/export';
 import { fmtDate, fmtDateTime, fmtDay, money, num, qty } from '@/lib/format';
-import { Badge, Button, Card, CardHeader, DataTable, DateRangePicker, EmptyState, ErrorState, PageHeader, PageLoader, SearchInput, Select, StatCard, Tabs, presetRange, type Range } from '@/components/ui';
+import clsx from 'clsx';
+import { Badge, Button, Card, CardHeader, DataTable, DateRangePicker, EmptyState, ErrorState, PageHeader, PageLoader, SearchInput, Select, StatCard, presetRange, type Range } from '@/components/ui';
+import { AppointmentsReport, CollectionsReport, ControlReport, ExpensesReport, LabReport, OperationsReport, ReceivablesReport, ServicesReport } from './ReportsExtra';
 import { BarsChart, ShareBars } from '@/components/shared/charts';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useDoctors } from '@/components/shared/VisitQueueForm';
 import { InsuranceFigures, type FinanceSummary } from '../billing/Cashier';
 
-type Tab = 'patients' | 'doctors' | 'financial' | 'lab-costs' | 'inventory' | 'attendance';
+type Tab = 'patients' | 'doctors' | 'financial' | 'lab-costs' | 'inventory' | 'attendance' | 'services' | 'collections' | 'receivables' | 'control' | 'appointments' | 'operations' | 'lab' | 'expenses';
 
 function useReport<T>(name: Tab, params: Record<string, string | undefined>, enabled: boolean) {
   return useQuery({ queryKey: ['report', name, params], queryFn: () => api.get<T>(`/reports/${name}`, params), enabled });
@@ -34,15 +36,13 @@ function Toolbar({ onExport, children }: { onExport?: () => void; children?: Rea
 export default function Reports() {
   const { t } = useTranslation();
   const { can, me } = useAuth();
-  const tabs = [
-    { key: 'patients' as Tab, label: t('reports.tabs.patients'), hidden: !can('reports.patients') },
-    { key: 'doctors' as Tab, label: t('reports.tabs.doctors'), hidden: !can('reports.doctors') },
-    { key: 'financial' as Tab, label: t('reports.tabs.financial'), hidden: !can('reports.financial') },
-    { key: 'lab-costs' as Tab, label: t('reports.tabs.lab-costs'), hidden: !can('reports.financial') },
-    { key: 'inventory' as Tab, label: t('reports.tabs.inventory'), hidden: !can('reports.inventory') },
-    { key: 'attendance' as Tab, label: t('reports.tabs.attendance'), hidden: !can('reports.attendance') },
+  const groups: { label: string; items: { key: Tab; perm: string }[] }[] = [
+    { label: t('rx.groups.clinical'), items: [{ key: 'patients', perm: 'reports.patients' }, { key: 'doctors', perm: 'reports.doctors' }, { key: 'appointments', perm: 'reports.patients' }, { key: 'operations', perm: 'reports.patients' }, { key: 'lab', perm: 'reports.patients' }] },
+    { label: t('rx.groups.financial'), items: [{ key: 'financial', perm: 'reports.financial' }, { key: 'services', perm: 'reports.financial' }, { key: 'collections', perm: 'reports.financial' }, { key: 'receivables', perm: 'reports.financial' }, { key: 'expenses', perm: 'reports.financial' }, { key: 'control', perm: 'reports.financial' }, { key: 'lab-costs', perm: 'reports.financial' }] },
+    { label: t('rx.groups.other'), items: [{ key: 'inventory', perm: 'reports.inventory' }, { key: 'attendance', perm: 'reports.attendance' }] },
   ];
-  const [tab, setTab] = useState<Tab>(tabs.find((x) => !x.hidden)!.key);
+  const visible = groups.map((g) => ({ ...g, items: g.items.filter((i) => can(i.perm as never)) })).filter((g) => g.items.length);
+  const [tab, setTab] = useState<Tab>(visible[0]?.items[0]?.key ?? 'patients');
   const [range, setRange] = useState<Range>(presetRange('month'));
   return (
     <div>
@@ -51,14 +51,32 @@ export default function Reports() {
         <h1 className="text-xl font-bold">{me?.clinic.name} — {t(`reports.tabs.${tab}`)}</h1>
         <p className="text-sm">{t('common.from')} {range.from} {t('common.to')} {range.to} · {t('common.generatedAt')}: {fmtDateTime(new Date())} · {t('common.printedBy')}: {me?.user.fullName}</p>
       </div>
-      <Tabs items={tabs} value={tab} onChange={setTab} className="mb-4" />
-      <div className="mb-4"><DateRangePicker value={range} onChange={setRange} /></div>
+      <div className="mb-4 space-y-2 print:hidden">
+        {visible.map((g) => (
+          <div key={g.label} className="flex flex-wrap items-center gap-1.5">
+            <span className="w-28 shrink-0 text-xs font-bold text-ink-muted">{g.label}</span>
+            {g.items.map((i) => (
+              <button key={i.key} type="button" onClick={() => setTab(i.key)} aria-pressed={tab === i.key}
+                className={clsx('rounded-full border px-3 py-1.5 text-sm font-semibold', tab === i.key ? 'border-primary-600 bg-primary-600 text-white' : 'border-line-strong bg-white text-ink-soft hover:bg-surface-subtle')}>{t(`reports.tabs.${i.key}`)}</button>
+            ))}
+          </div>
+        ))}
+      </div>
+      {tab !== 'receivables' && <div className="mb-4"><DateRangePicker value={range} onChange={setRange} /></div>}
       {tab === 'patients' && <PatientsReport range={range} />}
       {tab === 'doctors' && <DoctorsReport range={range} />}
       {tab === 'financial' && <FinancialReport range={range} />}
       {tab === 'lab-costs' && <LabCostsReport range={range} />}
       {tab === 'inventory' && <InventoryReport range={range} />}
       {tab === 'attendance' && <AttendanceReport range={range} />}
+      {tab === 'services' && <ServicesReport range={range} />}
+      {tab === 'collections' && <CollectionsReport range={range} />}
+      {tab === 'receivables' && <ReceivablesReport />}
+      {tab === 'control' && <ControlReport range={range} />}
+      {tab === 'appointments' && <AppointmentsReport range={range} />}
+      {tab === 'operations' && <OperationsReport range={range} />}
+      {tab === 'lab' && <LabReport range={range} />}
+      {tab === 'expenses' && <ExpensesReport range={range} />}
     </div>
   );
 }

@@ -9,8 +9,10 @@ import { addDays, ageFrom, dateOnly, rangeFromQuery, ymd } from '../../lib/dates
 import { num } from '../../lib/money';
 import { getSetting } from '../../lib/settings';
 import { financialSummary } from '../billing/cashier';
+import { extraReportsRouter } from './extra';
 
 export const reportsRouter = Router();
+reportsRouter.use(extraReportsRouter);
 
 const rangeQuery = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

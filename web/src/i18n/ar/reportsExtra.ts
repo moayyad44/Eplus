@@ -1,0 +1,22 @@
+/** Labels of the additional clinic reports. */
+export default {
+  rx: {
+    groups: { clinical: 'المرضى والتشغيل', financial: 'المالية', other: 'أخرى' },
+    code: 'الرمز', service: 'الخدمة', category: 'التصنيف', qty: 'العدد', invoices: 'فاتورة', gross: 'قبل الخصم', net: 'صافي الإيراد', insuranceShare: 'حصة التأمين', patientShare: 'حصة المريض',
+    avgPrice: 'متوسط السعر', servicesUsed: 'خدمات مستخدمة', byCategory: 'حسب التصنيف', top10: 'أعلى 10 خدمات إيراداً',
+    received: 'المقبوض', refunds: 'المرتجع للمرضى', netCollected: 'صافي التحصيل', voidedPayments: 'دفعات ملغاة', ops: 'عملية', dailyCollection: 'التحصيل اليومي',
+    byDayMethod: 'التحصيل حسب اليوم وطريقة الدفع', byCashier: 'حسب الموظف المستلم', employee: 'الموظف', refundsList: 'المبالغ المرتجعة',
+    byPatient: 'حسب المريض', byInvoice: 'حسب الفاتورة', totalUnpaid: 'إجمالي غير المدفوع', b0_30: 'حتى 30 يوم', b31_60: '31 – 60 يوم', b61_90: '61 – 90 يوم', b90: 'أكثر من 90 يوم',
+    receivablesHint: 'الفواتير الصادرة التي عليها رصيد حتى اليوم — للمتابعة مع المرضى. أرقام الهواتف للتواصل.', oldest: 'أقدم فاتورة', day: 'يوم', days: 'عمر الفاتورة (يوم)',
+    controlHint: 'للرقابة الداخلية: كل إلغاء وخصم وتعديل تاريخ مع اسم من قام به وسببه.', cancelledInvoices: 'فواتير ملغاة', discounts: 'الخصومات', backdated: 'فواتير بتاريخ سابق',
+    backdatedHint: 'فواتير سُجّلت بتاريخ أقدم من يوم إدخالها', discountsByUser: 'الخصومات حسب الموظف', cancelledAt: 'وقت الإلغاء', cancelledBy: 'ألغاها', createdBy: 'أنشأها', reason: 'السبب',
+    receipt: 'الإيصال', voidedBy: 'ألغاها', receivedBy: 'استلمها', invoiceDate: 'تاريخ الفاتورة', recordedAt: 'وقت الإدخال',
+    booked: 'المواعيد المحجوزة', attended: 'حضر', noShow: 'لم يحضر', cancelled: 'ملغاة', attendanceRate: 'نسبة الحضور', noShowRate: 'نسبة عدم الحضور', apptByDay: 'المواعيد حسب اليوم', byStatus: 'حسب الحالة',
+    toCall: 'متوسط الانتظار حتى الاستدعاء', toDoctor: 'متوسط الانتظار حتى الطبيب', withDoctor: 'متوسط مدة الكشف', totalStay: 'متوسط مدة الزيارة كاملة',
+    byHour: 'الزيارات حسب ساعة الوصول', byWeekday: 'الزيارات حسب أيام الأسبوع', heat: 'خريطة الازدحام', heatHint: 'عدد المرضى الواصلين لكل يوم وساعة — لتوزيع الكادر', waitByDoctor: 'الانتظار والكشف حسب الطبيب',
+    dow: { 0: 'الأحد', 1: 'الإثنين', 2: 'الثلاثاء', 3: 'الأربعاء', 4: 'الخميس', 5: 'الجمعة', 6: 'السبت' },
+    labOrders: 'طلبات المختبر', tests: 'فحوصات', pending: 'قيد الانتظار', tat: 'متوسط زمن النتيجة', hours: 'ساعة', median: 'الوسيط', max: 'الأطول', urgent: 'طلبات مستعجلة', critical: 'نتائج حرجة',
+    topTests: 'أكثر الفحوصات طلباً', test: 'الفحص', count: 'العدد', abnormal: 'نتائج غير طبيعية', labByDoctor: 'الفحوصات حسب الطبيب',
+    totalExpenses: 'إجمالي المصروفات', biggestCategory: 'أكبر بند', monthlyAvg: 'المتوسط الشهري', byMethod: 'حسب طريقة الدفع', byMonth: 'حسب الشهر', description: 'الوصف', method: 'طريقة الدفع', supplier: 'المورد', reference: 'المرجع',
+  },
+};
