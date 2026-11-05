@@ -166,7 +166,7 @@ visitsRouter.get(
         authorizations: { orderBy: { requestedAt: 'desc' }, include: { service: { select: { name: true } } } },
         ...(medical && {
           vitalSigns: { orderBy: { recordedAt: 'desc' } },
-          nursingNotes: { orderBy: { performedAt: 'desc' }, include: { service: { select: { id: true, name: true } } } },
+          nursingNotes: { orderBy: { performedAt: 'desc' }, include: { services: { include: { service: { select: { id: true, name: true } } } } } },
           consultation: true,
           diagnoses: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
           prescriptions: { include: { items: { orderBy: { sortOrder: 'asc' } } }, orderBy: { createdAt: 'desc' } },

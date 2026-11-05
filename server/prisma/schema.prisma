@@ -354,7 +354,7 @@ model Service {
   authorizations InsuranceAuthorization[]
   claimItems     InsuranceClaimItem[]
 
-  nursingNotes NursingNote[]
+  nursingNoteServices NursingNoteService[]
 
   @@index([category, isActive])
   @@index([inventoryItemId])
@@ -580,18 +580,30 @@ model NursingNote {
   id            String   @id @default(uuid())
   visitId       String
   procedure     String
-  /// Service billed for this procedure (added to the visit's invoice); null = record only.
-  serviceId     String?
   notes         String?
   performedById String?
   performedAt   DateTime @default(now())
 
-  visit   Visit    @relation(fields: [visitId], references: [id])
-  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  visit    Visit                @relation(fields: [visitId], references: [id])
+  services NursingNoteService[]
 
   @@index([visitId])
-  @@index([serviceId])
   @@map("nursing_notes")
+}
+
+/// Services billed for a nursing procedure (added to the visit's invoice); none = record only.
+model NursingNoteService {
+  id        String  @id @default(uuid())
+  noteId    String
+  serviceId String
+  quantity  Decimal @default(1) @db.Decimal(10, 2)
+
+  note    NursingNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  service Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@index([noteId])
+  @@index([serviceId])
+  @@map("nursing_note_services")
 }
 
 // ───────────────────────────── Clinical ─────────────────────────────

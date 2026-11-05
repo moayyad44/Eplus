@@ -64,18 +64,22 @@ clinicalRouter.post(
   requirePerm('nursing.record'),
   ah(async (req, res) => {
     // One procedure ({ procedure }) or several picked together ({ procedures: [...] }), recorded in one go.
-    const one = z.object({ procedure: z.string().trim().min(2).max(200), serviceId: z.string().uuid().nullable().optional() });
-    const body = parse(z.object({ procedure: z.string().optional(), serviceId: z.string().uuid().nullable().optional(), procedures: z.array(one).min(1).max(30).optional(), notes: nullableStr(2000) }), req.body);
-    const list = body.procedures ?? [parse(one, { procedure: body.procedure, serviceId: body.serviceId })];
+    const svc = z.array(z.object({ serviceId: z.string().uuid(), quantity: z.coerce.number().positive().max(100).default(1) })).max(15);
+    const one = z.object({ procedure: z.string().trim().min(2).max(200), services: svc.optional() });
+    const body = parse(z.object({ procedure: z.string().optional(), services: svc.optional(), procedures: z.array(one).min(1).max(30).optional(), notes: nullableStr(2000) }), req.body);
+    const list = body.procedures ?? [parse(one, { procedure: body.procedure, services: body.services })];
     const { nursingProcedures } = await getSetting('medical');
     const rows = await prisma.$transaction(async (tx) => {
       const v = await loadVisit(tx, req.params.id);
       const out = [];
       for (const p of list) {
-        // A name from the configured list brings its service (so it reaches the invoice) unless one was given.
-        const serviceId = p.serviceId !== undefined ? p.serviceId : nursingProcedures.find((x) => x.name === p.procedure)?.serviceId ?? null;
-        if (serviceId && !(await tx.service.findFirst({ where: { id: serviceId, isActive: true, deletedAt: null } }))) throw badRequest(`الخدمة المرتبطة بـ«${p.procedure}» غير متاحة`);
-        const created = await tx.nursingNote.create({ data: { procedure: p.procedure, serviceId, notes: body.notes ?? null, visitId: v.id, performedById: req.ctx.userId } });
+        // A name from the configured list brings its services (so they reach the invoice) unless others were given.
+        const services = p.services ?? nursingProcedures.find((x) => x.name === p.procedure)?.services ?? [];
+        for (const s of services) if (!(await tx.service.findFirst({ where: { id: s.serviceId, isActive: true, deletedAt: null } }))) throw badRequest(`إحدى الخدمات المرتبطة بـ«${p.procedure}» غير متاحة`);
+        const created = await tx.nursingNote.create({
+          data: { procedure: p.procedure, notes: body.notes ?? null, visitId: v.id, performedById: req.ctx.userId, services: { create: services.map((s) => ({ serviceId: s.serviceId, quantity: s.quantity })) } },
+          include: { services: { include: { service: { select: { id: true, name: true } } } } },
+        });
         await audit(tx, req.ctx, { action: 'nursing_note.create', entityType: 'visit', entityId: v.id, summary: p.procedure, after: created });
         out.push(created);
       }

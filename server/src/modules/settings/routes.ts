@@ -41,7 +41,7 @@ settingsRouter.put(
     const current = await getSetting(key);
     const value = (settingSchemas[key] as z.AnyZodObject).parse({ ...current, ...req.body });
     if (key === 'medical') {
-      const ids = [...new Set((value.nursingProcedures as { serviceId: string | null }[]).map((x) => x.serviceId).filter(Boolean) as string[])];
+      const ids = [...new Set((value.nursingProcedures as { services: { serviceId: string }[] }[]).flatMap((x) => x.services.map((y) => y.serviceId)))];
       if (ids.length && (await prisma.service.count({ where: { id: { in: ids }, deletedAt: null } })) !== ids.length) throw badRequest('خدمة مرتبطة بأحد الإجراءات غير موجودة');
       const names = (value.nursingProcedures as { name: string }[]).map((x) => x.name);
       if (new Set(names).size !== names.length) throw badRequest('اسم إجراء مكرر في القائمة');
