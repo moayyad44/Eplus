@@ -11,8 +11,10 @@ import { nextCounter, pad } from '../../lib/counters';
 import { notifyPermission, notifyUsers } from '../../lib/notify';
 import { ageFrom, rangeFromQuery } from '../../lib/dates';
 import { can } from '../../auth/context';
+import { labFileRouter } from './readFile';
 
 export const labRouter = Router();
+labRouter.use(labFileRouter);
 
 const orderInclude = {
   patient: { select: { id: true, fullName: true, fileNumber: true, phone: true, gender: true, dateOfBirth: true } },

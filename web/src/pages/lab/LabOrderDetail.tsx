@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, Printer, TestTube2, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileUp, Plus, Printer, TestTube2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -18,6 +18,12 @@ interface Detail extends LabOrder {
   doctor: { id: string; fullName: string }; visit: { id: string; visitNumber: string } | null; collectedAt: string | null; cancelReason: string | null; updatedAt: string;
 }
 type ResultRow = { parameterName: string; value: string; unit: string; referenceRange: string; flag: string; notes: string };
+interface FileResult { parameterName: string; value: string; unit: string | null; referenceRange: string | null; flag: string | null; notes: string | null }
+interface ReadFile {
+  header: { patientName: string | null; fileNo: string | null; sampleDate: string | null }; patientCheck: 'match' | 'mismatch' | 'unknown'; orderPatient: string; found: number;
+  items: { itemId: string; results: FileResult[] }[]; unassigned: { name: string; short: string; value: string; unit: string; referenceRange: string; flag: string | null; notes: string | null }[]; missing: string[];
+}
+const toRow = (r: FileResult): ResultRow => ({ parameterName: r.parameterName, value: r.value, unit: r.unit ?? '', referenceRange: r.referenceRange ?? '', flag: r.flag ?? '', notes: r.notes ?? '' });
 
 /** Suggests a flag by comparing a numeric value with a simple "a-b", "< x" or "> x" range. */
 function autoFlag(value: string, range: string): string {
@@ -39,6 +45,36 @@ export default function LabOrderDetail() {
   const confirm = useConfirm();
   const q = useQuery({ queryKey: ['lab', id], queryFn: () => api.get<Detail>(`/lab/orders/${id}`) });
   const [rows, setRows] = useState<Record<string, ResultRow[]>>({});
+  const qc = useQueryClient();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [reading, setReading] = useState(false);
+  const [read, setRead] = useState<ReadFile | null>(null);
+  const [assignTo, setAssignTo] = useState<Record<number, string>>({});
+
+  /** Reads the lab's PDF, fills the boxes for review (nothing is saved) and keeps the file with the order's attachments. */
+  const readFile = async (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    setReading(true);
+    try {
+      const r = await api.upload<ReadFile>(`/lab/orders/${id}/read-file`, fd);
+      if (r.patientCheck === 'mismatch' && !(await confirm({ danger: true, message: t('lab.file.otherPatient', { file: r.header.patientName, order: r.orderPatient }), confirmLabel: t('lab.file.fillAnyway') }))) return;
+      const filled = Object.values(rows).some((rs) => rs.some((x) => x.value.trim()));
+      if (filled && r.items.length && !(await confirm({ message: t('lab.file.replace'), confirmLabel: t('lab.file.replaceOk') }))) return;
+      setRows((cur) => { const next = { ...cur }; for (const it of r.items) next[it.itemId] = it.results.map(toRow); return next; });
+      setRead(r);
+      setAssignTo({});
+      toast.success(t('lab.file.done', { n: r.items.reduce((s2, i) => s2 + i.results.length, 0) }));
+      const att = new FormData();
+      att.append('file', file); att.append('category', 'LAB_RESULT'); att.append('labOrderId', id!);
+      await api.upload('/attachments', att).then(() => qc.invalidateQueries({ queryKey: ['attachments'] })).catch(() => toast.warning(t('lab.file.notAttached')));
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setReading(false);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  };
 
   const initKey = q.data ? `${q.data.id}:${q.data.updatedAt}` : '';
   useEffect(() => {
@@ -92,6 +128,44 @@ export default function LabOrderDetail() {
           </>
         }
       />
+      {editable && (
+        <Card className="mb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])} />
+            <Button icon={<FileUp className="h-4 w-4" />} loading={reading} onClick={() => fileInput.current?.click()}>{t('lab.file.read')}</Button>
+            <p className="text-xs text-ink-muted">{t('lab.file.hint')}</p>
+          </div>
+          {read && (
+            <div className="mt-3 space-y-2 border-t border-line pt-3 text-sm">
+              <p className={read.patientCheck === 'mismatch' ? 'flex items-center gap-2 font-semibold text-danger-700' : 'flex items-center gap-2 text-success-700'}>
+                {read.patientCheck === 'mismatch' ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                {t('lab.file.patient', { name: read.header.patientName ?? '—', file: read.header.fileNo ?? '—', date: read.header.sampleDate ?? '—' })}
+              </p>
+              <p>{t('lab.file.summary', { tests: read.items.length, n: read.items.reduce((s2, i) => s2 + i.results.length, 0), found: read.found })} <b className="text-warning-700">{t('lab.file.review')}</b></p>
+              {read.missing.length > 0 && <p className="text-warning-700">{t('lab.file.missing')}: <b>{read.missing.join('، ')}</b></p>}
+              {read.unassigned.length > 0 && (
+                <details className="rounded-xl bg-surface-subtle p-2.5">
+                  <summary className="cursor-pointer text-xs font-semibold">{t('lab.file.unassigned', { n: read.unassigned.length })} <span className="text-primary-700">{t('lab.file.show')}</span></summary>
+                  <ul className="mt-2 space-y-1.5">{read.unassigned.map((u, i) => (
+                    <li key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                      <span dir="ltr" className="font-semibold">{u.name}</span><span dir="ltr">{u.value} {u.unit}</span>
+                      <Select className="!h-8 w-48 text-xs" value={assignTo[i] ?? ''} onChange={(e) => setAssignTo({ ...assignTo, [i]: e.target.value })}>
+                        <option value="">{t('lab.file.addTo')}</option>{o.items.map((it) => <option key={it.id} value={it.id}>{it.testName}</option>)}
+                      </Select>
+                      <Button size="sm" variant="outline" disabled={!assignTo[i]} onClick={() => {
+                        const target = assignTo[i];
+                        setRows((cur) => ({ ...cur, [target]: [...(cur[target] ?? []).filter((x) => x.value.trim() || x.parameterName.trim()), toRow({ parameterName: u.short, value: u.value, unit: u.unit, referenceRange: u.referenceRange.slice(0, 120), flag: u.flag, notes: u.notes })] }));
+                        setRead({ ...read, unassigned: read.unassigned.filter((_, j) => j !== i) });
+                        setAssignTo({});
+                      }}>{t('lab.file.add')}</Button>
+                    </li>
+                  ))}</ul>
+                </details>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
       <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
         <div className="space-y-4">
           {o.items.map((it) => (
