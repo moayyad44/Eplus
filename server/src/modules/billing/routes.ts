@@ -156,14 +156,17 @@ billingRouter.get(
       },
     });
     if (!visit) throw notFound();
-    const billed = await prisma.invoiceItem.findMany({ where: { invoice: { visitId: visit.id, status: { not: 'CANCELLED' } } }, select: { serviceId: true } });
-    const billedIds = new Set(billed.map((b) => b.serviceId));
+    // What the visit needs, minus what its invoices (not cancelled) already bill — by quantity, so a procedure
+    // recorded after the first invoice (a second injection) is still suggested for the next one.
+    const billed = await prisma.invoiceItem.groupBy({ by: ['serviceId'], where: { invoice: { visitId: visit.id, status: { not: 'CANCELLED' } } }, _sum: { quantity: true } });
+    const billedQty = new Map(billed.map((b) => [b.serviceId, Number(b._sum.quantity ?? 0)]));
     const labServices = visit.labOrders.flatMap((o) => o.items.map((i) => i.labTest.service).filter(Boolean)) as { id: string }[];
     const qty = new Map<string, number>();
     for (const s of labServices) qty.set(s.id, 1);
     // Every recorded procedure adds its services with their quantities (two injections → quantity 2).
     for (const s of visit.nursingNotes.flatMap((n) => n.services)) qty.set(s.serviceId, (qty.get(s.serviceId) ?? 0) + Number(s.quantity));
-    res.json({ patientId: visit.patientId, doctorId: visit.doctorId, alreadyInvoiced: billed.length > 0, items: [...qty].filter(([id]) => !billedIds.has(id)).map(([serviceId, quantity]) => ({ serviceId, quantity })) });
+    const items = [...qty].map(([serviceId, q]) => ({ serviceId, quantity: Math.round((q - (billedQty.get(serviceId) ?? 0)) * 100) / 100 })).filter((i) => i.quantity > 0);
+    res.json({ patientId: visit.patientId, doctorId: visit.doctorId, alreadyInvoiced: billed.length > 0, items });
   }),
 );
 

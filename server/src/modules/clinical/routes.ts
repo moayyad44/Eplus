@@ -89,6 +89,35 @@ clinicalRouter.post(
   }),
 );
 
+/**
+ * A procedure keeps the services it had when it was recorded. If the list of procedures changed afterwards
+ * (a service linked or removed), this applies the current list to it. Billing compares by quantity, so a
+ * service added here is suggested for the visit's next invoice even if an earlier one was issued.
+ */
+clinicalRouter.post(
+  '/nursing-notes/:id/sync-services',
+  requirePerm('nursing.record'),
+  ah(async (req, res) => {
+    const { nursingProcedures } = await getSetting('medical');
+    const row = await prisma.$transaction(async (tx) => {
+      const n = await tx.nursingNote.findUnique({ where: { id: req.params.id }, include: { services: true } });
+      if (!n) throw notFound();
+      const v = await loadVisit(tx, n.visitId);
+      const preset = nursingProcedures.find((x) => x.name === n.procedure);
+      if (!preset) throw badRequest('هذا الإجراء غير موجود في قائمة الإجراءات');
+      for (const s of preset.services) if (!(await tx.service.findFirst({ where: { id: s.serviceId, isActive: true, deletedAt: null } }))) throw badRequest(`إحدى الخدمات المرتبطة بـ«${n.procedure}» غير متاحة`);
+      await tx.nursingNoteService.deleteMany({ where: { noteId: n.id } });
+      const updated = await tx.nursingNote.update({
+        where: { id: n.id }, data: { services: { create: preset.services.map((s) => ({ serviceId: s.serviceId, quantity: s.quantity })) } },
+        include: { services: { include: { service: { select: { id: true, name: true } } } } },
+      });
+      await audit(tx, req.ctx, { action: 'nursing_note.sync_services', entityType: 'visit', entityId: v.id, summary: `تحديث خدمات «${n.procedure}» حسب القائمة`, before: n.services, after: updated.services });
+      return updated;
+    });
+    res.json(row);
+  }),
+);
+
 /** Removes a procedure recorded by mistake (kept in the audit log). */
 clinicalRouter.delete(
   '/nursing-notes/:id',

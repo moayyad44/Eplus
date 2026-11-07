@@ -62,4 +62,45 @@ describe('nursing procedures', () => {
     expect((await admin.post('/api/billing/invoices', { patientId: p.patientId, visitId, templateId, items: s.items })).status).toBe(201);
     expect((await admin.get(`/api/billing/invoices/suggest?visitId=${visitId}`)).body.items).toEqual([]);
   });
+
+  it('a procedure recorded after the invoice is suggested for the next one, by quantity', async () => {
+    // the visit's invoice above billed injection ×2; the nurse now gives a third one
+    expect((await nurse.post(`/api/visits/${visitId}/nursing-notes`, { procedures: [{ procedure: 'حقنة عضل' }] })).status).toBe(201);
+    const s = (await admin.get(`/api/billing/invoices/suggest?visitId=${visitId}`)).body;
+    expect([s.alreadyInvoiced, s.items]).toEqual([true, [{ serviceId: inj.id, quantity: 1 }]]);
+    // saved as a draft: the draft counts as billed …
+    const templateId = (await prisma.invoiceTemplate.findFirstOrThrow({ where: { isDefault: false } })).id;
+    const p = await prisma.visit.findUniqueOrThrow({ where: { id: visitId } });
+    const d = await admin.post('/api/billing/invoices', { patientId: p.patientId, visitId, templateId, items: s.items, issue: false });
+    expect([d.status, d.body.status]).toEqual([201, 'DRAFT']);
+    expect((await admin.get(`/api/billing/invoices/suggest?visitId=${visitId}`)).body.items).toEqual([]);
+    // … and what is recorded after the draft shows up again for it
+    await nurse.post(`/api/visits/${visitId}/nursing-notes`, { procedures: [{ procedure: 'تركيب محلول وريدي' }] });
+    const after = (await admin.get(`/api/billing/invoices/suggest?visitId=${visitId}`)).body.items;
+    expect(after).toEqual(expect.arrayContaining([{ serviceId: cannula.id, quantity: 1 }, { serviceId: fluid.id, quantity: 2 }]));
+    expect(after).toHaveLength(2);
+    // a cancelled invoice no longer counts as billed
+    const inv = await prisma.invoice.findFirstOrThrow({ where: { visitId, status: { not: 'DRAFT' } } });
+    expect((await admin.post(`/api/billing/invoices/${inv.id}/cancel`, { reason: 'إعادة إصدار' })).status).toBe(200);
+    const again = (await admin.get(`/api/billing/invoices/suggest?visitId=${visitId}`)).body.items;
+    expect(again).toEqual(expect.arrayContaining([{ serviceId: inj.id, quantity: 2 }, { serviceId: ecg.id, quantity: 1 }]));
+  });
+
+  it('a procedure recorded before its list changed can take the current services', async () => {
+    const n = (await nurse.post(`/api/visits/${visitId}/nursing-notes`, { procedures: [{ procedure: 'قياس ضغط' }] })).body[0];
+    expect(n.services).toEqual([]);
+    const list = (await admin.get('/api/settings/public')).body.medical.nursingProcedures.map((x: { name: string; services: unknown[] }) => (x.name === 'قياس ضغط' ? { ...x, services: [{ serviceId: ecg.id, quantity: 1 }, { serviceId: fluid.id, quantity: 1 }] } : x));
+    expect((await admin.put('/api/settings/medical', { nursingProcedures: list })).status).toBe(200);
+    const before = (await admin.get(`/api/billing/invoices/suggest?visitId=${visitId}`)).body.items;
+    const r = await nurse.post(`/api/nursing-notes/${n.id}/sync-services`, {});
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(r.body.services.map((x: { serviceId: string }) => x.serviceId).sort()).toEqual([ecg.id, fluid.id].sort());
+    const after = (await admin.get(`/api/billing/invoices/suggest?visitId=${visitId}`)).body.items;
+    const q = (items: { serviceId: string; quantity: number }[], id: string) => items.find((i) => i.serviceId === id)?.quantity ?? 0;
+    expect([q(after, ecg.id) - q(before, ecg.id), q(after, fluid.id) - q(before, fluid.id)]).toEqual([1, 1]);
+    expect((await reception.post(`/api/nursing-notes/${n.id}/sync-services`, {})).status).toBe(403);
+    const free = (await nurse.post(`/api/visits/${visitId}/nursing-notes`, { procedure: 'إجراء خارج القائمة' })).body;
+    expect((await nurse.post(`/api/nursing-notes/${free.id}/sync-services`, {})).status).toBe(400);
+  });
 });
+

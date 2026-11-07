@@ -5,7 +5,7 @@ export default {
     itemSearch: 'ابحث عن مادة بالاسم أو الرمز', mandatory: 'إجبارية', unitPrice: 'سعر الوحدة', lineTotal: 'المجموع', invoiceDiscount: 'خصم على الفاتورة',
     itemsDiscount: 'خصم البنود', total: 'الإجمالي', saveDraft: 'حفظ كمسودة', issue: 'إصدار الفاتورة', issueAndPay: 'إصدار وتسجيل الدفع', payNow: 'الدفع الآن',
     leaveUnpaid: 'ترحيل كذمة (غير مدفوعة)', noItems: 'لم تتم إضافة مواد بعد', issued: 'تم إصدار الفاتورة {{number}}', suggestedLoaded: 'تمت إضافة التحاليل والإجراءات المسجلة في الزيارة — راجعها قبل الإصدار',
-    alreadyInvoiced: 'لهذه الزيارة فاتورة سابقة', dueDate: 'تاريخ الاستحقاق', issuedAt: 'تاريخ الإصدار', invoiceDate: 'تاريخ الفاتورة',
+    alreadyInvoiced: 'لهذه الزيارة فاتورة سابقة — أُضيف هنا فقط ما سُجّل في الزيارة ولم يُفوتر بعد، واختير نموذج بدون كشفية حتى لا تتكرر', newFromVisit: 'سُجّل في الزيارة بعد حفظ المسودة ولم يُضف للفاتورة', addToInvoice: 'إضافة للفاتورة', dueDate: 'تاريخ الاستحقاق', issuedAt: 'تاريخ الإصدار', invoiceDate: 'تاريخ الفاتورة',
     invoiceDateLocked: 'تاريخ اليوم — تحديد تاريخ سابق يحتاج صلاحية من المدير',
     paidAtLabel: 'تاريخ القبض',
     paidAtLocked: 'الآن — تحديد تاريخ سابق يحتاج صلاحية من المدير',

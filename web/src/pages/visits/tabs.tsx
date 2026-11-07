@@ -152,6 +152,13 @@ export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
   });
   const confirm = useConfirm();
   const remove = useApiMutation((id: string) => api.del(`/nursing-notes/${id}`), { success: t('common.done'), onSuccess: onSaved });
+  const sync = useApiMutation((id: string) => api.post(`/nursing-notes/${id}/sync-services`, {}), { success: t('visit.nursing.synced'), invalidate: [['invoice-suggest']], onSuccess: onSaved });
+  // A recorded procedure whose services differ from the current list (a service linked or removed after it was recorded).
+  const key = (a: { serviceId?: string; service?: { id: string }; quantity: number | string }[]) => a.map((x) => `${x.serviceId ?? x.service?.id}:${Number(x.quantity)}`).sort().join(',');
+  const outdated = (n: { procedure: string; services?: { quantity: number | string; service: { id: string } }[] }) => {
+    const p = presets.data?.find((x) => x.name === n.procedure);
+    return !!p && key(p.services) !== key(n.services ?? []);
+  };
   const toggle = (name: string, services: PresetService[] | null) => setPicked(picked.some((p) => p.procedure === name) ? picked.filter((p) => p.procedure !== name) : [...picked, { procedure: name, services, n: 1 }]);
   const bump = (name: string, d: number) => setPicked(picked.map((p) => (p.procedure === name ? { ...p, n: Math.max(1, Math.min(10, p.n + d)) } : p)));
   const addCustom = () => {
@@ -206,6 +213,7 @@ export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
             <li key={n.id} className="flex gap-3 py-2.5 text-sm">
               <span className="w-32 shrink-0 text-xs tabular-nums text-ink-muted">{fmtDateTime(n.performedAt)}</span>
               <span className="flex-1"><b>{n.procedure}</b>{n.notes && <span className="text-ink-soft"> — {n.notes}</span>}{!!n.services?.length && <span className="ms-2 inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-700"><Receipt className="h-3 w-3" />{t('visit.nursing.onInvoice', { s: n.services.map((x) => `${x.service.name}${Number(x.quantity) !== 1 ? ` ×${Number(x.quantity)}` : ''}`).join('، ') })}</span>}</span>
+              {!readOnly && outdated(n) && <Button size="sm" variant="outline" loading={sync.isPending && sync.variables === n.id} onClick={() => sync.mutate(n.id)} title={t('visit.nursing.syncHint')}>{t('visit.nursing.sync')}</Button>}
               {!readOnly && (
                 <IconButton size="sm" label={t('common.delete')} onClick={async () => (await confirm({ message: t('visit.nursing.deleteConfirm', { name: n.procedure }), danger: true, confirmLabel: t('common.delete') })) && remove.mutate(n.id)}>
                   <Trash2 className="h-4 w-4 text-danger-600" />

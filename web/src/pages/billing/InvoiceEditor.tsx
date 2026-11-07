@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Lock, ShieldCheck, Trash2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
@@ -29,6 +29,7 @@ export default function InvoiceEditor() {
   const { t } = useTranslation();
   const { can, canAny } = useAuth();
   const nav = useNavigate();
+  const qc = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const [params] = useSearchParams();
   const visitId = params.get('visitId');
@@ -52,6 +53,9 @@ export default function InvoiceEditor() {
   const draft = useQuery({ queryKey: ['invoice', id], queryFn: () => api.get<Invoice>(`/billing/invoices/${id}`), enabled: !!id });
   const visit = useQuery({ queryKey: ['visit', visitId], queryFn: () => api.get<{ patient: PatientLite; doctor: { id: string } | null; payerType: 'SELF_PAY' | 'INSURANCE'; patientInsuranceId: string | null }>(`/visits/${visitId}`), enabled: !!visitId });
   const suggest = useQuery({ queryKey: ['invoice-suggest', visitId], queryFn: () => api.get<{ alreadyInvoiced: boolean; items: { serviceId: string; quantity: number }[] }>('/billing/invoices/suggest', { visitId }), enabled: !!visitId && can('invoices.create') });
+  // Editing a draft of a visit: procedures or tests recorded after the draft was saved are offered here.
+  const draftVisitId = id ? draft.data?.visit?.id : undefined;
+  const draftSuggest = useQuery({ queryKey: ['invoice-suggest', 'draft', id, draftVisitId], queryFn: () => api.get<{ items: { serviceId: string; quantity: number }[] }>('/billing/invoices/suggest', { visitId: draftVisitId! }), enabled: !!draftVisitId && can('invoices.create') });
   const prePatient = useQuery({ queryKey: ['patient', params.get('patientId')], queryFn: () => api.get<PatientLite>(`/patients/${params.get('patientId')}`), enabled: !!params.get('patientId') });
 
   const svcById = useMemo(() => new Map((services.data ?? []).map((s) => [s.id, s])), [services.data]);
@@ -84,7 +88,10 @@ export default function InvoiceEditor() {
       return;
     }
     if (visitId && (!visit.data || !suggest.data)) return;
-    const def = templates.data.find((x) => x.isDefault) ?? templates.data[0];
+    // A visit already invoiced: the next invoice starts from a template without mandatory items, so the
+    // consultation fee is not charged twice (the cashier can still pick another template).
+    const noFee = suggest.data?.alreadyInvoiced ? templates.data.find((x) => x.isActive !== false && !x.items.some((i) => i.isMandatory)) : undefined;
+    const def = noFee ?? templates.data.find((x) => x.isDefault) ?? templates.data[0];
     setTemplateId(def?.id ?? '');
     const base = templateLines(def);
     // Suggested lines (lab tests, nursing procedures) keep their count; a line already in the template takes the larger quantity.
@@ -157,9 +164,12 @@ export default function InvoiceEditor() {
   const save = useApiMutation(
     (issue: boolean) => (id ? api.put<Invoice>(`/billing/invoices/${id}`, body(issue)) : api.post<Invoice>('/billing/invoices', body(issue))),
     {
-      invalidate: [['invoices'], ['queue'], ['visit'], ['insurance']],
+      // ['invoice'] too: the invoice page must not open with the draft as it was before this save
+      // (it would offer to collect the old total).
+      invalidate: [['invoices'], ['invoice'], ['invoice-suggest'], ['queue'], ['visit'], ['insurance']],
       success: false,
       onSuccess: (inv, issue) => {
+        qc.setQueryData(['invoice', inv.id], inv);
         toast.success(issue ? t('billing.issued', { number: inv.invoiceNumber }) : t('common.saved'));
         nav(`/billing/invoices/${inv.id}${issue && payAfter && num(inv.balance) > 0 ? '?pay=1' : ''}`, { replace: true });
       },
@@ -173,6 +183,26 @@ export default function InvoiceEditor() {
     <div>
       <PageHeader title={id ? t('billing.editDraft') : t('billing.newInvoice')} />
       {suggest.data?.alreadyInvoiced && <p className="mb-4 rounded-xl bg-warning-50 px-4 py-2 text-sm text-warning-700">{t('billing.alreadyInvoiced')}</p>}
+      {loaded && (() => {
+        const missing = (draftSuggest.data?.items ?? []).filter((i) => svcById.has(i.serviceId)).map((i) => ({ ...i, have: lines.filter((l) => l.serviceId === i.serviceId).reduce((t2, l) => t2 + num(l.quantity), 0) - num(draft.data?.items.filter((x) => x.serviceId === i.serviceId).reduce((t2, x) => t2 + num(x.quantity), 0)) })).filter((i) => i.quantity - i.have > 0);
+        if (!missing.length) return null;
+        const add = () => setLines((cur) => {
+          const next = [...cur];
+          for (const m of missing) {
+            const extra = m.quantity - m.have;
+            const at = next.findIndex((l) => l.serviceId === m.serviceId);
+            if (at >= 0) next[at] = { ...next[at], quantity: String(num(next[at].quantity) + extra) };
+            else next.push(toLine(svcById.get(m.serviceId)!, extra));
+          }
+          return next;
+        });
+        return (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-primary-50 px-4 py-2.5 text-sm text-primary-800">
+            <span className="flex-1">{t('billing.newFromVisit')}: <b>{missing.map((m) => `${svcById.get(m.serviceId)!.name} ×${m.quantity - m.have}`).join('، ')}</b></span>
+            <Button size="sm" onClick={add}>{t('billing.addToInvoice')}</Button>
+          </div>
+        );
+      })()}
       <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
         <div className="space-y-4">
           <Card>
