@@ -148,10 +148,10 @@ export function NursingTab({ visit, onSaved, readOnly }: TabProps) {
   const [editing, setEditing] = useState(false);
   const total = picked.reduce((s, p) => s + p.n, 0);
   const save = useApiMutation(() => api.post(`/visits/${visit.id}/nursing-notes`, { procedures: picked.flatMap((p) => Array.from({ length: p.n }, () => ({ procedure: p.procedure, ...(p.services && { services: p.services }) }))), notes: notes || null }), {
-    success: t('visit.nursing.saved', { n: total }), onSuccess: () => { setPicked([]); setNotes(''); onSaved(); },
+    success: t('visit.nursing.saved', { n: total }), invalidate: [['invoice-suggest']], onSuccess: () => { setPicked([]); setNotes(''); onSaved(); },
   });
   const confirm = useConfirm();
-  const remove = useApiMutation((id: string) => api.del(`/nursing-notes/${id}`), { success: t('common.done'), onSuccess: onSaved });
+  const remove = useApiMutation((id: string) => api.del(`/nursing-notes/${id}`), { success: t('common.done'), invalidate: [['invoice-suggest']], onSuccess: onSaved });
   const sync = useApiMutation((id: string) => api.post(`/nursing-notes/${id}/sync-services`, {}), { success: t('visit.nursing.synced'), invalidate: [['invoice-suggest']], onSuccess: onSaved });
   // A recorded procedure whose services differ from the current list (a service linked or removed after it was recorded).
   const key = (a: { serviceId?: string; service?: { id: string }; quantity: number | string }[]) => a.map((x) => `${x.serviceId ?? x.service?.id}:${Number(x.quantity)}`).sort().join(',');
@@ -334,7 +334,7 @@ export function LabTab({ visit, onSaved, readOnly }: TabProps) {
   const selTotal = sel.reduce((tot, id) => tot + num(tests.data?.find((x) => x.id === id)?.service?.price), 0);
   const order = useApiMutation(() => api.post('/lab/orders', { visitId: visit.id, patientId: visit.patient.id, testIds: sel, clinicalNotes: notes || null, priority }), {
     success: t('visit.lab.ordered'),
-    invalidate: [['lab']],
+    invalidate: [['lab'], ['invoice-suggest']],
     onSuccess: () => { setOpen(false); setSel([]); setNotes(''); onSaved(); },
   });
   return (

@@ -52,10 +52,10 @@ export default function InvoiceEditor() {
   const services = useQuery({ queryKey: ['catalog', 'services'], queryFn: () => api.get<Service[]>('/settings/services') });
   const draft = useQuery({ queryKey: ['invoice', id], queryFn: () => api.get<Invoice>(`/billing/invoices/${id}`), enabled: !!id });
   const visit = useQuery({ queryKey: ['visit', visitId], queryFn: () => api.get<{ patient: PatientLite; doctor: { id: string } | null; payerType: 'SELF_PAY' | 'INSURANCE'; patientInsuranceId: string | null }>(`/visits/${visitId}`), enabled: !!visitId });
-  const suggest = useQuery({ queryKey: ['invoice-suggest', visitId], queryFn: () => api.get<{ alreadyInvoiced: boolean; items: { serviceId: string; quantity: number }[] }>('/billing/invoices/suggest', { visitId }), enabled: !!visitId && can('invoices.create') });
+  const suggest = useQuery({ queryKey: ['invoice-suggest', visitId], queryFn: () => api.get<{ alreadyInvoiced: boolean; items: { serviceId: string; quantity: number }[] }>('/billing/invoices/suggest', { visitId }), enabled: !!visitId && can('invoices.create'), staleTime: 0, gcTime: 0, refetchOnMount: 'always' });
   // Editing a draft of a visit: procedures or tests recorded after the draft was saved are offered here.
   const draftVisitId = id ? draft.data?.visit?.id : undefined;
-  const draftSuggest = useQuery({ queryKey: ['invoice-suggest', 'draft', id, draftVisitId], queryFn: () => api.get<{ items: { serviceId: string; quantity: number }[] }>('/billing/invoices/suggest', { visitId: draftVisitId! }), enabled: !!draftVisitId && can('invoices.create') });
+  const draftSuggest = useQuery({ queryKey: ['invoice-suggest', 'draft', id, draftVisitId], queryFn: () => api.get<{ items: { serviceId: string; quantity: number }[] }>('/billing/invoices/suggest', { visitId: draftVisitId! }), enabled: !!draftVisitId && can('invoices.create'), staleTime: 0, gcTime: 0, refetchOnMount: 'always', refetchInterval: 20_000 });
   const prePatient = useQuery({ queryKey: ['patient', params.get('patientId')], queryFn: () => api.get<PatientLite>(`/patients/${params.get('patientId')}`), enabled: !!params.get('patientId') });
 
   const svcById = useMemo(() => new Map((services.data ?? []).map((s) => [s.id, s])), [services.data]);
@@ -87,7 +87,8 @@ export default function InvoiceEditor() {
       setLoaded(true);
       return;
     }
-    if (visitId && (!visit.data || !suggest.data)) return;
+    // wait for the server's answer, never a copy kept from an earlier visit to this page
+    if (visitId && (!visit.data || !suggest.data || suggest.isFetching)) return;
     // A visit already invoiced: the next invoice starts from a template without mandatory items, so the
     // consultation fee is not charged twice (the cashier can still pick another template).
     const noFee = suggest.data?.alreadyInvoiced ? templates.data.find((x) => x.isActive !== false && !x.items.some((i) => i.isMandatory)) : undefined;
