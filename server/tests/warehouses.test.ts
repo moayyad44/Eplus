@@ -48,6 +48,9 @@ describe('warehouses', () => {
     expect([await qtyIn(main.id, b), await qtyIn(side.id, b), await total(b)]).toEqual([0, 5, 5]);
     const moves = await prisma.inventoryTransaction.findMany({ where: { referenceId: r.body.id }, orderBy: { type: 'asc' } });
     expect(moves.map((m) => [m.type, Number(m.quantity)]).sort()).toEqual([['TRANSFER_IN', 12], ['TRANSFER_IN', 5], ['TRANSFER_OUT', -12], ['TRANSFER_OUT', -5]].sort());
+    // both halves show the item's real total (it never changes during a transfer), each warehouse its own balance
+    const ma = moves.filter((m) => m.itemId === a);
+    expect(ma.map((m) => [m.type, Number(m.balanceAfter), Number(m.warehouseBalanceAfter)]).sort()).toEqual([['TRANSFER_IN', 30, 12], ['TRANSFER_OUT', 30, 18]]);
     const d = (await admin.get(`/api/inventory/transfers/${r.body.id}`)).body;
     expect([d.fromWarehouse.code, d.toWarehouse.code, d.items.length]).toEqual(['MAIN', 'ER', 2]);
     expect((await admin.get('/api/inventory/transfers')).body.items.some((x: { id: string }) => x.id === r.body.id)).toBe(true);

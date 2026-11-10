@@ -67,7 +67,9 @@ export async function recordMovement(tx: Tx, ctx: Ctx | null, m: MovementInput) 
   if (sign !== 0 && magnitude.lte(0)) throw badRequest('الكمية يجب أن تكون أكبر من صفر');
   if (sign === 0 && magnitude.eq(0)) throw badRequest('كمية التعديل لا يمكن أن تكون صفراً');
   const delta = sign === 0 ? magnitude : magnitude.mul(sign);
-  const balance = D(item.quantity).add(delta);
+  // A transfer moves stock between warehouses: the item's total does not change (neither half of it touches it).
+  const transfer = m.type === 'TRANSFER_OUT' || m.type === 'TRANSFER_IN';
+  const balance = transfer ? D(item.quantity) : D(item.quantity).add(delta);
   const wh = await resolveWarehouse(tx, m.warehouseId);
   const stock = await tx.warehouseStock.findUnique({ where: { warehouseId_itemId: { warehouseId: wh.id, itemId: item.id } } });
   const whBefore = D(stock?.quantity);
@@ -80,11 +82,11 @@ export async function recordMovement(tx: Tx, ctx: Ctx | null, m: MovementInput) 
     update: { quantity: whBalance },
   });
 
-  const itemUpdate: Prisma.InventoryItemUpdateInput = { quantity: balance };
+  const itemUpdate: Prisma.InventoryItemUpdateInput = transfer ? {} : { quantity: balance };
   if (m.type === 'PURCHASE' && m.unitCost != null) itemUpdate.purchasePrice = D(m.unitCost);
   if ((m.type === 'PURCHASE' || m.type === 'RECEIPT') && m.batchNumber) itemUpdate.batchNumber = m.batchNumber;
   if ((m.type === 'PURCHASE' || m.type === 'RECEIPT') && m.expiryDate) itemUpdate.expiryDate = m.expiryDate;
-  await tx.inventoryItem.update({ where: { id: item.id }, data: itemUpdate });
+  if (Object.keys(itemUpdate).length) await tx.inventoryItem.update({ where: { id: item.id }, data: itemUpdate });
 
   const txn = await tx.inventoryTransaction.create({
     data: {
