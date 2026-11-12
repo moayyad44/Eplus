@@ -98,12 +98,23 @@ export const voucherBody = z.object({
   amount: z.coerce.number().positive('المبلغ يجب أن يكون أكبر من صفر').max(100_000_000), counterAccountId: z.string().uuid('اختر الحساب المقابل'),
   partyType: nullableStr(20), partyId: nullableStr(60), partyName: z.string().trim().min(2, 'اسم الدافع / المستفيد مطلوب').max(150),
   purpose: z.string().trim().min(2, 'السبب مطلوب').max(300), reference: nullableStr(100), notes: nullableStr(1000), reason: nullableStr(300),
-  cheque: z.object({ number: z.string().trim().min(1, 'رقم الشيك مطلوب').max(40), bankName: z.string().trim().min(2, 'البنك مطلوب').max(100), drawer: nullableStr(150), accountNumber: nullableStr(60), issueDate: day.nullable().optional(), dueDate: day }).optional(),
+  cheques: z.array(z.object({
+    number: z.string().trim().min(1, 'رقم الشيك مطلوب').max(40), bankName: z.string().trim().min(2, 'البنك مطلوب').max(100), drawer: nullableStr(150), accountNumber: nullableStr(60),
+    issueDate: day.nullable().optional(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'تاريخ استحقاق الشيك مطلوب'), amount: z.coerce.number().positive('مبلغ الشيك يجب أن يكون أكبر من صفر').max(100_000_000),
+  })).max(200).optional(),
 });
+/** Several cheques per voucher; the older single `cheque` (whole amount) is still read. */
+export const voucherInput = z.preprocess((raw) => {
+  if (!raw || typeof raw !== 'object') return raw;
+  const { cheque, ...r } = raw as Record<string, unknown>;
+  if (cheque && typeof cheque === 'object' && !r.cheques) return { ...r, cheques: [{ amount: r.amount, ...(cheque as object) }] };
+  return r;
+}, voucherBody);
 export type VoucherInput = z.infer<typeof voucherBody>;
 const snap = (v: Prisma.VoucherGetPayload<object>) => ({ date: dateOnlyStr(v.date), method: v.method, treasuryId: v.treasuryId, amount: D(v.amount).toNumber(), counterAccountId: v.counterAccountId, partyName: v.partyName, purpose: v.purpose, reference: v.reference, notes: v.notes, status: v.status });
 
-async function checkVoucher(tx: Tx, b: VoucherInput) {
+/** On an edit the cheques stay as issued (they are changed from the cheques screen). */
+async function checkVoucher(tx: Tx, b: VoucherInput, opts: { editing?: boolean } = {}) {
   if (b.kind === 'PAYMENT' && b.method === 'VISA') throw badRequest('الصرف بالفيزا غير متاح؛ اختر طريقة أخرى');
   const needsTreasury = !['VISA', 'CHEQUE'].includes(b.method) || (b.method === 'CHEQUE' && b.kind === 'PAYMENT');
   if (needsTreasury) {
@@ -116,7 +127,14 @@ async function checkVoucher(tx: Tx, b: VoucherInput) {
   }
   const a = await tx.account.findUnique({ where: { id: b.counterAccountId } });
   if (!a || a.isGroup || !a.isActive) throw badRequest('الحساب المقابل يجب أن يكون حساباً فرعياً فعّالاً');
-  if (b.method === 'CHEQUE' && !b.cheque) throw badRequest('أدخل بيانات الشيك');
+  if (b.method === 'CHEQUE' && !opts.editing) {
+    if (!b.cheques?.length) throw badRequest('أدخل بيانات الشيك');
+    const sum = b.cheques.reduce((t, c) => t.add(r3(c.amount)), D(0));
+    if (!sum.eq(r3(b.amount))) throw badRequest(`مجموع الشيكات (${sum.toFixed(3)}) لا يساوي مبلغ السند (${D(b.amount).toFixed(3)})`);
+    const keys = b.cheques.map((c) => `${c.bankName.trim()}|${c.number.trim()}`);
+    const dup = keys.find((k, i) => keys.indexOf(k) !== i);
+    if (dup) throw badRequest(`الشيك رقم ${dup.split('|')[1]} مكرر في نفس السند`);
+  }
 }
 
 treasuryRouter.get('/vouchers', requireAnyPerm('accounting.vouchers.view', 'accounting.vouchers.create'), ah(async (req, res) => {
@@ -143,14 +161,14 @@ treasuryRouter.get('/vouchers/:id', requireAnyPerm('accounting.vouchers.view', '
     prisma.account.findUnique({ where: { id: v.counterAccountId }, select: { code: true, name: true } }),
     prisma.journalEntry.findUnique({ where: { sourceKey: `voucher:${v.id}` }, select: { id: true, number: true, status: true } }),
     prisma.docRevision.findMany({ where: { docType: 'voucher', docId: v.id }, orderBy: { createdAt: 'asc' } }),
-    v.chequeId ? prisma.cheque.findUnique({ where: { id: v.chequeId } }) : null,
+    prisma.cheque.findMany({ where: { voucherId: v.id }, orderBy: { dueDate: 'asc' } }),
     getSetting('clinic'),
   ]);
   const ids = [v.createdById, v.updatedById, v.cancelledById, ...revisions.map((r) => r.userId)].filter(Boolean) as string[];
   const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, fullName: true } });
   const name = (id: string | null) => users.find((u) => u.id === id)?.fullName ?? null;
   res.json({
-    ...v, date: dateOnlyStr(v.date), treasury, counterAccount: counter, entry, cheque, amountWords: amountInWords(D(v.amount).toNumber()),
+    ...v, date: dateOnlyStr(v.date), treasury, counterAccount: counter, entry, cheques: cheque.map((c) => ({ ...c, dueDate: dateOnlyStr(c.dueDate), issueDate: c.issueDate && dateOnlyStr(c.issueDate) })), amountWords: amountInWords(D(v.amount).toNumber()),
     createdBy: name(v.createdById), updatedBy: name(v.updatedById), cancelledBy: name(v.cancelledById),
     revisions: revisions.map((r) => ({ ...r, user: name(r.userId) })), clinic: { name: clinic.name, nameEn: clinic.nameEn, address: clinic.address, phone: clinic.phone, hasLogo: !!clinic.logoKey },
   });
@@ -161,9 +179,9 @@ treasuryRouter.get('/vouchers/:id', requireAnyPerm('accounting.vouchers.view', '
 export async function issueVoucher(tx: Tx, ctx: Ctx, b: VoucherInput) {
   await checkVoucher(tx, b);
   const number = await docNumber(tx, b.kind === 'RECEIPT' ? 'RV' : 'PV');
-  const { cheque, reason: _r, ...data } = b;
+  const { cheques, reason: _r, ...data } = b;
   const created = await tx.voucher.create({ data: { ...data, number, date: dayOf(b.date), amount: r3(b.amount), treasuryId: b.method === 'VISA' || (b.method === 'CHEQUE' && b.kind === 'RECEIPT') ? null : b.treasuryId ?? null, createdById: ctx.userId } });
-  if (cheque) await createChequeForVoucher(tx, ctx, created, cheque);
+  if (b.method === 'CHEQUE') for (const c of cheques ?? []) await createChequeForVoucher(tx, ctx, created, c);
   if (b.method === 'VISA') await trackVisa(tx, 'voucher', created.id);
   await postDoc(tx, 'voucher', created.id);
   await docRevision(tx, 'voucher', created.id, 1, 'create', snap(created), ctx.userId);
@@ -173,24 +191,24 @@ export async function issueVoucher(tx: Tx, ctx: Ctx, b: VoucherInput) {
 
 /** Issue a voucher: saved and posted together (a closed period refuses both). */
 treasuryRouter.post('/vouchers', requirePerm('accounting.vouchers.create'), ah(async (req, res) => {
-  const b = parse(voucherBody, req.body);
+  const b = parse(voucherInput, req.body);
   res.status(201).json(await prisma.$transaction((tx) => issueVoucher(tx, req.ctx, b)));
 }));
 
 /** Edit after posting: the entry follows; old and new values are kept (reason optional unless required by the settings). */
 treasuryRouter.put('/vouchers/:id', requirePerm('accounting.vouchers.edit'), ah(async (req, res) => {
-  const b = parse(voucherBody, req.body);
+  const b = parse(voucherInput, req.body);
   const v = await prisma.$transaction(async (tx) => {
     const before = await tx.voucher.findUnique({ where: { id: req.params.id } });
     if (!before) throw notFound();
     if (before.status === 'CANCELLED') throw badRequest('السند ملغى');
     if (b.kind !== before.kind) throw badRequest('لا يمكن تغيير نوع السند');
     if ((await getSetting('accounting', tx)).requireReason && !b.reason) throw badRequest('سبب التعديل مطلوب');
-    if (before.chequeId || b.method === 'CHEQUE') {
+    if (before.method === 'CHEQUE' || b.method === 'CHEQUE') {
       if (b.method !== before.method || b.amount !== D(before.amount).toNumber()) throw badRequest('سند الشيك: عدّل الشيك من شاشة الشيكات، أو ألغِ السند وأصدر غيره');
     }
-    await checkVoucher(tx, b);
-    const { cheque: _c, reason, ...data } = b;
+    await checkVoucher(tx, b, { editing: true });
+    const { cheques: _c, reason, ...data } = b;
     const updated = await tx.voucher.update({ where: { id: before.id }, data: { ...data, date: dayOf(b.date), amount: r3(b.amount), treasuryId: b.method === 'VISA' || (b.method === 'CHEQUE' && b.kind === 'RECEIPT') ? null : b.treasuryId ?? null, updatedById: req.ctx.userId, version: { increment: 1 } } });
     if (b.method === 'VISA' || before.method === 'VISA') await trackVisa(tx, 'voucher', updated.id);
     await postDoc(tx, 'voucher', updated.id);
@@ -210,9 +228,10 @@ treasuryRouter.post('/vouchers/:id/cancel', requirePerm('accounting.vouchers.can
     if (!v) throw notFound();
     if (v.status === 'CANCELLED') throw badRequest('السند ملغى مسبقاً');
     if ((await getSetting('accounting', tx)).requireReason && !reason) throw badRequest('سبب الإلغاء مطلوب');
-    if (v.chequeId) {
-      const c = await tx.cheque.findUniqueOrThrow({ where: { id: v.chequeId } });
-      if (!['RECEIVED', 'IN_SAFE', 'READY', 'ISSUED', 'DRAFT', 'DELIVERED'].includes(c.status)) throw badRequest('الشيك المرتبط تحركت حالته (أودع / صُرف…)؛ عالجه من شاشة الشيكات');
+    const cs = await tx.cheque.findMany({ where: { voucherId: v.id, status: { not: 'CANCELLED' } } });
+    const moved = cs.find((c) => !['RECEIVED', 'IN_SAFE', 'READY', 'ISSUED', 'DRAFT', 'DELIVERED'].includes(c.status));
+    if (moved) throw badRequest(`الشيك ${moved.number} المرتبط تحركت حالته (أودع / صُرف…)؛ عالجه من شاشة الشيكات`);
+    for (const c of cs) {
       await tx.cheque.update({ where: { id: c.id }, data: { status: 'CANCELLED' } });
       await tx.chequeEvent.create({ data: { chequeId: c.id, fromStatus: c.status, toStatus: 'CANCELLED', date: v.date, note: `إلغاء السند ${v.number}`, userId: req.ctx.userId } });
     }

@@ -32,11 +32,13 @@ payrollRouter.get('/payroll/profiles', requireAnyPerm('accounting.payroll.view',
 }));
 
 payrollRouter.put('/payroll/profiles/:userId', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
-  const b = parse(z.object({ jobTitle: nullableStr(100), basic: z.coerce.number().min(0).max(1_000_000), allowances: allowances.default([]), paymentMethod: z.enum(['CASH', 'TRANSFER', 'CHEQUE']).default('TRANSFER'), treasuryId: z.string().uuid().nullable().optional(), isActive: z.boolean().default(true) }), req.body);
+  const b = parse(z.object({ jobTitle: nullableStr(100), payType: z.enum(['MONTHLY', 'HOURLY']).default('MONTHLY'), basic: z.coerce.number().min(0).max(1_000_000).default(0), hourlyRate: z.coerce.number().min(0).max(10_000).default(0), allowances: allowances.default([]), paymentMethod: z.enum(['CASH', 'TRANSFER', 'CHEQUE']).default('TRANSFER'), treasuryId: z.string().uuid().nullable().optional(), isActive: z.boolean().default(true) }), req.body);
   const u = await prisma.user.findUnique({ where: { id: req.params.userId } });
   if (!u) throw notFound('الموظف غير موجود');
   const before = await prisma.salaryProfile.findUnique({ where: { userId: u.id } });
-  const p = await prisma.salaryProfile.upsert({ where: { userId: u.id }, create: { userId: u.id, ...b, basic: r3(b.basic) }, update: { ...b, basic: r3(b.basic) } });
+  if (b.isActive && b.payType === 'HOURLY' && !b.hourlyRate) throw badRequest('أدخل أجر الساعة');
+  const data = { ...b, basic: b.payType === 'HOURLY' ? 0 : r3(b.basic), hourlyRate: b.payType === 'HOURLY' ? r3(b.hourlyRate) : 0 };
+  const p = await prisma.salaryProfile.upsert({ where: { userId: u.id }, create: { userId: u.id, ...data }, update: data });
   await audit(prisma, req.ctx, { action: 'payroll.profile', entityType: 'salary_profile', entityId: u.id, summary: `بيانات راتب ${u.fullName}`, before, after: p });
   res.json(p);
 }));
@@ -92,14 +94,17 @@ payrollRouter.get('/payroll/runs', requireAnyPerm('accounting.payroll.view', 'ac
 }));
 payrollRouter.get('/payroll/runs/:id', requireAnyPerm('accounting.payroll.view', 'accounting.payroll.manage'), ah(async (req, res) => res.json(await loadRun(req.params.id))));
 
-/** Prepare a month: every employee with an active salary profile; absences and lateness from attendance; advance installments. */
+/**
+ * Prepare a month: every employee with an active salary profile; advance installments. Monthly salaries: absences and
+ * lateness from attendance. Hourly: the hours worked in attendance (check-in to check-out) × the hourly rate.
+ */
 payrollRouter.post('/payroll/runs', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
   const b = parse(z.object({ month, dueDate: day.nullable().optional() }), req.body);
   const [y, m] = b.month.split('-').map(Number);
   const from = new Date(Date.UTC(y, m - 1, 1)), to = new Date(Date.UTC(y, m, 0));
   const run = await prisma.$transaction(async (tx) => {
     if (await tx.payrollRun.findUnique({ where: { month: b.month } })) throw badRequest('كشف هذا الشهر موجود');
-    const profiles = await tx.salaryProfile.findMany({ where: { isActive: true, basic: { gt: 0 } } });
+    const profiles = await tx.salaryProfile.findMany({ where: { isActive: true, OR: [{ basic: { gt: 0 } }, { payType: 'HOURLY', hourlyRate: { gt: 0 } }] } });
     if (!profiles.length) throw badRequest('لا يوجد موظفون لهم بيانات راتب');
     const att = await tx.attendance.findMany({ where: { userId: { in: profiles.map((p) => p.userId) }, date: { gte: from, lte: to } } });
     const adv = await tx.employeeAdvance.findMany({ where: { status: 'ACTIVE', userId: { in: profiles.map((p) => p.userId) } } });
@@ -109,10 +114,13 @@ payrollRouter.post('/payroll/runs', requirePerm('accounting.payroll.manage'), ah
       const absenceDays = mine.filter((a) => a.status === 'ABSENT').length;
       const lateMinutes = mine.reduce((t, a) => t + a.lateMinutes, 0);
       const allow = (p.allowances as { amount: number }[]).reduce((t, a) => t.add(a.amount), D(0));
-      const absenceDeduction = r3(D(p.basic).div(30).mul(absenceDays));
+      const hourly = p.payType === 'HOURLY';
+      const hours = D(mine.reduce((t, a) => t + a.workedMinutes, 0)).div(60).toDecimalPlaces(2);
+      const basic = hourly ? r3(hours.mul(p.hourlyRate)) : D(p.basic);
+      const absenceDeduction = hourly ? D(0) : r3(D(p.basic).div(30).mul(absenceDays));
       const advance = r3(adv.filter((a) => a.userId === p.userId).reduce((t, a) => t.add(Prisma.Decimal.min(a.installment, D(a.amount).sub(a.recovered))), D(0)));
-      const s = { basic: p.basic, allowances: allow, commission: 0, bonus: 0, overtime: 0, absenceDeduction, deductions: 0, advance };
-      await tx.payslip.create({ data: { runId: created.id, userId: p.userId, jobTitle: p.jobTitle, absenceDays, lateMinutes, ...s, net: net(s) } });
+      const s = { basic, allowances: allow, commission: 0, bonus: 0, overtime: 0, absenceDeduction, deductions: 0, advance };
+      await tx.payslip.create({ data: { runId: created.id, userId: p.userId, jobTitle: p.jobTitle, payType: p.payType, hours: hourly ? hours : 0, hourlyRate: hourly ? p.hourlyRate : 0, absenceDays, lateMinutes, ...s, net: net(s) } });
     }
     await audit(tx, req.ctx, { action: 'payroll.prepare', entityType: 'payroll_run', entityId: created.id, summary: `إعداد رواتب ${b.month}: ${profiles.length} موظف` });
     return created;
@@ -121,19 +129,24 @@ payrollRouter.post('/payroll/runs', requirePerm('accounting.payroll.manage'), ah
 }));
 
 payrollRouter.put('/payroll/runs/:id/slips/:slipId', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
-  const b = parse(z.object({ commission: z.coerce.number().min(0), bonus: z.coerce.number().min(0), overtime: z.coerce.number().min(0), absenceDeduction: z.coerce.number().min(0), deductions: z.coerce.number().min(0), advance: z.coerce.number().min(0), notes: nullableStr(300) }).partial(), req.body);
+  const b = parse(z.object({ hours: z.coerce.number().min(0).max(744), hourlyRate: z.coerce.number().min(0).max(10_000), commission: z.coerce.number().min(0), bonus: z.coerce.number().min(0), overtime: z.coerce.number().min(0), absenceDeduction: z.coerce.number().min(0), deductions: z.coerce.number().min(0), advance: z.coerce.number().min(0), notes: nullableStr(300) }).partial(), req.body);
   await prisma.$transaction(async (tx) => {
     const s = await tx.payslip.findUnique({ where: { id: req.params.slipId }, include: { run: true } });
     if (!s || s.runId !== req.params.id) throw notFound();
     if (s.run.status !== 'DRAFT') throw badRequest('الكشف معتمد؛ أعد فتحه للتعديل');
-    const merged = { ...s, ...Object.fromEntries(Object.entries(b).filter(([k]) => k !== 'notes').map(([k, v]) => [k, r3(v as number)])) };
+    const { hours, hourlyRate, ...rest } = b;
+    const hourly = s.payType === 'HOURLY';
+    if (!hourly && (hours !== undefined || hourlyRate !== undefined)) throw badRequest('الساعات وأجر الساعة للموظفين بالساعة فقط');
+    const hrs = hours !== undefined ? D(hours).toDecimalPlaces(2) : D(s.hours), rate = hourlyRate !== undefined ? r3(hourlyRate) : D(s.hourlyRate);
+    const hourData = hourly ? { hours: hrs, hourlyRate: rate, basic: r3(hrs.mul(rate)) } : {};
+    const merged = { ...s, ...hourData, ...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== 'notes').map(([k, v]) => [k, r3(v as number)])) };
     if (b.advance !== undefined) {
       const open = (await tx.employeeAdvance.findMany({ where: { userId: s.userId, status: 'ACTIVE' } })).reduce((t, a) => t.add(D(a.amount).sub(a.recovered)), D(0));
       if (D(b.advance).gt(open)) throw badRequest(`استرداد السلف أكبر من المتبقي (${open.toFixed(3)})`);
     }
     const n = net(merged);
     if (n.lt(0)) throw badRequest('صافي الراتب سالب');
-    await tx.payslip.update({ where: { id: s.id }, data: { ...Object.fromEntries(Object.entries(b).map(([k, v]) => [k, k === 'notes' ? v : r3(v as number)])), net: n } });
+    await tx.payslip.update({ where: { id: s.id }, data: { ...hourData, ...Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, k === 'notes' ? v : r3(v as number)])), net: n } });
   });
   res.json(await loadRun(req.params.id));
 }));

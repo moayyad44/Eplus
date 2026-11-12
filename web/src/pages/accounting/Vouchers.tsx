@@ -3,12 +3,12 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { Ban, FileMinus, FilePlus, Pencil, Printer } from 'lucide-react';
+import { Ban, FileMinus, FilePlus, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
 import { api, type Paged } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation } from '@/lib/hooks';
 import { amt0, monthStart, today } from '@/lib/accounting';
-import { Badge, Button, Card, CardHeader, DataTable, ErrorState, Field, Input, PageHeader, PageLoader, Pagination, SearchInput, Select, Textarea, useConfirm } from '@/components/ui';
+import { Badge, Button, Card, CardHeader, DataTable, ErrorState, Field, IconButton, Input, PageHeader, PageLoader, Pagination, SearchInput, Select, Textarea, useConfirm } from '@/components/ui';
 import { AccountSelect, Money, ReportActions, TreasurySelect, exportXlsx, fetchAll } from './shared';
 
 const METHODS = ['CASH', 'TRANSFER', 'CLIQ', 'CHEQUE', 'VISA', 'OTHER'] as const;
@@ -58,10 +58,14 @@ export default function Vouchers() {
 
 interface Detail extends V {
   treasury: { name: string; kind: string } | null; counterAccount: { code: string; name: string }; entry: { id: string; number: string; status: string } | null; amountWords: string;
-  cheque: { number: string; bankName: string; dueDate: string; status: string; id: string } | null; createdBy: string | null; updatedBy: string | null; cancelledBy: string | null; cancelReason: string | null; createdAt: string;
+  cheques: { number: string; bankName: string; dueDate: string; status: string; id: string; amount: string }[]; createdBy: string | null; updatedBy: string | null; cancelledBy: string | null; cancelReason: string | null; createdAt: string;
   revisions: { id: string; version: number; action: string; createdAt: string; user: string | null; reason: string | null; changes: { field: string; from: unknown; to: unknown }[] | null }[];
   clinic: { name: string; nameEn: string | null; address: string | null; phone: string | null; hasLogo: boolean };
 }
+
+interface Cq { number: string; bankName: string; drawer: string; accountNumber: string; issueDate: string; dueDate: string; amount: string }
+const blankCq = (): Cq => ({ number: '', bankName: '', drawer: '', accountNumber: '', issueDate: '', dueDate: today(), amount: '' });
+const BANKS = ['البنك العربي', 'بنك الإسكان', 'البنك الأهلي الأردني', 'بنك القاهرة عمان', 'البنك الإسلامي الأردني', 'البنك العربي الإسلامي الدولي', 'بنك الاتحاد', 'البنك التجاري الأردني', 'بنك الأردن', 'بنك الأردن الكويت', 'البنك الاستثماري', 'بنك الاستثمار العربي الأردني', 'بنك صفوة الإسلامي', 'كابيتال بنك', 'بنك ABC', 'سوسيتيه جنرال'];
 
 export function VoucherForm() {
   const { t } = useTranslation();
@@ -71,12 +75,18 @@ export function VoucherForm() {
   const existing = useQuery({ queryKey: ['acc', 'voucher', id], queryFn: () => api.get<Detail>(`/accounting/vouchers/${id}`), enabled: !!id });
   const settings = useQuery({ queryKey: ['acc', 'settings'], queryFn: () => api.get<{ requireReason: boolean }>('/accounting/settings') });
   const [v, setV] = useState({ kind: (sp.get('kind') as 'RECEIPT' | 'PAYMENT') || 'RECEIPT', date: today(), method: 'CASH', treasuryId: '', amount: '', counterAccountId: '', partyName: '', purpose: '', reference: '', notes: '', reason: '' });
-  const [cq, setCq] = useState({ number: '', bankName: '', drawer: '', accountNumber: '', issueDate: today(), dueDate: today() });
+  const [cqs, setCqs] = useState<Cq[]>([blankCq()]);
   useEffect(() => { const d = existing.data; if (d) setV({ kind: d.kind, date: d.date, method: d.method, treasuryId: d.treasuryId ?? '', amount: String(Number(d.amount)), counterAccountId: d.counterAccountId, partyName: d.partyName, purpose: d.purpose, reference: d.reference ?? '', notes: d.notes ?? '', reason: '' }); }, [existing.data]);
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV({ ...v, [k]: e.target.value });
   const isCheque = v.method === 'CHEQUE', receipt = v.kind === 'RECEIPT';
+  const newCheques = isCheque && !id;
+  const chequeSum = Math.round(cqs.reduce((t, c) => t + (Number(c.amount) || 0), 0) * 1000) / 1000;
+  const setCq = (i: number, p: Partial<Cq>) => setCqs(cqs.map((c, j) => (j === i ? { ...c, ...p } : c)));
   const save = useApiMutation(() => {
-    const body = { ...v, amount: Number(v.amount), treasuryId: v.treasuryId || null, reference: v.reference || null, notes: v.notes || null, reason: v.reason || null, ...(isCheque && !id && { cheque: { ...cq, drawer: cq.drawer || null, accountNumber: cq.accountNumber || null } }) };
+    const body = {
+      ...v, amount: newCheques ? chequeSum : Number(v.amount), treasuryId: v.treasuryId || null, reference: v.reference || null, notes: v.notes || null, reason: v.reason || null,
+      ...(newCheques && { cheques: cqs.filter((c) => c.number || c.amount).map((c) => ({ ...c, amount: Number(c.amount), drawer: c.drawer || null, accountNumber: c.accountNumber || null, issueDate: c.issueDate || null })) }),
+    };
     return id ? api.put<{ id: string }>(`/accounting/vouchers/${id}`, body) : api.post<{ id: string }>('/accounting/vouchers', body);
   }, { invalidate: [['acc']], onSuccess: (r) => nav(`/accounting/vouchers/${r.id}`, { replace: true }) });
   if (id && existing.isLoading) return <PageLoader />;
@@ -90,7 +100,7 @@ export function VoucherForm() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field label={t('ao.date')} required><Input type="date" value={v.date} onChange={set('date')} /></Field>
           <Field label={t('ao.method')} required><Select value={v.method} onChange={(e) => setV({ ...v, method: e.target.value, treasuryId: '' })}>{METHODS.filter((m) => receipt || m !== 'VISA').map((m) => <option key={m} value={m}>{t(`ao.methods.${m}`)}</option>)}</Select></Field>
-          <Field label={t('acc.f.amount')} required><Input type="number" step="0.001" min="0" dir="ltr" value={v.amount} onChange={set('amount')} /></Field>
+          <Field label={t('acc.f.amount')} required hint={newCheques ? t('ao.v.chequeSumHint') : undefined}><Input type="number" step="0.001" min="0" dir="ltr" value={newCheques ? String(chequeSum) : v.amount} onChange={set('amount')} disabled={newCheques} /></Field>
           {needsTreasury && <Field label={receipt ? t('ao.v.into') : t('ao.v.from')} required><TreasurySelect kind={treasuryKind} value={v.treasuryId} onChange={(x) => setV({ ...v, treasuryId: x })} /></Field>}
           {v.method === 'VISA' && <p className="self-end rounded-xl bg-primary-50 px-3 py-2 text-xs text-primary-800">{t('ao.v.visaHint')}</p>}
           {isCheque && receipt && <p className="self-end rounded-xl bg-primary-50 px-3 py-2 text-xs text-primary-800">{t('ao.v.chequeInHint')}</p>}
@@ -100,17 +110,37 @@ export function VoucherForm() {
           <Field label={t('acc.f.reference')}><Input value={v.reference} onChange={set('reference')} /></Field>
           <Field label={t('ao.notes')} className="sm:col-span-2"><Textarea rows={2} value={v.notes} onChange={set('notes')} /></Field>
         </div>
-        {isCheque && !id && (
-          <div className="mt-4 grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-3">
-            <p className="font-semibold sm:col-span-3">{t('ao.ch.details')}</p>
-            <Field label={t('ao.ch.number')} required><Input dir="ltr" value={cq.number} onChange={(e) => setCq({ ...cq, number: e.target.value })} /></Field>
-            <Field label={t('ao.ch.bank')} required><Input value={cq.bankName} onChange={(e) => setCq({ ...cq, bankName: e.target.value })} /></Field>
-            <Field label={t('ao.ch.drawer')}><Input value={cq.drawer} onChange={(e) => setCq({ ...cq, drawer: e.target.value })} /></Field>
-            <Field label={t('ao.ch.accountNumber')}><Input dir="ltr" value={cq.accountNumber} onChange={(e) => setCq({ ...cq, accountNumber: e.target.value })} /></Field>
-            <Field label={t('ao.ch.issueDate')}><Input type="date" value={cq.issueDate} onChange={(e) => setCq({ ...cq, issueDate: e.target.value })} /></Field>
-            <Field label={t('ao.ch.dueDate')} required><Input type="date" value={cq.dueDate} onChange={(e) => setCq({ ...cq, dueDate: e.target.value })} /></Field>
+        {newCheques && (
+          <div className="mt-4 rounded-xl border border-line p-3">
+            <p className="mb-2 font-semibold">{t('ao.v.chequesTitle', { n: cqs.length })}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] text-sm">
+                <thead><tr className="text-xs text-ink-muted">
+                  <th className="w-8 p-1">#</th><th className="p-1 text-start">{t('ao.ch.number')} *</th><th className="p-1 text-start">{t('ao.ch.bank')} *</th><th className="p-1 text-start">{t('ao.ch.dueDate')} *</th>
+                  <th className="p-1 text-start">{t('acc.f.amount')} *</th>{receipt && <th className="p-1 text-start">{t('ao.ch.drawer')}</th>}<th className="p-1 text-start">{t('ao.ch.accountNumber')}</th><th className="w-10" />
+                </tr></thead>
+                <tbody>{cqs.map((c, i) => (
+                  <tr key={i} className="border-t border-line/70">
+                    <td className="p-1 text-center text-xs text-ink-muted">{i + 1}</td>
+                    <td className="p-1"><Input className="!h-9" dir="ltr" value={c.number} onChange={(e) => setCq(i, { number: e.target.value })} /></td>
+                    <td className="p-1"><Input className="!h-9" value={c.bankName} list="cheque-banks" onChange={(e) => setCq(i, { bankName: e.target.value })} /></td>
+                    <td className="p-1"><Input className="!h-9" type="date" value={c.dueDate} onChange={(e) => setCq(i, { dueDate: e.target.value })} /></td>
+                    <td className="p-1"><Input className="!h-9" type="number" step="0.001" min="0" dir="ltr" value={c.amount} onChange={(e) => setCq(i, { amount: e.target.value })} /></td>
+                    {receipt && <td className="p-1"><Input className="!h-9" value={c.drawer} placeholder={v.partyName} onChange={(e) => setCq(i, { drawer: e.target.value })} /></td>}
+                    <td className="p-1"><Input className="!h-9" dir="ltr" value={c.accountNumber} onChange={(e) => setCq(i, { accountNumber: e.target.value })} /></td>
+                    <td className="p-1">{cqs.length > 1 && <IconButton size="sm" label={t('common.remove')} onClick={() => setCqs(cqs.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4 text-danger-600" /></IconButton>}</td>
+                  </tr>
+                ))}</tbody>
+                <tfoot><tr className="border-t border-line font-bold">
+                  <td /><td className="p-1" colSpan={3}><Button size="sm" variant="ghost" icon={<Plus className="h-4 w-4" />} onClick={() => { const last = cqs[cqs.length - 1]; setCqs([...cqs, { ...blankCq(), bankName: last?.bankName ?? '', drawer: last?.drawer ?? '', accountNumber: last?.accountNumber ?? '', number: /^\d+$/.test(last?.number ?? '') ? String(Number(last.number) + 1).padStart(last.number.length, '0') : '' }]); }}>{t('ao.v.addCheque')}</Button></td>
+                  <td className="p-1 tabular-nums" dir="ltr"><Money v={chequeSum} /></td><td colSpan={3} />
+                </tr></tfoot>
+              </table>
+            </div>
+            <datalist id="cheque-banks">{BANKS.map((b) => <option key={b} value={b} />)}</datalist>
           </div>
         )}
+        {isCheque && id && existing.data?.cheques.length ? <p className="mt-3 rounded-xl bg-primary-50 px-3 py-2 text-xs text-primary-800">{t('ao.v.chequesEditHint', { n: existing.data.cheques.length })}</p> : null}
         {id && <Field label={settings.data?.requireReason ? t('acc.journal.reason') : t('acc.journal.reasonOptional')} className="mt-3"><Input value={v.reason} onChange={set('reason')} /></Field>}
         <div className="mt-4 flex justify-end gap-2 border-t border-line pt-3">
           <Button variant="outline" onClick={() => nav(-1)}>{t('common.cancel')}</Button>
@@ -160,7 +190,15 @@ export function VoucherView() {
           <Row k={t('ao.v.sum')} v={<span className="text-lg font-extrabold"><Money v={v.amount} /> JOD</span>} />
           <Row k={t('ao.v.words')} v={v.amountWords} />
           <Row k={t('ao.v.for')} v={v.purpose} />
-          <Row k={t('ao.method')} v={<>{t(`ao.methods.${v.method}`)}{v.treasury && ` — ${v.treasury.name}`}{v.cheque && ` — ${t('ao.ch.number')} ${v.cheque.number} / ${v.cheque.bankName} / ${t('ao.ch.dueDate')} ${v.cheque.dueDate.slice(0, 10)}`}</>} />
+          <Row k={t('ao.method')} v={<>{t(`ao.methods.${v.method}`)}{v.treasury && ` — ${v.treasury.name}`}{v.cheques.length > 0 && ` (${t('ao.v.chequeCount', { n: v.cheques.length })})`}</>} />
+          {v.cheques.length > 0 && (
+            <div className="border-b border-dotted border-line pb-2">
+              <table className="w-full text-xs">
+                <thead><tr className="text-ink-muted"><th className="p-1 text-start">#</th><th className="p-1 text-start">{t('ao.ch.number')}</th><th className="p-1 text-start">{t('ao.ch.bank')}</th><th className="p-1 text-start">{t('ao.ch.dueDate')}</th><th className="p-1 text-end">{t('acc.f.amount')}</th></tr></thead>
+                <tbody>{v.cheques.map((c, i) => <tr key={c.id} className="border-t border-line/60"><td className="p-1">{i + 1}</td><td className="p-1" dir="ltr">{c.number}</td><td className="p-1">{c.bankName}</td><td className="p-1">{c.dueDate.slice(0, 10)}</td><td className="p-1 text-end"><Money v={c.amount} /></td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
           <Row k={t('ao.v.account')} v={`${v.counterAccount.code} ${v.counterAccount.name}`} />
           {v.reference && <Row k={t('acc.f.reference')} v={v.reference} />}
           {v.notes && <Row k={t('ao.notes')} v={v.notes} />}

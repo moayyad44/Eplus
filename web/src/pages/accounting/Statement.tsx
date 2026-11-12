@@ -6,7 +6,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { exportCsv } from '@/lib/export';
 import { amt, amt0, monthStart, today, useAccounts } from '@/lib/accounting';
-import { Button, Card, EmptyState, ErrorState, Field, Input, PageHeader, PageLoader, Select } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Field, Input, PageHeader, PageLoader } from '@/components/ui';
+import { AccountCombo } from './AccountCombo';
 
 interface St {
   account: { id: string; code: string; name: string; nature: string; isGroup: boolean }; from: string; to: string; opening: number; debit: number; credit: number; closing: number;
@@ -40,10 +41,7 @@ export default function Statement() {
       <Card className="mb-4 print:hidden">
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
           <Field label={t('acc.f.account')}>
-            <Select value={accountId} onChange={(e) => set('accountId', e.target.value)}>
-              <option value="">{t('acc.journal.pickAccount')}</option>
-              {accounts.data?.map((a) => <option key={a.id} value={a.id}>{' '.repeat(a.level * 3)}{a.code} — {a.name}</option>)}
-            </Select>
+            <AccountCombo value={accountId} onChange={(v) => set('accountId', v)} rows={accounts.data ?? []} placeholder={t('acc.statement.searchAccount')} openOnFocus tree />
           </Field>
           <Field label={t('common.from')}><Input type="date" value={from} onChange={(e) => set('from', e.target.value)} /></Field>
           <Field label={t('common.to')}><Input type="date" value={to} onChange={(e) => set('to', e.target.value)} /></Field>

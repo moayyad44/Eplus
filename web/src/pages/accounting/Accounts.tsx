@@ -9,6 +9,7 @@ import { useApiMutation } from '@/lib/hooks';
 import { exportCsv } from '@/lib/export';
 import { TYPES, amt0, useAccounts, type AccountRow } from '@/lib/accounting';
 import { Badge, Button, Card, Checkbox, Dialog, Field, IconButton, Input, PageHeader, PageLoader, Select, Textarea, useConfirm, ErrorState } from '@/components/ui';
+import { AccountCombo } from './AccountCombo';
 
 export default function Accounts() {
   const { t } = useTranslation();
@@ -105,6 +106,10 @@ function AccountDialog({ row, parent, rows, onClose }: { row?: AccountRow; paren
     nature: row?.nature ?? '', isGroup: row?.isGroup ?? false, description: '',
   });
   const p = rows.find((r) => r.id === v.parentId);
+  // Under: a main account of the same type (not itself or one of its own branches), or a sub-account without entries (it becomes a main account).
+  const branch = new Set<string>(row ? [row.id] : []);
+  for (let grew = !!row; grew;) { grew = false; for (const r of rows) if (r.parentId && branch.has(r.parentId) && !branch.has(r.id)) { branch.add(r.id); grew = true; } }
+  const parents = rows.filter((r) => !branch.has(r.id) && (!row || r.type === row.type) && (r.isGroup || (!r.lines && !r.systemKey)));
   const save = useApiMutation(() => {
     const body = { code: v.code, name: v.name, parentId: v.parentId || null, ...(!p && { type: v.type }), ...(v.nature && { nature: v.nature }), isGroup: v.isGroup, description: v.description || null };
     return row ? api.put(`/accounting/accounts/${row.id}`, body) : api.post('/accounting/accounts', body);
@@ -116,12 +121,14 @@ function AccountDialog({ row, parent, rows, onClose }: { row?: AccountRow; paren
         {row?.systemKey && <p className="rounded-xl bg-primary-50 px-3 py-2 text-xs text-primary-800 sm:col-span-2">{t('acc.accounts.systemHint')}</p>}
         <Field label={t('acc.f.code')} required error={fe.code}><Input value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} dir="ltr" invalid={!!fe.code} /></Field>
         <Field label={t('acc.f.name')} required error={fe.name}><Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} invalid={!!fe.name} /></Field>
-        <Field label={t('acc.f.parent')} className="sm:col-span-2">
-          <Select value={v.parentId} onChange={(e) => setV({ ...v, parentId: e.target.value })}>
-            <option value="">{t('acc.f.none')}</option>
-            {rows.filter((r) => r.isGroup && r.id !== row?.id && (!row || r.type === row.type)).map((r) => <option key={r.id} value={r.id}>{r.code} — {r.name}</option>)}
-          </Select>
+        <Field label={t('acc.f.parent')} className="sm:col-span-2" hint={row ? t('acc.accounts.moveHint') : undefined}>
+          <AccountCombo value={v.parentId} onChange={(x) => setV({ ...v, parentId: x })} rows={parents} placeholder={t('acc.accounts.parentPick')} openOnFocus tree />
         </Field>
+        {row && v.parentId !== (row.parentId ?? '') && p && !v.code.startsWith(p.code) && (
+          <p className="-mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted sm:col-span-2">{t('acc.accounts.codeAfterMove')}
+            <Button size="sm" variant="ghost" onClick={() => setV({ ...v, code: suggestCode(p, rows) })}>{t('acc.accounts.useCode', { c: suggestCode(p, rows) })}</Button>
+          </p>
+        )}
         <Field label={t('acc.f.type')}>
           <Select value={p?.type ?? v.type} disabled={!!p || !!row} onChange={(e) => setV({ ...v, type: e.target.value })}>{TYPES.map((x) => <option key={x} value={x}>{t(`acc.type.${x}`)}</option>)}</Select>
         </Field>

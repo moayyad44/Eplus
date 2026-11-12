@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Banknote, BadgePercent, Printer, ReceiptText, RotateCcw, ShieldCheck, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { Banknote, BadgePercent, CreditCard, Printer, ReceiptText, RotateCcw, ShieldCheck, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { money } from '@/lib/format';
 import { Card, CardHeader, DateRangePicker, EmptyState, ErrorState, Button, PageHeader, PageLoader, StatCard, presetRange } from '@/components/ui';
@@ -28,6 +28,7 @@ export default function Cashier() {
       {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !s ? <PageLoader /> : (
         <div className="space-y-4">
           <p className="hidden text-sm print:block">{range.from} — {range.to}</p>
+          <LiveBalances />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label={t('billing.grossSales')} value={money(s.grossSales)} hint={`${t('billing.invoiceCount')}: ${s.invoiceCount}`} icon={<ReceiptText className="h-5 w-5" />} />
             <StatCard label={t('billing.collected')} value={money(s.collected)} tone="success" icon={<Banknote className="h-5 w-5" />} />
@@ -52,6 +53,26 @@ export default function Cashier() {
         </div>
       )}
     </div>
+  );
+}
+
+interface Balances { started: boolean; startDate?: string; cash: { id: string; name: string; balance: number; todayIn: number; todayOut: number }[]; visa: { balance: number; todayIn: number; todayOut: number; pendingCount: number } | null }
+/** What is in each cash box and still waiting in Visa right now (from the accounting books — deposits and cash expenses included). */
+function LiveBalances() {
+  const { t } = useTranslation();
+  const q = useQuery({ queryKey: ['cashier-balances'], queryFn: () => api.get<Balances>('/cashier/balances'), refetchInterval: 60_000 });
+  const b = q.data;
+  if (!b) return null;
+  if (!b.started) return <p className="rounded-xl bg-warning-50 px-3 py-2 text-sm text-warning-700">{t('billing.live.notStarted')}</p>;
+  const today = (x: { todayIn: number; todayOut: number }) => `${t('billing.live.today')} +${money(x.todayIn, false)} / −${money(x.todayOut, false)}`;
+  return (
+    <Card>
+      <CardHeader title={t('billing.live.title')} subtitle={t('billing.live.hint')} icon={<Wallet className="h-5 w-5" />} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {b.cash.map((c) => <StatCard key={c.id} label={c.name} value={money(c.balance)} hint={today(c)} tone={c.balance < 0 ? 'danger' : 'success'} icon={<Banknote className="h-5 w-5" />} />)}
+        {b.visa && <StatCard label={t('billing.live.visa')} value={money(b.visa.balance)} hint={t('billing.live.visaPending', { n: b.visa.pendingCount })} tone="warning" icon={<CreditCard className="h-5 w-5" />} />}
+      </div>
+    </Card>
   );
 }
 

@@ -7,21 +7,16 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useAccounts } from '@/lib/accounting';
 import { Button, Select } from '@/components/ui';
+import { AccountCombo } from './AccountCombo';
 
 export interface Treasury { id: string; kind: 'CASH' | 'BANK'; name: string; accountId: string; account?: { code: string; name: string }; custodianId: string | null; custodian: string | null; bankName: string | null; branch: string | null; accountNumber: string | null; iban: string | null; holderName: string | null; notes: string | null; isActive: boolean; balance: number }
 export const useTreasuries = () => useQuery({ queryKey: ['acc', 'treasuries'], queryFn: () => api.get<Treasury[]>('/accounting/treasuries'), staleTime: 15_000 });
 
-/** Leaf (posting) accounts, optionally limited to some types. */
+/** Leaf (posting) accounts, optionally limited to some types — searchable by code or name. */
 export function AccountSelect({ value, onChange, types, placeholder, className, invalid }: { value: string; onChange: (v: string) => void; types?: string[]; placeholder?: string; className?: string; invalid?: boolean }) {
-  const { t } = useTranslation();
   const q = useAccounts();
-  const rows = (q.data ?? []).filter((a) => !a.isGroup && a.isActive && (!types || types.includes(a.type)));
-  return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} className={className} invalid={invalid}>
-      <option value="">{placeholder ?? t('acc.journal.pickAccount')}</option>
-      {rows.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-    </Select>
-  );
+  const rows = (q.data ?? []).filter((a) => !a.isGroup && (a.isActive || a.id === value) && (!types || types.includes(a.type)));
+  return <AccountCombo value={value} onChange={onChange} rows={rows} placeholder={placeholder} className={className} invalid={invalid} openOnFocus />;
 }
 
 export function TreasurySelect({ value, onChange, kind, placeholder, className }: { value: string; onChange: (v: string) => void; kind?: 'CASH' | 'BANK'; placeholder?: string; className?: string }) {

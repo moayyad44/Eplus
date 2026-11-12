@@ -50,7 +50,7 @@ function Runs() {
   );
 }
 
-interface Slip { id: string; userId: string; user: string; jobTitle: string | null; basic: string; allowances: string; commission: string; bonus: string; overtime: string; absenceDays: string; lateMinutes: number; absenceDeduction: string; deductions: string; advance: string; net: string; notes: string | null }
+interface Slip { id: string; userId: string; user: string; jobTitle: string | null; payType: 'MONTHLY' | 'HOURLY'; hours: string; hourlyRate: string; basic: string; allowances: string; commission: string; bonus: string; overtime: string; absenceDays: string; lateMinutes: number; absenceDeduction: string; deductions: string; advance: string; net: string; notes: string | null }
 interface Run extends RunRow { slips: Slip[]; entries: { id: string; number: string; sourceKey: string; status: string }[] }
 const EDIT = ['commission', 'bonus', 'overtime', 'absenceDeduction', 'deductions', 'advance'] as const;
 
@@ -70,8 +70,8 @@ export function PayrollRun() {
   const r = q.data!;
   const sum = (k: keyof Slip) => r.slips.reduce((s, x) => s + Number(x[k]), 0);
   const cols = ['basic', 'allowances', 'commission', 'bonus', 'overtime', 'absenceDeduction', 'deductions', 'advance', 'net'] as const;
-  const excel = () => exportXlsx(`${t('ao.pay.title')} ${r.month}`, [{ header: t('ao.pay.employee'), key: 'user' }, { header: t('ao.pay.job'), key: 'jobTitle' }, ...cols.map((c) => ({ header: t(`ao.pay.f.${c}`), key: c, money: true })), { header: t('ao.pay.f.absenceDays'), key: 'absenceDays' }],
-    r.slips.map((s) => ({ ...s, ...Object.fromEntries(cols.map((c) => [c, Number(s[c])])), absenceDays: Number(s.absenceDays) })), [...cols]);
+  const excel = () => exportXlsx(`${t('ao.pay.title')} ${r.month}`, [{ header: t('ao.pay.employee'), key: 'user' }, { header: t('ao.pay.job'), key: 'jobTitle' }, ...cols.map((c) => ({ header: t(`ao.pay.f.${c}`), key: c, money: true })), { header: t('ao.pay.payType'), key: 'pt' }, { header: t('ao.pay.hours'), key: 'hrs' }, { header: t('ao.pay.hourlyRate'), key: 'rate', money: true }, { header: t('ao.pay.f.absenceDays'), key: 'absenceDays' }],
+    r.slips.map((s) => ({ ...s, ...Object.fromEntries(cols.map((c) => [c, Number(s[c])])), pt: t(`ao.pay.pt.${s.payType}`), hrs: s.payType === 'HOURLY' ? Number(s.hours) : null, rate: s.payType === 'HOURLY' ? Number(s.hourlyRate) : null, absenceDays: Number(s.absenceDays) })), [...cols]);
   if (print) return <Payslip run={r} slip={print} onBack={() => setPrint(null)} />;
   return (
     <div>
@@ -86,7 +86,7 @@ export function PayrollRun() {
             <thead><tr className="border-b border-line bg-surface-subtle text-xs text-ink-muted"><th className="p-2 text-start">{t('ao.pay.employee')}</th>{cols.map((c) => <th key={c} className="p-2 text-end">{t(`ao.pay.f.${c}`)}</th>)}<th className="p-2 print:hidden" /></tr></thead>
             <tbody>{r.slips.map((s) => (
               <tr key={s.id} className="border-b border-line/60">
-                <td className="p-2"><b>{s.user}</b><span className="block text-xs text-ink-muted">{s.jobTitle}{Number(s.absenceDays) > 0 && ` · ${t('ao.pay.absent', { n: Number(s.absenceDays) })}`}{s.lateMinutes > 0 && ` · ${t('ao.pay.late', { n: s.lateMinutes })}`}</span></td>
+                <td className="p-2"><b>{s.user}</b><span className="block text-xs text-ink-muted">{s.payType === 'HOURLY' && <span className="me-1 rounded bg-primary-50 px-1 text-primary-800">{t('ao.pay.hoursLine', { h: Number(s.hours), r: amt0(s.hourlyRate) })}</span>}{s.jobTitle}{Number(s.absenceDays) > 0 && s.payType !== 'HOURLY' && ` · ${t('ao.pay.absent', { n: Number(s.absenceDays) })}`}{s.lateMinutes > 0 && ` · ${t('ao.pay.late', { n: s.lateMinutes })}`}</span></td>
                 {cols.map((c) => <td key={c} className={`p-2 text-end ${c === 'net' ? 'font-bold' : ''}`}><Money v={s[c]} /></td>)}
                 <td className="p-2 print:hidden"><div className="flex gap-1">{manage && r.status === 'DRAFT' && <Button size="sm" variant="ghost" onClick={() => setEdit(s)}>{t('common.edit')}</Button>}<Button size="sm" variant="ghost" icon={<Printer className="h-3.5 w-3.5" />} onClick={() => setPrint(s)}>{t('ao.pay.slip')}</Button></div></td>
               </tr>
@@ -104,13 +104,19 @@ export function PayrollRun() {
 
 function SlipForm({ runId, slip, onClose }: { runId: string; slip: Slip; onClose: () => void }) {
   const { t } = useTranslation();
-  const [v, setV] = useState<Record<string, string>>(Object.fromEntries([...EDIT.map((k) => [k, String(Number(slip[k]))]), ['notes', slip.notes ?? '']]));
-  const save = useApiMutation(() => api.put(`/accounting/payroll/runs/${runId}/slips/${slip.id}`, { ...Object.fromEntries(EDIT.map((k) => [k, Number(v[k] || 0)])), notes: v.notes || null }), { invalidate: [['acc']], onSuccess: onClose });
+  const hourly = slip.payType === 'HOURLY';
+  const [v, setV] = useState<Record<string, string>>(Object.fromEntries([...EDIT.map((k) => [k, String(Number(slip[k]))]), ['notes', slip.notes ?? ''], ['hours', String(Number(slip.hours))], ['hourlyRate', String(Number(slip.hourlyRate))]]));
+  const save = useApiMutation(() => api.put(`/accounting/payroll/runs/${runId}/slips/${slip.id}`, { ...Object.fromEntries(EDIT.filter((k) => !(hourly && k === 'absenceDeduction')).map((k) => [k, Number(v[k] || 0)])), ...(hourly && { hours: Number(v.hours || 0), hourlyRate: Number(v.hourlyRate || 0) }), notes: v.notes || null }), { invalidate: [['acc']], onSuccess: onClose });
+  const basic = hourly ? Math.round(Number(v.hours || 0) * Number(v.hourlyRate || 0) * 1000) / 1000 : Number(slip.basic);
   return (
     <Dialog open onClose={onClose} title={slip.user} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
-      <p className="mb-3 text-sm text-ink-muted">{t('ao.pay.f.basic')}: {amt0(slip.basic)} · {t('ao.pay.f.allowances')}: {amt0(slip.allowances)}</p>
+      {hourly && <div className="mb-3 grid gap-3 rounded-xl bg-primary-50 p-3 sm:grid-cols-2">
+        <Field label={t('ao.pay.hours')} hint={t('ao.pay.hoursHint')}><Input type="number" step="0.25" min="0" dir="ltr" value={v.hours} onChange={(e) => setV({ ...v, hours: e.target.value })} /></Field>
+        <Field label={t('ao.pay.hourlyRate')}><Input type="number" step="0.001" min="0" dir="ltr" value={v.hourlyRate} onChange={(e) => setV({ ...v, hourlyRate: e.target.value })} /></Field>
+      </div>}
+      <p className="mb-3 text-sm text-ink-muted">{t('ao.pay.f.basic')}: <b>{amt0(basic)}</b>{hourly && ` (${t('ao.pay.hoursTimesRate')})`} · {t('ao.pay.f.allowances')}: {amt0(slip.allowances)}</p>
       <div className="grid gap-3 sm:grid-cols-2">
-        {EDIT.map((k) => <Field key={k} label={t(`ao.pay.f.${k}`)}><Input type="number" step="0.001" min="0" dir="ltr" value={v[k]} onChange={(e) => setV({ ...v, [k]: e.target.value })} /></Field>)}
+        {EDIT.filter((k) => !(hourly && k === 'absenceDeduction')).map((k) => <Field key={k} label={t(`ao.pay.f.${k}`)}><Input type="number" step="0.001" min="0" dir="ltr" value={v[k]} onChange={(e) => setV({ ...v, [k]: e.target.value })} /></Field>)}
         <Field label={t('ao.notes')} className="sm:col-span-2"><Input value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
       </div>
     </Dialog>
@@ -142,7 +148,7 @@ function Payslip({ run, slip, onBack }: { run: Run; slip: Slip; onBack: () => vo
       <div className="mx-auto max-w-2xl rounded-2xl border border-line bg-white p-8 print:border-0 print:p-0">
         <div className="flex items-center justify-between border-b-2 border-primary-700 pb-3"><p className="text-xl font-extrabold text-primary-800">{clinic.data?.name}</p>{clinic.data?.hasLogo && <img src="/api/public/logo" alt="" className="h-14" />}</div>
         <p className="my-4 text-center text-lg font-bold">{t('ao.pay.slipTitle', { m: run.month })}</p>
-        <p className="mb-4 text-sm">{t('ao.pay.employee')}: <b>{slip.user}</b>{slip.jobTitle && ` — ${slip.jobTitle}`}</p>
+        <p className="mb-4 text-sm">{t('ao.pay.employee')}: <b>{slip.user}</b>{slip.jobTitle && ` — ${slip.jobTitle}`}{slip.payType === 'HOURLY' && <span className="block text-xs text-ink-muted">{t('ao.pay.hoursLine', { h: Number(slip.hours), r: amt0(slip.hourlyRate) })}</span>}</p>
         <div className="grid grid-cols-2 gap-6 text-sm">
           <div><p className="mb-2 font-bold text-success-700">{t('ao.pay.earnings')}</p>{add.map((k) => Number(slip[k]) > 0 && <p key={k} className="flex justify-between border-b border-dotted border-line py-1"><span>{t(`ao.pay.f.${k}`)}</span><Money v={slip[k]} /></p>)}</div>
           <div><p className="mb-2 font-bold text-danger-700">{t('ao.pay.deductionsTitle')}</p>{sub.map((k) => Number(slip[k]) > 0 && <p key={k} className="flex justify-between border-b border-dotted border-line py-1"><span>{t(`ao.pay.f.${k}`)}</span><Money v={slip[k]} /></p>)}{Number(slip.absenceDays) > 0 && <p className="text-xs text-ink-muted">{t('ao.pay.absent', { n: Number(slip.absenceDays) })}</p>}</div>
@@ -154,7 +160,7 @@ function Payslip({ run, slip, onBack }: { run: Run; slip: Slip; onBack: () => vo
   );
 }
 
-interface Prof { user: { id: string; fullName: string; staffType: string | null; role: { name: string } }; profile: { jobTitle: string | null; basic: string; allowances: { name: string; amount: number }[]; paymentMethod: string; treasuryId: string | null; isActive: boolean } | null }
+interface Prof { user: { id: string; fullName: string; staffType: string | null; role: { name: string } }; profile: { jobTitle: string | null; payType: 'MONTHLY' | 'HOURLY'; basic: string; hourlyRate: string; allowances: { name: string; amount: number }[]; paymentMethod: string; treasuryId: string | null; isActive: boolean } | null }
 function Profiles() {
   const { t } = useTranslation();
   const { can } = useAuth();
@@ -166,7 +172,8 @@ function Profiles() {
       <DataTable rows={q.data} loading={q.isLoading} error={q.error} rowKey={(r) => r.user.id} onRowClick={can('accounting.payroll.manage') ? setEdit : undefined} columns={[
         { key: 'n', header: t('ao.pay.employee'), cell: (r) => <><b>{r.user.fullName}</b><span className="block text-xs text-ink-muted">{r.user.role.name}</span></> },
         { key: 'j', header: t('ao.pay.job'), cell: (r) => r.profile?.jobTitle },
-        { key: 'b', header: t('ao.pay.f.basic'), align: 'end', cell: (r) => r.profile ? <Money v={r.profile.basic} /> : <span className="text-xs text-ink-muted">{t('ao.pay.noProfile')}</span> },
+        { key: 't', header: t('ao.pay.payType'), cell: (r) => r.profile && <Badge tone={r.profile.payType === 'HOURLY' ? 'primary' : 'neutral'} dot={false}>{t(`ao.pay.pt.${r.profile.payType}`)}</Badge> },
+        { key: 'b', header: t('ao.pay.salaryOrRate'), align: 'end', cell: (r) => r.profile ? (r.profile.payType === 'HOURLY' ? <span><Money v={r.profile.hourlyRate} /> <span className="text-xs text-ink-muted">{t('ao.pay.perHour')}</span></span> : <Money v={r.profile.basic} />) : <span className="text-xs text-ink-muted">{t('ao.pay.noProfile')}</span> },
         { key: 'a', header: t('ao.pay.f.allowances'), align: 'end', cell: (r) => r.profile ? <Money v={r.profile.allowances.reduce((s, a) => s + Number(a.amount), 0)} /> : '' },
         { key: 'm', header: t('ao.method'), cell: (r) => r.profile && t(`ao.methods.${r.profile.paymentMethod}`) },
         { key: 's', header: '', cell: (r) => r.profile && !r.profile.isActive && <Badge dot={false}>{t('ao.stopped')}</Badge> },
@@ -178,14 +185,19 @@ function Profiles() {
 
 function ProfileForm({ p, onClose }: { p: Prof; onClose: () => void }) {
   const { t } = useTranslation();
-  const [v, setV] = useState({ jobTitle: p.profile?.jobTitle ?? '', basic: p.profile ? String(Number(p.profile.basic)) : '', paymentMethod: p.profile?.paymentMethod ?? 'TRANSFER', treasuryId: p.profile?.treasuryId ?? '', isActive: p.profile?.isActive ?? true });
+  const [v, setV] = useState({ jobTitle: p.profile?.jobTitle ?? '', payType: p.profile?.payType ?? 'MONTHLY', basic: p.profile ? String(Number(p.profile.basic)) : '', hourlyRate: p.profile ? String(Number(p.profile.hourlyRate)) : '', paymentMethod: p.profile?.paymentMethod ?? 'TRANSFER', treasuryId: p.profile?.treasuryId ?? '', isActive: p.profile?.isActive ?? true });
   const [al, setAl] = useState<{ name: string; amount: string }[]>((p.profile?.allowances ?? []).map((a) => ({ name: a.name, amount: String(a.amount) })));
-  const save = useApiMutation(() => api.put(`/accounting/payroll/profiles/${p.user.id}`, { ...v, jobTitle: v.jobTitle || null, basic: Number(v.basic || 0), treasuryId: v.treasuryId || null, allowances: al.filter((a) => a.name).map((a) => ({ name: a.name, amount: Number(a.amount || 0) })) }), { invalidate: [['acc']], onSuccess: onClose });
+  const save = useApiMutation(() => api.put(`/accounting/payroll/profiles/${p.user.id}`, { ...v, jobTitle: v.jobTitle || null, basic: Number(v.basic || 0), hourlyRate: Number(v.hourlyRate || 0), treasuryId: v.treasuryId || null, allowances: al.filter((a) => a.name).map((a) => ({ name: a.name, amount: Number(a.amount || 0) })) }), { invalidate: [['acc']], onSuccess: onClose });
   return (
     <Dialog open onClose={onClose} title={p.user.fullName} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t('ao.pay.job')}><Input value={v.jobTitle} onChange={(e) => setV({ ...v, jobTitle: e.target.value })} /></Field>
-        <Field label={t('ao.pay.f.basic')}><Input type="number" step="0.001" dir="ltr" value={v.basic} onChange={(e) => setV({ ...v, basic: e.target.value })} /></Field>
+        <Field label={t('ao.pay.payType')} group>
+          <div className="flex gap-2">{(['MONTHLY', 'HOURLY'] as const).map((k) => <Button key={k} size="sm" variant={v.payType === k ? 'primary' : 'outline'} onClick={() => setV({ ...v, payType: k })}>{t(`ao.pay.pt.${k}`)}</Button>)}</div>
+        </Field>
+        {v.payType === 'MONTHLY'
+          ? <Field label={t('ao.pay.monthlySalary')}><Input type="number" step="0.001" dir="ltr" value={v.basic} onChange={(e) => setV({ ...v, basic: e.target.value })} /></Field>
+          : <Field label={t('ao.pay.hourlyRate')} hint={t('ao.pay.hourlyHint')}><Input type="number" step="0.001" dir="ltr" value={v.hourlyRate} onChange={(e) => setV({ ...v, hourlyRate: e.target.value })} /></Field>}
         <Field label={t('ao.method')}><Select value={v.paymentMethod} onChange={(e) => setV({ ...v, paymentMethod: e.target.value })}>{['TRANSFER', 'CASH', 'CHEQUE'].map((m) => <option key={m} value={m}>{t(`ao.methods.${m}`)}</option>)}</Select></Field>
         <Field label={t('ao.pay.payFrom')}><TreasurySelect value={v.treasuryId} onChange={(x) => setV({ ...v, treasuryId: x })} /></Field>
       </div>

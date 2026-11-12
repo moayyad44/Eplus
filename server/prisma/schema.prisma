@@ -76,6 +76,8 @@ model User {
   licenseNumber      String?
   isActive           Boolean   @default(true)
   loginEnabled       Boolean   @default(true)
+  /// Personal screen choices (e.g. which accounting dashboard cards to show).
+  uiPrefs            Json      @default("{}")
   mustChangePassword Boolean   @default(false)
   failedLoginCount   Int       @default(0)
   lockedUntil        DateTime?
@@ -2646,7 +2648,6 @@ model Voucher {
   purpose          String
   reference        String?
   notes            String?
-  chequeId         String?       @unique
   status           DocStatus     @default(ACTIVE)
   version          Int           @default(1)
   cancelReason     String?
@@ -2850,6 +2851,8 @@ model Cheque {
   replacedById     String?
   fees             Decimal         @default(0) @db.Decimal(14, 3)
   notes            String?
+  /// The receipt / payment voucher it came with (a voucher may carry several cheques).
+  voucherId        String?
   createdById      String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -2858,6 +2861,7 @@ model Cheque {
 
   @@unique([direction, bankName, number])
   @@index([status, dueDate])
+  @@index([voucherId])
   @@map("acc_cheques")
 }
 
@@ -2918,6 +2922,9 @@ model SalaryProfile {
   userId        String   @id
   jobTitle      String?
   basic         Decimal  @default(0) @db.Decimal(12, 3)
+  /// MONTHLY: fixed monthly salary (basic). HOURLY: paid by the hours worked × hourlyRate.
+  payType       String   @default("MONTHLY")
+  hourlyRate    Decimal  @default(0) @db.Decimal(12, 3)
   allowances    Json     @default("[]")
   paymentMethod String   @default("TRANSFER")
   treasuryId    String?
@@ -2957,6 +2964,9 @@ model Payslip {
   userId           String
   jobTitle         String?
   basic            Decimal @default(0) @db.Decimal(12, 3)
+  payType          String  @default("MONTHLY")
+  hours            Decimal @default(0) @db.Decimal(8, 2)
+  hourlyRate       Decimal @default(0) @db.Decimal(12, 3)
   allowances       Decimal @default(0) @db.Decimal(12, 3)
   commission       Decimal @default(0) @db.Decimal(12, 3)
   bonus            Decimal @default(0) @db.Decimal(12, 3)

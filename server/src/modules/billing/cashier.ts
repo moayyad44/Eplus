@@ -9,6 +9,9 @@ import { dateOnly, rangeFromQuery } from '../../lib/dates';
 import { D, num } from '../../lib/money';
 import { env } from '../../config/env';
 import { insuranceTotals } from '../insurance/claimRoutes';
+import { getSetting } from '../../lib/settings';
+import { loadMapping } from '../accounting/link';
+import { dayOf } from '../accounting/journal';
 
 export const cashierRouter = Router();
 
@@ -96,5 +99,44 @@ cashierRouter.get(
     const q = parse(z.object({ from: z.string().optional(), to: z.string().optional() }), req.query);
     const { from, to } = rangeFromQuery(q.from, q.to);
     res.json(await financialSummary(from, to));
+  }),
+);
+
+/**
+ * What is actually in each cash box and still waiting in Visa right now — from the accounting books, so deposits to the
+ * bank, cash expenses, vouchers and count differences are all counted (the period summary above only adds up the day's
+ * payments). Before the accounting link is started the books do not hold the clinic's payments yet.
+ */
+cashierRouter.get(
+  '/balances',
+  requirePerm('cashier.view'),
+  ah(async (_req, res) => {
+    const cfg = await getSetting('accounting');
+    if (!cfg.startDate) return res.json({ started: false, cash: [], visa: null });
+    const today = dayOf(new Date().toLocaleDateString('en-CA', { timeZone: env.TZ }));
+    const m = await loadMapping();
+    const safe = (f: () => string) => { try { return f(); } catch { return null; } };
+    const visaAcc = safe(() => m.role('VISA_CLEARING'));
+    // Every cash box: the registered ones, plus the accounts the clinic's cash payments are posted to.
+    const cashMethods = await prisma.paymentMethod.findMany({ where: { code: 'CASH' }, select: { id: true } });
+    const mapped = [safe(() => m.role('CASH_MAIN')), ...cashMethods.map((x) => safe(() => m.method(x.id)))].filter(Boolean) as string[];
+    const treasuries = await prisma.treasury.findMany({ where: { kind: 'CASH', isActive: true } });
+    const cashIds = [...new Set([...mapped, ...treasuries.map((t) => t.accountId)])];
+    const accounts = await prisma.account.findMany({ where: { id: { in: cashIds } }, select: { id: true, name: true, code: true } });
+    const boxes = cashIds.map((id) => ({ id, accountId: id, name: treasuries.find((t) => t.accountId === id)?.name ?? accounts.find((a) => a.id === id)?.name ?? '', code: accounts.find((a) => a.id === id)?.code ?? '' }))
+      .sort((a, b) => a.code.localeCompare(b.code));
+    const ids = [...boxes.map((b) => b.accountId), ...(visaAcc ? [visaAcc] : [])];
+    const sums = ids.length ? await prisma.$queryRaw<{ accountId: string; bal: Prisma.Decimal; din: Prisma.Decimal; dout: Prisma.Decimal }[]>`
+      SELECT l."accountId", SUM(l.debit - l.credit) bal,
+        SUM(CASE WHEN e.date = ${today} THEN l.debit ELSE 0 END) din, SUM(CASE WHEN e.date = ${today} THEN l.credit ELSE 0 END) dout
+      FROM acc_journal_lines l JOIN acc_journal_entries e ON e.id = l."entryId"
+      WHERE e.status = 'POSTED' AND l."accountId" IN (${Prisma.join(ids)}) GROUP BY 1` : [];
+    const of = (id: string) => sums.find((s) => s.accountId === id);
+    const pending = await prisma.visaTransaction.aggregate({ where: { status: { in: ['PENDING', 'PARTIAL'] } }, _count: true });
+    res.json({
+      started: true, startDate: cfg.startDate,
+      cash: boxes.map((b) => ({ id: b.id, name: b.name, balance: D(of(b.accountId)?.bal).toNumber(), todayIn: D(of(b.accountId)?.din).toNumber(), todayOut: D(of(b.accountId)?.dout).toNumber() })),
+      visa: visaAcc ? { balance: D(of(visaAcc)?.bal).toNumber(), todayIn: D(of(visaAcc)?.din).toNumber(), todayOut: D(of(visaAcc)?.dout).toNumber(), pendingCount: pending._count } : null,
+    });
   }),
 );

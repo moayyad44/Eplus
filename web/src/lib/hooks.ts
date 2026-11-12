@@ -72,3 +72,14 @@ export function useForm<T extends Record<string, unknown>>(initial: T) {
   });
   return { values, setValues, set, bind, reset: () => setValues(initial) };
 }
+
+/** A personal screen choice kept on the server for this user (follows them to any device). */
+export function usePref<T>(key: string, fallback: T) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['pref', key], queryFn: () => api.get<{ value: T | null }>(`/auth/prefs/${key}`), staleTime: Infinity });
+  const save = useMutation({
+    mutationFn: (value: T | null) => api.put<{ value: T | null }>(`/auth/prefs/${key}`, { value }),
+    onMutate: (value) => qc.setQueryData(['pref', key], { value }),
+  });
+  return { value: (q.data?.value ?? fallback) as T, loaded: !q.isLoading, set: (v: T | null) => save.mutate(v) };
+}

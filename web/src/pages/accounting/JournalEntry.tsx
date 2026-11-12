@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { CheckCircle2, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Copy, Pencil, Trash2 } from 'lucide-react';
+import { AccountCombo, resolveAccount } from './AccountCombo';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -20,6 +21,13 @@ interface Entry {
   revisions: { id: string; version: number; action: string; createdAt: string; user: string | null; reason: string | null; changes: { field: string; from: unknown; to: unknown }[] | null }[];
 }
 const blank = (): Line => ({ accountId: '', debit: '', credit: '', description: '', partyName: '' });
+const isEmpty = (l: Line) => !l.accountId && !l.debit && !l.credit && !l.description && !l.partyName;
+/** Always three empty lines at the end: using one adds another (no «add line» clicks). */
+const withBlanks = (ls: Line[]) => { let n = 0; for (let i = ls.length - 1; i >= 0 && isEmpty(ls[i]); i--) n++; return n >= 3 ? ls : [...ls, ...Array.from({ length: 3 - n }, blank)]; };
+const COLS = 5; // account, debit, credit, line note, party
+/** Amount typed or pasted: digits and one dot (commas and spaces dropped). */
+const cleanAmt = (v: string) => { const x = v.replace(/[,\s٬]/g, '').replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[^\d.-]/g, ''); return x; };
+const toLine = (l: Entry['lines'][number]): Line => ({ accountId: l.accountId, debit: Number(l.debit) ? String(Number(l.debit)) : '', credit: Number(l.credit) ? String(Number(l.credit)) : '', description: l.description ?? '', partyName: l.partyName ?? '' });
 
 export default function JournalEntryPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,11 +48,12 @@ function Editor({ entry, copyFrom }: { entry?: Entry; copyFrom: string | null })
   const settings = useQuery({ queryKey: ['acc', 'settings'], queryFn: () => api.get<{ requireApproval: boolean; requireReason: boolean }>('/accounting/settings') });
   const copy = useQuery({ queryKey: ['acc', 'entry', copyFrom], queryFn: () => api.get<Entry>(`/accounting/journal/${copyFrom}`), enabled: !!copyFrom });
   const [head, setHead] = useState({ date: entry?.date ?? today(), type: entry?.type ?? 'GENERAL', description: entry?.description ?? '', reference: entry?.reference ?? '' });
-  const [lines, setLines] = useState<Line[]>(entry ? entry.lines.map((l) => ({ accountId: l.accountId, debit: Number(l.debit) ? String(Number(l.debit)) : '', credit: Number(l.credit) ? String(Number(l.credit)) : '', description: l.description ?? '', partyName: l.partyName ?? '' })) : [blank(), blank()]);
+  const [lines, setLinesRaw] = useState<Line[]>(withBlanks(entry ? entry.lines.map(toLine) : []));
+  const setLines = (ls: Line[]) => setLinesRaw(withBlanks(ls));
   const [dirty, setDirty] = useState(false);
   const [reason, setReason] = useState('');
   useEffect(() => {
-    if (copy.data) { setHead({ date: today(), type: copy.data.type, description: copy.data.description, reference: '' }); setLines(copy.data.lines.map((l) => ({ accountId: l.accountId, debit: Number(l.debit) ? String(Number(l.debit)) : '', credit: Number(l.credit) ? String(Number(l.credit)) : '', description: l.description ?? '', partyName: l.partyName ?? '' }))); }
+    if (copy.data) { setHead({ date: today(), type: copy.data.type, description: copy.data.description, reference: '' }); setLines(copy.data.lines.map(toLine)); }
   }, [copy.data]);
   useEffect(() => {
     if (!dirty) return;
@@ -57,7 +66,7 @@ function Editor({ entry, copyFrom }: { entry?: Entry; copyFrom: string | null })
   const diff = Math.round((debit - credit) * 1000) / 1000;
   const posts = !settings.data?.requireApproval || can('accounting.journal.approve');
   const save = useApiMutation(() => {
-    const body = { ...head, reference: head.reference || null, ...(entry && { reason: reason || null }), lines: lines.filter((l) => l.accountId || l.debit || l.credit).map((l) => ({ accountId: l.accountId, debit: l.debit || 0, credit: l.credit || 0, description: l.description || null, partyName: l.partyName || null })) };
+    const body = { ...head, reference: head.reference || null, ...(entry && { reason: reason || null }), lines: lines.filter((l) => l.accountId || l.debit || l.credit).map((l) => ({ accountId: l.accountId, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0, description: l.description || null, partyName: l.partyName || null })) };
     return entry ? api.put<{ id: string; number: string; status: string }>(`/accounting/journal/${entry.id}`, body) : api.post<{ id: string; number: string; status: string }>('/accounting/journal', body);
   }, {
     invalidate: [['acc'], ['acc-journal']], success: false,
@@ -69,6 +78,67 @@ function Editor({ entry, copyFrom }: { entry?: Entry; copyFrom: string | null })
   });
   const set = (i: number, p: Partial<Line>) => { setDirty(true); setLines(lines.map((l, j) => (j === i ? { ...l, ...p } : l))); };
   const leafs = (accounts.data ?? []).filter((a) => !a.isGroup && (a.isActive || lines.some((l) => l.accountId === a.id)));
+  const grid = useRef<(HTMLInputElement | null)[][]>([]);
+  const cell = (r: number, c: number) => (el: HTMLInputElement | null) => { (grid.current[r] ??= [])[c] = el; };
+  const go = (r: number, c: number) => {
+    if (c >= COLS) { r += 1; c = 0; } else if (c < 0) { r -= 1; c = COLS - 1; }
+    if (r < 0) return;
+    const to = (el: HTMLInputElement | null | undefined) => { if (el) { el.focus(); el.select(); } };
+    // At once when the cell exists (so the next key typed lands in it); a line just added appears on the next frame.
+    if (grid.current[r]?.[c]) to(grid.current[r][c]); else requestAnimationFrame(() => to(grid.current[r]?.[c]));
+  };
+  /** Excel-like keys: ↑ ↓ rows, ← → cells (when the text is all selected or empty), Enter next cell. */
+  const keys = (r: number, c: number) => (e: KeyboardEvent<HTMLInputElement>) => {
+    const el = e.currentTarget;
+    const whole = !el.value || (el.selectionStart === 0 && el.selectionEnd === el.value.length);
+    if (e.key === 'ArrowDown' && !e.altKey) { e.preventDefault(); go(r + 1, c); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); go(r - 1, c); }
+    else if (e.key === 'Enter') { e.preventDefault(); go(r, c + 1); }
+    else if (e.key === 'ArrowLeft' && whole) { e.preventDefault(); go(r, c + 1); } // right to left: the next column is on the left
+    else if (e.key === 'ArrowRight' && whole) { e.preventDefault(); go(r, c - 1); }
+    else if (e.key === '=' && (c === 1 || c === 2) && !el.value) {
+      // «=» in an empty amount: the amount that balances the entry on this side.
+      e.preventDefault();
+      const other = lines.reduce((t, l, j) => t + (j === r ? 0 : (Number(c === 1 ? l.credit : l.debit) || 0) - (Number(c === 1 ? l.debit : l.credit) || 0)), 0);
+      if (other > 0) set(r, c === 1 ? { debit: String(Math.round(other * 1000) / 1000), credit: '' } : { credit: String(Math.round(other * 1000) / 1000), debit: '' });
+    }
+  };
+  /** Paste a block copied from Excel (tabs / new lines): fills from this cell, adding lines as needed. */
+  const paste = (r: number, c: number) => (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text/plain');
+    if (!/[\t\n]/.test(text.trim())) return; // a single value: the normal paste
+    e.preventDefault();
+    const rows = text.replace(/\r/g, '').split('\n').filter((x, i, a) => x.trim() || i < a.length - 1).map((x) => x.split('\t'));
+    const next = [...lines];
+    const missing: number[] = [];
+    rows.forEach((cols, i) => {
+      const at = r + i;
+      while (next.length <= at) next.push(blank());
+      const l = { ...next[at] };
+      cols.forEach((raw, k) => {
+        const col = c + k, v = raw.trim();
+        if (col === 0) { const a = resolveAccount(leafs, v); if (a) l.accountId = a.id; else if (v) { l.accountId = ''; missing.push(at + 1); } }
+        else if (col === 1 || col === 2) {
+          const n = Number(cleanAmt(v));
+          if (!v || !n) { if (col === 1) l.debit = ''; else l.credit = ''; }
+          else if ((col === 1) === (n > 0)) { l.debit = String(Math.abs(n)); l.credit = ''; } else { l.credit = String(Math.abs(n)); l.debit = ''; }
+        } else if (col === 3) l.description = v;
+        else if (col === 4) l.partyName = v;
+      });
+      next[at] = l;
+    });
+    setDirty(true);
+    setLines(next);
+    if (missing.length) toast.warning(t('acc.journal.pasteMissing', { rows: missing.join('، ') }));
+    else toast.success(t('acc.journal.pasted', { n: rows.length }));
+  };
+  /** The lines as a table for Excel. */
+  const copyAll = async () => {
+    const used = lines.filter((l) => !isEmpty(l));
+    const tsv = used.map((l) => { const a = leafs.find((x) => x.id === l.accountId); return [a ? `${a.code} — ${a.name}` : '', l.debit, l.credit, l.description, l.partyName].join('\t'); }).join('\n');
+    try { await navigator.clipboard.writeText(tsv); toast.success(t('acc.journal.copied', { n: used.length })); } catch { toast.error(t('acc.journal.copyFailed')); }
+  };
+  const used = lines.filter((l) => !isEmpty(l)).length;
   return (
     <div>
       <PageHeader title={entry ? `${t('acc.journal.edit')} ${entry.number}` : t('acc.journal.new')} subtitle={entry?.status === 'POSTED' ? t('acc.journal.postedHint') : t('acc.journal.subtitle')} />
@@ -86,28 +156,30 @@ function Editor({ entry, copyFrom }: { entry?: Entry; copyFrom: string | null })
               <th className="p-2 text-start">{t('acc.f.lineNote')}</th><th className="w-40 p-2 text-start">{t('acc.f.party')}</th><th className="w-10" />
             </tr></thead>
             <tbody>
-              {lines.map((l, i) => (
-                <tr key={i} className="border-b border-line/70">
-                  <td className="p-2 text-center text-xs text-ink-muted">{i + 1}</td>
-                  <td className="p-1.5"><Select value={l.accountId} onChange={(e) => set(i, { accountId: e.target.value })} className="!h-9">
-                    <option value="">{t('acc.journal.pickAccount')}</option>
-                    {['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'].map((ty) => <optgroup key={ty} label={t(`acc.type.${ty}`)}>{leafs.filter((a) => a.type === ty).map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}</optgroup>)}
-                  </Select></td>
-                  <td className="p-1.5"><Input type="number" min={0} step="0.001" value={l.debit} onChange={(e) => set(i, { debit: e.target.value, ...(e.target.value && { credit: '' }) })} className="!h-9" dir="ltr" /></td>
-                  <td className="p-1.5"><Input type="number" min={0} step="0.001" value={l.credit} onChange={(e) => set(i, { credit: e.target.value, ...(e.target.value && { debit: '' }) })} className="!h-9" dir="ltr" /></td>
-                  <td className="p-1.5"><Input value={l.description} onChange={(e) => set(i, { description: e.target.value })} className="!h-9" /></td>
-                  <td className="p-1.5"><Input value={l.partyName} onChange={(e) => set(i, { partyName: e.target.value })} className="!h-9" /></td>
-                  <td className="p-1.5">{lines.length > 2 && <IconButton size="sm" label={t('acc.journal.removeLine')} onClick={() => { setDirty(true); setLines(lines.filter((_, j) => j !== i)); }}><Trash2 className="h-4 w-4 text-danger-600" /></IconButton>}</td>
-                </tr>
-              ))}
+              {lines.map((l, i) => {
+                const bad = !l.accountId && !!(Number(l.debit) || Number(l.credit));
+                const box = 'h-9 w-full rounded-lg border border-transparent bg-transparent px-2 text-sm hover:border-line focus:border-primary-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-200';
+                return (
+                  <tr key={i} className={clsx('border-b border-line/70', isEmpty(l) && 'opacity-80')}>
+                    <td className="p-1 text-center text-xs text-ink-muted">{i + 1}</td>
+                    <td className="p-1"><AccountCombo ref={cell(i, 0)} value={l.accountId} onChange={(v) => set(i, { accountId: v })} rows={leafs} placeholder={isEmpty(l) ? '' : undefined} invalid={bad} className={clsx('!h-9 !rounded-lg', !bad && '!border-transparent hover:!border-line focus:!border-primary-400', '!bg-transparent focus:!bg-white')} onKeyDown={keys(i, 0)} onPaste={paste(i, 0)} /></td>
+                    <td className="p-1"><input ref={cell(i, 1)} value={l.debit} inputMode="decimal" dir="ltr" className={clsx(box, 'tabular-nums')} onFocus={(e) => e.target.select()} onChange={(e) => { const v = cleanAmt(e.target.value); set(i, { debit: v, ...(v && { credit: '' }) }); }} onKeyDown={keys(i, 1)} onPaste={paste(i, 1)} /></td>
+                    <td className="p-1"><input ref={cell(i, 2)} value={l.credit} inputMode="decimal" dir="ltr" className={clsx(box, 'tabular-nums')} onFocus={(e) => e.target.select()} onChange={(e) => { const v = cleanAmt(e.target.value); set(i, { credit: v, ...(v && { debit: '' }) }); }} onKeyDown={keys(i, 2)} onPaste={paste(i, 2)} /></td>
+                    <td className="p-1"><input ref={cell(i, 3)} value={l.description} className={box} onFocus={(e) => e.target.select()} onChange={(e) => set(i, { description: e.target.value })} onKeyDown={keys(i, 3)} onPaste={paste(i, 3)} /></td>
+                    <td className="p-1"><input ref={cell(i, 4)} value={l.partyName} className={box} onFocus={(e) => e.target.select()} onChange={(e) => set(i, { partyName: e.target.value })} onKeyDown={keys(i, 4)} onPaste={paste(i, 4)} /></td>
+                    <td className="p-1">{!isEmpty(l) && <IconButton size="sm" label={t('acc.journal.removeLine')} onClick={() => { setDirty(true); setLines(lines.filter((_, j) => j !== i)); }}><Trash2 className="h-4 w-4 text-danger-600" /></IconButton>}</td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot><tr className="font-bold">
-              <td /><td className="p-2"><Button size="sm" variant="ghost" icon={<Plus className="h-4 w-4" />} onClick={() => { setDirty(true); setLines([...lines, blank()]); }}>{t('acc.journal.addLine')}</Button></td>
+              <td /><td className="p-2"><span className="text-xs font-normal text-ink-muted">{t('acc.journal.linesUsed', { n: used })}</span>{used > 0 && <Button size="sm" variant="ghost" className="ms-2" icon={<Copy className="h-4 w-4" />} onClick={copyAll}>{t('acc.journal.copyLines')}</Button>}</td>
               <td className="p-2 tabular-nums" dir="ltr">{amt0(debit)}</td><td className="p-2 tabular-nums" dir="ltr">{amt0(credit)}</td>
               <td colSpan={3} className="p-2">{diff === 0 && debit > 0 ? <span className="text-success-700">✓ {t('acc.journal.balanced')}</span> : <span className="text-danger-600">{t('acc.journal.unbalanced', { d: amt0(Math.abs(diff)) })}</span>}</td>
             </tr></tfoot>
           </table>
         </div>
+        <p className="mt-2 text-xs text-ink-muted">{t('acc.journal.gridHint')}</p>
         {save.fieldErrors.lines && <p className="mt-2 text-xs text-danger-600">{save.fieldErrors.lines}</p>}
         {entry && <Field label={settings.data?.requireReason ? t('acc.journal.reason') : t('acc.journal.reasonOptional')} required={settings.data?.requireReason} className="mt-4 max-w-xl"><Input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
         <div className="mt-4 flex flex-wrap justify-end gap-2">

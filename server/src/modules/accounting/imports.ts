@@ -319,7 +319,7 @@ function chequeType(dir: 'IN' | 'OUT'): ImportType {
         r.data = {
           kind: dir === 'IN' ? 'RECEIPT' : 'PAYMENT', method: 'CHEQUE', date: dt, treasuryId: t?.id ?? null, amount, counterAccountId: a ? a.id : null,
           partyName: v.party.trim(), purpose: v.purpose.trim(), reference: null, notes: 'مستورد من Excel',
-          cheque: { number: v.number.trim(), bankName: v.bank.trim(), drawer: dir === 'IN' ? v.party.trim() : null, dueDate: due, issueDate: dt },
+          cheques: [{ number: v.number.trim(), bankName: v.bank.trim(), drawer: dir === 'IN' ? v.party.trim() : null, dueDate: due, issueDate: dt, amount }],
         };
       }
     },

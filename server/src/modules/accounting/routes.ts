@@ -150,9 +150,14 @@ accountingRouter.put('/accounts/:id', requirePerm('accounting.accounts.manage'),
     }
     if (b.parentId !== undefined && b.parentId !== before.parentId && b.parentId) {
       const p = await tx.account.findUnique({ where: { id: b.parentId } });
-      if (!p?.isGroup) throw badRequest('الحساب الأب يجب أن يكون حساباً رئيسياً');
+      if (!p) throw badRequest('الحساب الأب غير موجود');
       if (p.type !== (b.type ?? before.type)) throw badRequest('الحساب الأب من نوع مختلف');
       for (let cur: typeof p | null = p; cur; cur = cur.parentId ? await tx.account.findUnique({ where: { id: cur.parentId } }) : null) if (cur.id === before.id) throw badRequest('لا يمكن جعل الحساب تابعاً لأحد فروعه');
+      if (!p.isGroup) {
+        // A sub-account becomes a main account only while it has no entries (they would be hidden under a total).
+        if (p.systemKey || (await tx.journalLine.count({ where: { accountId: p.id } })) || (await tx.treasury.count({ where: { accountId: p.id } }))) throw badRequest(`«${p.name}» حساب فرعي عليه قيود؛ اختر حساباً رئيسياً`);
+        await tx.account.update({ where: { id: p.id }, data: { isGroup: true } });
+      }
     }
     if (b.isActive === false && before.systemKey) throw badRequest('حساب أساسي تستخدمه القيود التلقائية؛ لا يمكن إيقافه');
     const updated = await tx.account.update({ where: { id: before.id }, data: b });

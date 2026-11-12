@@ -9,7 +9,7 @@ import { badRequest, conflict, notFound } from '../../lib/errors';
 import { requireAnyPerm, requirePerm } from '../../middleware/auth';
 import type { Ctx } from '../../auth/context';
 import { getSetting } from '../../lib/settings';
-import { D } from '../../lib/money';
+import { D, r3 } from '../../lib/money';
 import { addDays, dateOnlyStr } from '../../lib/dates';
 import { dayOf } from './journal';
 import { postDoc } from './link';
@@ -41,19 +41,19 @@ const NEXT: Record<ChequeDirection, Partial<Record<ChequeStatus, ChequeStatus[]>
   },
 };
 
-export async function createChequeForVoucher(tx: Tx, ctx: Ctx, v: Voucher, c: { number: string; bankName: string; drawer?: string | null; accountNumber?: string | null; issueDate?: string | null; dueDate: string }) {
+export interface ChequeInput { number: string; bankName: string; drawer?: string | null; accountNumber?: string | null; issueDate?: string | null; dueDate: string; amount: number }
+export async function createChequeForVoucher(tx: Tx, ctx: Ctx, v: Voucher, c: ChequeInput) {
   const direction: ChequeDirection = v.kind === 'RECEIPT' ? 'IN' : 'OUT';
   if (await tx.cheque.findUnique({ where: { direction_bankName_number: { direction, bankName: c.bankName, number: c.number } } })) throw conflict(`الشيك رقم ${c.number} على ${c.bankName} مسجل مسبقاً`);
   const status: ChequeStatus = direction === 'IN' ? 'RECEIVED' : 'ISSUED';
   const ch = await tx.cheque.create({
     data: {
       ref: await docNumber(tx, 'CHQ'), direction, number: c.number, bankName: c.bankName, drawer: c.drawer || v.partyName, counterparty: v.partyName, accountNumber: c.accountNumber,
-      issueDate: c.issueDate ? dayOf(c.issueDate) : null, dueDate: dayOf(c.dueDate), amount: v.amount, reason: v.purpose, reference: v.reference, treasuryId: direction === 'OUT' ? v.treasuryId : null,
-      counterAccountId: v.counterAccountId, status, createdById: ctx.userId,
+      issueDate: c.issueDate ? dayOf(c.issueDate) : null, dueDate: dayOf(c.dueDate), amount: r3(c.amount), reason: v.purpose, reference: v.reference, treasuryId: direction === 'OUT' ? v.treasuryId : null,
+      counterAccountId: v.counterAccountId, status, voucherId: v.id, createdById: ctx.userId,
     },
   });
   await tx.chequeEvent.create({ data: { chequeId: ch.id, toStatus: status, date: v.date, note: `${v.kind === 'RECEIPT' ? 'استلام مع سند القبض' : 'إصدار مع سند الصرف'} ${v.number}`, userId: ctx.userId } });
-  await tx.voucher.update({ where: { id: v.id }, data: { chequeId: ch.id } });
   return ch;
 }
 
@@ -101,7 +101,7 @@ chequesRouter.get('/cheques/:id', requireAnyPerm('accounting.cheques.view', 'acc
   const c = await prisma.cheque.findUnique({ where: { id: req.params.id }, include: { events: { orderBy: { createdAt: 'asc' } } } });
   if (!c) throw notFound('الشيك غير موجود');
   const [voucher, entries, users] = await Promise.all([
-    prisma.voucher.findUnique({ where: { chequeId: c.id }, select: { id: true, number: true } }),
+    c.voucherId ? prisma.voucher.findUnique({ where: { id: c.voucherId }, select: { id: true, number: true } }) : null,
     prisma.journalEntry.findMany({ where: { OR: [{ sourceKey: { in: c.events.map((e) => `cheque-event:${e.id}`) } }] }, select: { id: true, number: true, sourceKey: true, status: true } }),
     prisma.user.findMany({ where: { id: { in: c.events.map((e) => e.userId).filter(Boolean) as string[] } }, select: { id: true, fullName: true } }),
   ]);

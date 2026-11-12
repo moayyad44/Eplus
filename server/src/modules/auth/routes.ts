@@ -183,6 +183,34 @@ authRouter.get(
   }),
 );
 
+/** Personal screen choices (one small JSON value per key, e.g. the accounting dashboard cards shown). */
+const prefKey = z.string().regex(/^[a-z0-9.-]{1,40}$/);
+authRouter.get(
+  '/prefs/:key',
+  authenticate,
+  ah(async (req, res) => {
+    const key = parse(prefKey, req.params.key);
+    const u = await prisma.user.findUniqueOrThrow({ where: { id: req.ctx.userId }, select: { uiPrefs: true } });
+    res.json({ value: (u.uiPrefs as Record<string, unknown>)[key] ?? null });
+  }),
+);
+authRouter.put(
+  '/prefs/:key',
+  authenticate,
+  ah(async (req, res) => {
+    const key = parse(prefKey, req.params.key);
+    const { value } = parse(z.object({ value: z.unknown() }), req.body);
+    if (JSON.stringify(value ?? null).length > 5000) throw badRequest('القيمة كبيرة');
+    await prisma.$transaction(async (tx) => {
+      const u = await tx.user.findUniqueOrThrow({ where: { id: req.ctx.userId }, select: { uiPrefs: true } });
+      const prefs = { ...(u.uiPrefs as Record<string, unknown>) };
+      if (value === null || value === undefined) delete prefs[key]; else prefs[key] = value;
+      await tx.user.update({ where: { id: req.ctx.userId }, data: { uiPrefs: prefs as object } });
+    });
+    res.json({ value: value ?? null });
+  }),
+);
+
 authRouter.post(
   '/change-password',
   authenticate,

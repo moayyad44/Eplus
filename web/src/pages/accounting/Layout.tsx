@@ -2,7 +2,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
-import { ArrowRight, BookOpen, CalendarRange, Calculator, FileSpreadsheet, LayoutDashboard, ListTree, Menu, Scale, Settings, X, Link2, FileUp, Wallet, Receipt, CreditCard, ScrollText, Users, Building, Hourglass, TrendingUp, Waves, Landmark, Upload, History, type LucideIcon } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarRange, Calculator, FileSpreadsheet, LayoutDashboard, ListTree, Menu, Scale, Settings, X, Link2, FileUp, Wallet, Receipt, CreditCard, ScrollText, Users, Building, Hourglass, TrendingUp, Waves, Upload, History, type LucideIcon } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { EmptyState, PageLoader } from '@/components/ui';
 
@@ -16,7 +16,6 @@ const NAV: { label: string; items: { to: string; label: string; icon: LucideIcon
       { to: '/accounting/treasury', label: 'ao.nav.treasury', icon: Wallet, any: ['accounting.treasury.view', 'accounting.treasury.manage', 'accounting.cash.count', 'accounting.cash.approve'] },
       { to: '/accounting/visa', label: 'ao.nav.visa', icon: CreditCard, any: ['accounting.visa.manage', 'accounting.reports.view'] },
       { to: '/accounting/cheques', label: 'ao.nav.cheques', icon: ScrollText, any: ['accounting.cheques.view', 'accounting.cheques.manage'] },
-      { to: '/accounting/bank-reconciliation', label: 'ao.nav.bankRec', icon: Landmark, any: ['accounting.reconcile'] },
     ],
   },
   {
