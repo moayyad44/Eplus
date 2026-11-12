@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+server/.env
+server/uploads
+server/tests/.uploads
+.git
+.env
+.env.*
+backups
+*.bat
+*.command

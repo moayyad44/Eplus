@@ -1,0 +1,93 @@
+import type { ReactNode } from 'react';
+import {
+  Activity, BarChart3, Boxes, CalendarClock, CalendarDays, ClipboardCheck, ConciergeBell, FileClock, FileText, FlaskConical, History,
+  LayoutDashboard, ListOrdered, Receipt, Settings, ShoppingCart, Truck, UserCog, Users, Wallet, Clock, Plane, CreditCard, ArrowLeftRight, LifeBuoy, ShieldCheck, FileStack, BadgeCheck, Landmark, Building2, PieChart, QrCode, Coins, LayoutGrid, Warehouse, PackageOpen, Calculator,
+} from 'lucide-react';
+
+export interface NavItem {
+  to: string;
+  label: string; // i18n key
+  icon: ReactNode;
+  any: string[]; // visible if the user holds any of these permissions
+  /** Opens in a new tab (a separate workspace such as the accounting system). */
+  newTab?: boolean;
+}
+export interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const i = (C: typeof Activity) => <C className="h-[18px] w-[18px]" />;
+
+export const NAV: NavSection[] = [
+  {
+    label: 'nav.sections.main',
+    items: [
+      { to: '/dashboard', label: 'nav.dashboard', icon: i(LayoutDashboard), any: ['dashboard.admin'] },
+      { to: '/reception', label: 'nav.reception', icon: i(ConciergeBell), any: ['patients.create', 'queue.manage'] },
+      { to: '/queue', label: 'nav.queue', icon: i(ListOrdered), any: ['queue.view'] },
+      { to: '/patients', label: 'nav.patients', icon: i(Users), any: ['patients.view'] },
+      { to: '/appointments', label: 'nav.appointments', icon: i(CalendarDays), any: ['appointments.view'] },
+    ],
+  },
+  {
+    label: 'nav.sections.clinical',
+    items: [{ to: '/lab', label: 'nav.lab', icon: i(FlaskConical), any: ['lab.view'] }],
+  },
+  {
+    label: 'nav.sections.finance',
+    items: [
+      { to: '/accounting', label: 'acc.open', icon: i(Calculator), any: ['accounting.access'], newTab: true },
+      { to: '/billing/invoices', label: 'nav.invoices', icon: i(FileText), any: ['invoices.view'] },
+      { to: '/billing/outstanding', label: 'nav.outstanding', icon: i(FileClock), any: ['invoices.view'] },
+      { to: '/billing/cashier', label: 'nav.cashier', icon: i(Wallet), any: ['cashier.view'] },
+      { to: '/billing/payments', label: 'nav.payments', icon: i(CreditCard), any: ['cashier.view', 'payments.create'] },
+      { to: '/expenses', label: 'nav.expenses', icon: i(Receipt), any: ['expenses.view'] },
+      { to: '/einvoice', label: 'nav.einvoice', icon: i(QrCode), any: ['einvoice.view', 'einvoice.settings'] },
+    ],
+  },
+  {
+    label: 'nav.sections.insurance',
+    items: [
+      { to: '/insurance', label: 'nav.insDashboard', icon: i(ShieldCheck), any: ['insurance.report.view'] },
+      { to: '/insurance/claims', label: 'nav.insClaims', icon: i(FileStack), any: ['insurance.view'] },
+      { to: '/insurance/authorizations', label: 'nav.insAuthorizations', icon: i(BadgeCheck), any: ['insurance.view'] },
+      { to: '/insurance/payments', label: 'nav.insPayments', icon: i(Landmark), any: ['insurance.payment.create', 'insurance.payment.void', 'insurance.report.view'] },
+      { to: '/insurance/companies', label: 'nav.insCompanies', icon: i(Building2), any: ['insurance.view'] },
+      { to: '/insurance/reports', label: 'nav.insReports', icon: i(PieChart), any: ['insurance.report.view'] },
+    ],
+  },
+  {
+    label: 'nav.sections.inventory',
+    items: [
+      { to: '/inventory/items', label: 'nav.inventory', icon: i(Boxes), any: ['inventory.view'] },
+      { to: '/inventory/warehouses', label: 'nav.warehouses', icon: i(Warehouse), any: ['inventory.view'] },
+      { to: '/inventory/transfers', label: 'nav.transfers', icon: i(PackageOpen), any: ['inventory.view', 'inventory.transfer'] },
+      { to: '/inventory/transactions', label: 'nav.transactions', icon: i(ArrowLeftRight), any: ['inventory.view'] },
+      { to: '/inventory/stock-counts', label: 'nav.stockCounts', icon: i(ClipboardCheck), any: ['stockcount.manage'] },
+      { to: '/suppliers', label: 'nav.suppliers', icon: i(Truck), any: ['suppliers.view'] },
+      { to: '/purchases', label: 'nav.purchases', icon: i(ShoppingCart), any: ['suppliers.view'] },
+    ],
+  },
+  {
+    label: 'nav.sections.staff',
+    items: [
+      { to: '/staff/users', label: 'nav.users', icon: i(UserCog), any: ['users.view'] },
+      { to: '/staff/schedule', label: 'nav.schedule', icon: i(CalendarClock), any: ['shifts.view'] },
+      { to: '/staff/board', label: 'nav.shiftBoard', icon: i(LayoutGrid), any: ['shifts.view'] },
+      { to: '/ecoin', label: 'nav.ecoin', icon: i(Coins), any: ['ecoin.use', 'ecoin.view_all', 'ecoin.manage'] },
+      { to: '/staff/attendance', label: 'nav.attendance', icon: i(Clock), any: ['attendance.view'] },
+      { to: '/staff/leaves', label: 'nav.leaves', icon: i(Plane), any: ['shifts.view', 'shifts.manage'] },
+    ],
+  },
+  {
+    label: 'nav.sections.system',
+    items: [
+      { to: '/reports', label: 'nav.reports', icon: i(BarChart3), any: ['reports.patients', 'reports.doctors', 'reports.financial', 'reports.inventory', 'reports.attendance'] },
+      { to: '/audit', label: 'nav.audit', icon: i(History), any: ['audit.view'] },
+      { to: '/settings', label: 'nav.settings', icon: i(Settings), any: ['settings.view', 'settings.manage'] },
+      { to: '/help', label: 'nav.help', icon: i(LifeBuoy), any: [] },
+    ],
+  },
+];
+

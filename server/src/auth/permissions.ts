@@ -1,0 +1,222 @@
+/**
+ * Permission catalog. Keys are enforced on every API route (see middleware/auth.ts).
+ * Roles are stored in the DB and fully editable from Settings → Roles & Permissions;
+ * DEFAULT_ROLES is only used to bootstrap a fresh installation.
+ */
+export const PERMISSIONS = {
+  // Dashboard
+  'dashboard.admin': { module: 'dashboard', description: 'لوحة تحكم المدير' },
+  // Users & roles
+  'users.view': { module: 'users', description: 'عرض المستخدمين والموظفين' },
+  'users.manage': { module: 'users', description: 'إضافة وتعديل المستخدمين' },
+  'roles.manage': { module: 'users', description: 'إدارة الأدوار والصلاحيات' },
+  // Patients
+  'patients.view': { module: 'patients', description: 'البحث عن المرضى وعرض بياناتهم الأساسية' },
+  'patients.create': { module: 'patients', description: 'تسجيل مريض جديد' },
+  'patients.update': { module: 'patients', description: 'تعديل بيانات المريض الأساسية' },
+  'patients.delete': { module: 'patients', description: 'أرشفة ملف مريض' },
+  // Medical record
+  'medical.view': { module: 'medical', description: 'عرض الملف الطبي (التشخيص، الوصفات، التقارير)' },
+  'medical.history.manage': { module: 'medical', description: 'تعديل التاريخ المرضي والحساسية والأدوية' },
+  'consultation.manage': { module: 'medical', description: 'إجراء الكشف: التشخيص، الملاحظات، الوصفة، التقرير' },
+  'vitals.record': { module: 'medical', description: 'تسجيل العلامات الحيوية' },
+  'nursing.record': { module: 'medical', description: 'تسجيل الإجراءات التمريضية' },
+  'attachments.view': { module: 'medical', description: 'عرض المرفقات' },
+  'attachments.upload': { module: 'medical', description: 'رفع المرفقات' },
+  // Queue
+  'queue.view': { module: 'queue', description: 'عرض قائمة الانتظار (الخاصة بالطبيب فقط)' },
+  'queue.view_all': { module: 'queue', description: 'عرض قائمة الانتظار لجميع الأطباء' },
+  'queue.manage': { module: 'queue', description: 'إضافة زيارة إلى قائمة الانتظار وتعديلها' },
+  'queue.call': { module: 'queue', description: 'استدعاء المريض وتحويله بين المراحل' },
+  'queue.reorder': { module: 'queue', description: 'إعادة ترتيب قائمة الانتظار' },
+  'queue.revert': { module: 'queue', description: 'إرجاع الزيارة إلى حالة سابقة' },
+  // Appointments
+  'appointments.view': { module: 'appointments', description: 'عرض المواعيد' },
+  'appointments.manage': { module: 'appointments', description: 'إنشاء وتعديل وإلغاء المواعيد' },
+  // Laboratory
+  'lab.view': { module: 'lab', description: 'عرض طلبات ونتائج التحاليل' },
+  'lab.order': { module: 'lab', description: 'طلب التحاليل' },
+  'lab.process': { module: 'lab', description: 'جمع العينات وإدخال النتائج' },
+  // Billing
+  'invoices.view': { module: 'billing', description: 'عرض الفواتير' },
+  'invoices.create': { module: 'billing', description: 'إنشاء وإصدار الفواتير' },
+  'invoices.update': { module: 'billing', description: 'تعديل الفواتير المسودة' },
+  'invoices.discount': { module: 'billing', description: 'منح الخصومات' },
+  'invoices.price_override': { module: 'billing', description: 'تعديل سعر البند' },
+  'invoices.cancel': { module: 'billing', description: 'إلغاء الفواتير' },
+  'invoices.backdate': { module: 'billing', description: 'تحديد تاريخ الفاتورة بأثر رجعي وتعديله بعد الإصدار' },
+  'payments.create': { module: 'billing', description: 'تسجيل المدفوعات' },
+  'payments.refund': { module: 'billing', description: 'تسجيل المرتجعات' },
+  'payments.void': { module: 'billing', description: 'إلغاء دفعة مسجلة' },
+  'payments.backdate': { module: 'billing', description: 'تحديد تاريخ القبض بأثر رجعي وتعديله بعد التسجيل' },
+  'cashier.view': { module: 'billing', description: 'الصندوق والحسابات اليومية' },
+  // National e-invoicing (JoFotara)
+  'einvoice.view': { module: 'einvoice', description: 'عرض حالة الفواتير في نظام الفوترة الوطني ولوحة المتابعة' },
+  'einvoice.send': { module: 'einvoice', description: 'إعادة إرسال فاتورة لنظام الفوترة الوطني بعد فشل أو رفض' },
+  'einvoice.return': { module: 'einvoice', description: 'إصدار فاتورة إرجاع (إشعار دائن) في نظام الفوترة الوطني' },
+  'einvoice.settings': { module: 'einvoice', description: 'إعدادات الربط مع نظام الفوترة الوطني وبيانات الاعتماد' },
+  // Expenses
+  'expenses.view': { module: 'expenses', description: 'عرض المصروفات' },
+  'expenses.manage': { module: 'expenses', description: 'تسجيل وإلغاء المصروفات' },
+  // Inventory
+  'inventory.view': { module: 'inventory', description: 'عرض المخزون' },
+  'inventory.manage': { module: 'inventory', description: 'إضافة وتعديل الأصناف' },
+  'inventory.transact': { module: 'inventory', description: 'تسجيل حركات المخزون' },
+  'inventory.transfer': { module: 'inventory', description: 'نقل البضاعة بين المستودعات' },
+  'stockcount.manage': { module: 'inventory', description: 'إنشاء جلسات الجرد وإدخال الكميات' },
+  'stockcount.approve': { module: 'inventory', description: 'اعتماد الجرد' },
+  'suppliers.view': { module: 'inventory', description: 'عرض الموردين' },
+  'suppliers.manage': { module: 'inventory', description: 'إدارة الموردين وأوامر الشراء والدفعات' },
+  // Insurance
+  'insurance.view': { module: 'insurance', description: 'عرض بيانات التأمين والمطالبات' },
+  'insurance.create': { module: 'insurance', description: 'إضافة تأمين لمريض' },
+  'insurance.update': { module: 'insurance', description: 'تعديل تأمين مريض واختيار الدافع للزيارة' },
+  'insurance.delete': { module: 'insurance', description: 'حذف (أرشفة) تأمين مريض' },
+  'insurance.verify': { module: 'insurance', description: 'التحقق من صلاحية التأمين' },
+  'insurance.authorization.manage': { module: 'insurance', description: 'طلبات الموافقة المسبقة وتسجيل ردّ الشركة' },
+  'insurance.coverage.override': { module: 'insurance', description: 'اعتماد تغطية بدون موافقة مسبقة أو تعديل حصة التأمين على البند' },
+  'insurance.claim.create': { module: 'insurance', description: 'إنشاء وتجهيز المطالبات' },
+  'insurance.claim.submit': { module: 'insurance', description: 'إرسال المطالبات لشركة التأمين' },
+  'insurance.claim.approve': { module: 'insurance', description: 'تسجيل اعتماد شركة التأمين للمطالبة' },
+  'insurance.claim.reject': { module: 'insurance', description: 'تسجيل رفض المطالبة، الشطب، وتحويل المرفوض على المريض' },
+  'insurance.claim.resubmit': { module: 'insurance', description: 'إعادة تقديم المطالبات المرفوضة' },
+  'insurance.payment.create': { module: 'insurance', description: 'تسجيل دفعات شركات التأمين' },
+  'insurance.payment.void': { module: 'insurance', description: 'إلغاء دفعة شركة تأمين' },
+  'insurance.report.view': { module: 'insurance', description: 'لوحة وتقارير التأمين وحسابات الشركات' },
+  'insurance.contract.manage': { module: 'insurance', description: 'إدارة العقود والتغطيات والأسعار التعاقدية' },
+  'insurance.company.manage': { module: 'insurance', description: 'إدارة شركات التأمين' },
+  // Staff
+  'shifts.view': { module: 'staff', description: 'عرض جداول الدوام' },
+  'shifts.manage': { module: 'staff', description: 'إدارة الشفتات والجداول والإجازات' },
+  'attendance.view': { module: 'staff', description: 'عرض الحضور' },
+  'attendance.manage': { module: 'staff', description: 'تسجيل وتعديل الحضور لجميع الموظفين' },
+  'shifts.swap': { module: 'staff', description: 'طلب تبديل الشفتات والرد على طلبات التبديل' },
+  'shifts.release': { module: 'staff', description: 'التنازل عن الشفت' },
+  'shifts.cover': { module: 'staff', description: 'طلب تغطية جزء من الشفت التالي والرد على الطلبات' },
+  'shifts.handover': { module: 'staff', description: 'تسجيل التأخير وتمديد الشفت والتسليم بين الموظفين' },
+  // E Coin (doctors only)
+  'ecoin.use': { module: 'ecoin', description: 'محفظة E Coin: شراء الشفتات وتأمين الشفت (للأطباء فقط)' },
+  'ecoin.view_all': { module: 'ecoin', description: 'الاطلاع على محافظ جميع الأطباء والعمليات والتقارير' },
+  'ecoin.manage': { module: 'ecoin', description: 'إعدادات E Coin وأسعار الشفتات وإلغاء العمليات الخاطئة' },
+  'ecoin.adjust': { module: 'ecoin', description: 'تعديل رصيد طبيب يدوياً (بسبب إلزامي)' },
+  // EmergencyPlus Accounting
+  'accounting.access': { module: 'accounting', description: 'الدخول إلى النظام المحاسبي' },
+  'accounting.accounts.view': { module: 'accounting', description: 'عرض دليل الحسابات' },
+  'accounting.accounts.manage': { module: 'accounting', description: 'إضافة وتعديل الحسابات وإيقافها' },
+  'accounting.journal.view': { module: 'accounting', description: 'عرض القيود المحاسبية ودفتر الأستاذ' },
+  'accounting.journal.create': { module: 'accounting', description: 'إنشاء قيود يدوية' },
+  'accounting.journal.approve': { module: 'accounting', description: 'اعتماد القيود (الاعتماد يرحّلها تلقائياً)' },
+  'accounting.journal.edit_posted': { module: 'accounting', description: 'تعديل القيود بعد ترحيلها' },
+  'accounting.journal.delete': { module: 'accounting', description: 'حذف القيود (يبقى سجلها محفوظاً)' },
+  'accounting.reports.view': { module: 'accounting', description: 'التقارير المحاسبية (الميزان، كشوف الحسابات…)' },
+  'accounting.export': { module: 'accounting', description: 'تصدير البيانات المحاسبية إلى Excel' },
+  'accounting.import': { module: 'accounting', description: 'استيراد البيانات من Excel (الأرصدة الافتتاحية…)' },
+  'accounting.periods.manage': { module: 'accounting', description: 'إنشاء السنوات المالية وإغلاق الفترات' },
+  'accounting.periods.reopen': { module: 'accounting', description: 'إعادة فتح فترة مغلقة (بسبب)' },
+  'accounting.settings': { module: 'accounting', description: 'إعدادات النظام المحاسبي' },
+  'accounting.treasury.view': { module: 'accounting', description: 'عرض الصناديق والحسابات البنكية وكشوفها' },
+  'accounting.treasury.manage': { module: 'accounting', description: 'إضافة الصناديق والحسابات البنكية والتحويل بينها' },
+  'accounting.vouchers.view': { module: 'accounting', description: 'عرض سندات القبض والصرف' },
+  'accounting.vouchers.create': { module: 'accounting', description: 'إصدار سندات القبض والصرف' },
+  'accounting.vouchers.edit': { module: 'accounting', description: 'تعديل السندات بعد اعتمادها' },
+  'accounting.vouchers.cancel': { module: 'accounting', description: 'إلغاء السندات (يبقى سجلها)' },
+  'accounting.cash.count': { module: 'accounting', description: 'جرد الصندوق وإغلاقه اليومي' },
+  'accounting.cash.approve': { module: 'accounting', description: 'اعتماد فروقات الجرد والتسويات' },
+  'accounting.visa.manage': { module: 'accounting', description: 'صندوق الفيزا: التسويات والمطابقة' },
+  'accounting.cheques.view': { module: 'accounting', description: 'عرض الشيكات' },
+  'accounting.cheques.manage': { module: 'accounting', description: 'إدارة الشيكات: الإيداع والتحصيل والارتجاع والجرد' },
+  'accounting.reconcile': { module: 'accounting', description: 'المطابقة البنكية' },
+  'accounting.payroll.view': { module: 'accounting', description: 'عرض الرواتب' },
+  'accounting.payroll.manage': { module: 'accounting', description: 'إعداد الرواتب والسلف واعتمادها وصرفها' },
+  'accounting.assets.manage': { module: 'accounting', description: 'الأصول الثابتة والإهلاك' },
+  // Reports
+  'reports.patients': { module: 'reports', description: 'تقارير المرضى' },
+  'reports.doctors': { module: 'reports', description: 'تقارير الأطباء' },
+  'reports.financial': { module: 'reports', description: 'التقارير المالية' },
+  'reports.inventory': { module: 'reports', description: 'تقارير المخزون' },
+  'reports.attendance': { module: 'reports', description: 'تقارير الدوام' },
+  // System
+  'settings.view': { module: 'settings', description: 'عرض الإعدادات' },
+  'settings.manage': { module: 'settings', description: 'تعديل الإعدادات' },
+  'audit.view': { module: 'settings', description: 'عرض سجل العمليات' },
+  'backups.manage': { module: 'settings', description: 'النسخ الاحتياطي: عرض وتنزيل وتشغيل نسخة الآن' },
+} as const;
+
+export type PermissionKey = keyof typeof PERMISSIONS;
+export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionKey[];
+
+export const DEFAULT_ROLES: { key: string; name: string; description: string; permissions: PermissionKey[] }[] = [
+  {
+    key: 'admin',
+    name: 'المدير',
+    description: 'صلاحية كاملة على النظام',
+    permissions: ALL_PERMISSIONS,
+  },
+  {
+    key: 'doctor',
+    name: 'الطبيب',
+    description: 'الكشف الطبي والتشخيص والوصفات والتحاليل',
+    permissions: [
+      'patients.view', 'medical.view', 'medical.history.manage', 'consultation.manage', 'vitals.record',
+      'attachments.view', 'attachments.upload', 'queue.view', 'queue.call', 'appointments.view',
+      'lab.view', 'lab.order', 'shifts.view', 'attendance.view', 'invoices.view', 'insurance.view',
+      'shifts.swap', 'shifts.release', 'shifts.cover', 'ecoin.use',
+    ],
+  },
+  {
+    key: 'nurse',
+    name: 'الممرض',
+    description: 'العلامات الحيوية والإجراءات التمريضية وقائمة الانتظار',
+    permissions: [
+      'patients.view', 'medical.view', 'vitals.record', 'nursing.record', 'attachments.view', 'attachments.upload',
+      'queue.view', 'queue.view_all', 'queue.call', 'lab.view', 'lab.process', 'appointments.view',
+      'inventory.view', 'shifts.view', 'attendance.view',
+      'shifts.swap', 'shifts.release', 'shifts.cover',
+    ],
+  },
+  {
+    key: 'finance_manager',
+    name: 'المدير المالي',
+    description: 'كل العمليات المالية: القيود وتعديلها، الاعتماد، التقارير، الفترات المالية',
+    permissions: ALL_PERMISSIONS.filter((p) => p.startsWith('accounting.')),
+  },
+  {
+    key: 'accountant',
+    name: 'المحاسب',
+    description: 'القيود اليومية، دليل الحسابات، التقارير والتصدير',
+    permissions: [
+      'accounting.access', 'accounting.accounts.view', 'accounting.journal.view', 'accounting.journal.create', 'accounting.reports.view', 'accounting.export',
+      'accounting.treasury.view', 'accounting.vouchers.view', 'accounting.vouchers.create', 'accounting.cash.count', 'accounting.visa.manage',
+      'accounting.cheques.view', 'accounting.cheques.manage', 'accounting.reconcile', 'accounting.assets.manage',
+    ],
+  },
+  {
+    key: 'cashier',
+    name: 'أمين الصندوق',
+    description: 'الصندوق وسندات القبض والصرف والجرد؛ لا يعدّل القيود',
+    permissions: ['accounting.access', 'accounting.treasury.view', 'accounting.vouchers.view', 'accounting.vouchers.create', 'accounting.cash.count', 'accounting.cheques.view'],
+  },
+  {
+    key: 'payroll_officer',
+    name: 'مسؤول الرواتب',
+    description: 'الرواتب والسلف فقط',
+    permissions: ['accounting.access', 'accounting.payroll.view', 'accounting.payroll.manage'],
+  },
+  {
+    key: 'accounting_readonly',
+    name: 'قراءة فقط (محاسبة)',
+    description: 'الاطلاع على الحسابات والقيود والتقارير دون أي تعديل',
+    permissions: ['accounting.access', 'accounting.accounts.view', 'accounting.journal.view', 'accounting.reports.view', 'accounting.treasury.view', 'accounting.vouchers.view', 'accounting.cheques.view', 'accounting.payroll.view'],
+  },
+  {
+    key: 'receptionist',
+    name: 'موظف الاستقبال',
+    description: 'تسجيل المرضى، قائمة الانتظار، المواعيد، الفواتير والمدفوعات',
+    permissions: [
+      'patients.view', 'patients.create', 'patients.update', 'queue.view', 'queue.view_all', 'queue.manage',
+      'queue.call', 'queue.reorder', 'appointments.view', 'appointments.manage', 'invoices.view', 'invoices.create',
+      'invoices.update', 'payments.create', 'attachments.upload', 'shifts.view', 'attendance.view',
+      'insurance.view', 'insurance.create', 'insurance.update', 'insurance.verify', 'insurance.authorization.manage', 'insurance.claim.create',
+    ],
+  },
+];

@@ -1,0 +1,20 @@
+export default {
+  patients: {
+    title: 'المرضى', subtitle: 'سجل المرضى والملفات الطبية', new: 'مريض جديد', edit: 'تعديل بيانات المريض', fileNumber: 'رقم الملف', fullName: 'الاسم الكامل',
+    phone: 'رقم الهاتف', altPhone: 'هاتف بديل', gender: 'الجنس', dateOfBirth: 'تاريخ الميلاد', age: 'العمر', nationality: 'الجنسية', nationalId: 'الرقم الوطني',
+    address: 'العنوان', bloodType: 'فصيلة الدم', emergencyContact: 'جهة اتصال للطوارئ', emergencyContactName: 'اسم جهة الاتصال', emergencyContactPhone: 'رقم جهة الاتصال',
+    emergencyContactRelation: 'صلة القرابة', notes: 'ملاحظات', familyHistory: 'التاريخ العائلي', firstVisit: 'أول زيارة', lastVisit: 'آخر زيارة', visitCount: 'عدد الزيارات',
+    searchPlaceholder: 'ابحث بالهاتف، الاسم، رقم الملف أو الرقم الوطني', basicInfo: 'البيانات الأساسية', contactInfo: 'بيانات التواصل',
+    duplicateTitle: 'مريض مشابه موجود', duplicateMessage: 'يوجد مريض مسجل بنفس البيانات. هل تريد فتح ملفه بدلاً من إنشاء ملف جديد؟',
+    openExisting: 'فتح الملف الموجود', createAnyway: 'إنشاء ملف جديد على أي حال', created: 'تم تسجيل المريض — رقم الملف {{file}}', archiveConfirm: 'أرشفة ملف المريض؟ سيبقى السجل محفوظاً ولن يظهر في البحث.',
+    outstanding: 'رصيد مستحق', nextAppointment: 'الموعد القادم', noMedicalAccess: 'ليست لديك صلاحية لعرض المعلومات الطبية',
+    tabs: { overview: 'نظرة عامة', history: 'التاريخ الطبي', timeline: 'الزيارات', labs: 'التحاليل', invoices: 'الفواتير', attachments: 'المرفقات', reports: 'التقارير الطبية' },
+    allergies: 'الحساسية', noAllergies: 'لا توجد حساسية مسجلة', allergen: 'مسبب الحساسية', reaction: 'رد الفعل', severity: 'الشدة', addAllergy: 'إضافة حساسية',
+    histories: 'الأمراض والعمليات', addHistory: 'إضافة سجل', historyName: 'الحالة / العملية', since: 'منذ', chronic: 'أمراض مزمنة',
+    medications: 'الأدوية الحالية', addMedication: 'إضافة دواء', medName: 'اسم الدواء', dose: 'الجرعة', frequency: 'عدد المرات',
+    visitsTimeline: 'سجل الزيارات', noVisits: 'لا توجد زيارات سابقة', chiefComplaint: 'سبب الزيارة', vitals: 'العلامات الحيوية', diagnosis: 'التشخيص',
+    prescription: 'الوصفة', labs: 'التحاليل', procedures: 'الإجراءات التمريضية', report: 'التقرير', openVisit: 'فتح الزيارة', addToQueue: 'إدخال لقائمة الانتظار',
+    bookAppointment: 'حجز موعد', newInvoice: 'فاتورة', patientReport: 'تقرير المريض', inactiveHistory: 'غير نشط', uploadAttachment: 'رفع مرفق',
+    attachmentCategory: 'نوع المرفق', archived: 'تمت أرشفة الملف',
+  },
+};

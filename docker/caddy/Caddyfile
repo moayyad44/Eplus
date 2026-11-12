@@ -1,0 +1,38 @@
+# EmergencyPlus — HTTPS for the clinic's own domain (e.g. https://eplus.life).
+# Caddy runs on the clinic computer next to the app; the database and files never leave that computer.
+{
+	email {$ACME_EMAIL}
+	# Only HTTPS is published (port 443). Plain-http access stays on the app's own port (IP address).
+	auto_https disable_redirects
+	servers {
+		# Strip any forwarding headers a client might send; Caddy sets its own.
+		trusted_proxies static private_ranges
+	}
+}
+
+{$DOMAIN} {
+	tls {
+		# Certificate from Let's Encrypt via a DNS TXT record — works without opening any router port.
+		dns cloudflare {env.DNS_API_TOKEN}
+		resolvers 1.1.1.1 8.8.8.8
+	}
+
+	encode zstd gzip
+
+	# Never serve anything but the app; hidden/config files are not on this server at all.
+	reverse_proxy app:4000 {
+		# Caddy sends X-Forwarded-Proto/For/Host; the app trusts them only from this container's fixed address.
+		header_up -X-Real-IP
+	}
+
+	header {
+		-Server
+		Referrer-Policy no-referrer
+		X-Robots-Tag "noindex, nofollow"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

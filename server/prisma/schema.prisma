@@ -1,0 +1,3079 @@
+// EmergencyPlus Clinic Management System — database schema
+// Conventions:
+//  * Money: Decimal(12,3) (JOD has 3 decimal places / fils).
+//  * Soft delete via `deletedAt` on master data; financial & medical records are never hard-deleted
+//    (they are cancelled / voided instead and every change is written to audit_logs).
+//  * `branchId` is present on operational tables so the system can grow to multiple branches.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Organisation ─────────────────────────────
+
+model Branch {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  visits       Visit[]
+  appointments Appointment[]
+  invoices     Invoice[]
+  expenses     Expense[]
+
+  @@map("branches")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("clinic_settings")
+}
+
+model Counter {
+  key   String @id
+  value Int    @default(0)
+
+  @@map("counters")
+}
+
+// ───────────────────────────── Identity & access ─────────────────────────────
+
+enum StaffType {
+  ADMIN
+  DOCTOR
+  NURSE
+  RECEPTIONIST
+  LAB_TECHNICIAN
+  ACCOUNTANT
+  OTHER
+}
+
+model User {
+  id                 String    @id @default(uuid())
+  username           String    @unique
+  fullName           String
+  phone              String?
+  email              String?
+  passwordHash       String
+  roleId             String
+  staffType          StaffType @default(OTHER)
+  specialty          String?
+  licenseNumber      String?
+  isActive           Boolean   @default(true)
+  loginEnabled       Boolean   @default(true)
+  /// Personal screen choices (e.g. which accounting dashboard cards to show).
+  uiPrefs            Json      @default("{}")
+  mustChangePassword Boolean   @default(false)
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  branchId           String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  role                Role                     @relation(fields: [roleId], references: [id])
+  branch              Branch?                  @relation(fields: [branchId], references: [id])
+  permissionOverrides UserPermissionOverride[]
+  sessions            Session[]
+  notifications       Notification[]
+  shiftAssignments    ShiftAssignment[]
+  attendance          Attendance[]             @relation("AttendanceUser")
+  leaves              Leave[]                  @relation("LeaveUser")
+
+  doctorVisits       Visit[]         @relation("VisitDoctor")
+  doctorAppointments Appointment[]   @relation("AppointmentDoctor")
+  doctorInvoices     Invoice[]       @relation("InvoiceDoctor")
+  consultations      Consultation[]
+  prescriptions      Prescription[]
+  labOrders          LabOrder[]      @relation("LabOrderDoctor")
+  medicalReports     MedicalReport[]
+
+  @@index([roleId])
+  @@index([staffType, isActive])
+  @@index([branchId])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  key         String @id
+  module      String
+  description String
+
+  roles     RolePermission[]
+  overrides UserPermissionOverride[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId        String
+  permissionKey String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([roleId, permissionKey])
+  @@index([permissionKey])
+  @@map("role_permissions")
+}
+
+/// Per-user grant/deny on top of the role (e.g. allow one doctor to manage inventory).
+model UserPermissionOverride {
+  userId        String
+  permissionKey String
+  allow         Boolean
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([userId, permissionKey])
+  @@index([permissionKey])
+  @@map("user_permission_overrides")
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String    @unique
+  ip               String?
+  userAgent        String?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ───────────────────────────── Patients ─────────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+model Patient {
+  id                       String    @id @default(uuid())
+  fileNumber               String    @unique
+  fullName                 String
+  phone                    String
+  altPhone                 String?
+  gender                   Gender
+  dateOfBirth              DateTime? @db.Date
+  nationality              String?
+  nationalId               String?   @unique
+  address                  String?
+  bloodType                String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  notes                    String?
+  familyHistory            String?
+  /// How the patient usually pays. Insurance details live in patient_insurances.
+  payerType                PayerType @default(SELF_PAY)
+  firstVisitAt             DateTime?
+  lastVisitAt              DateTime?
+  visitCount               Int       @default(0)
+  createdById              String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  deletedAt                DateTime?
+
+  allergies      Allergy[]
+  histories      MedicalHistory[]
+  medications    PatientMedication[]
+  visits         Visit[]
+  appointments   Appointment[]
+  vitalSigns     VitalSigns[]
+  diagnoses      Diagnosis[]
+  prescriptions  Prescription[]
+  labOrders      LabOrder[]
+  medicalReports MedicalReport[]
+  attachments    Attachment[]
+  invoices       Invoice[]
+  payments       Payment[]
+  insurances     PatientInsurance[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
+
+  @@index([phone])
+  @@index([altPhone])
+  @@index([fullName])
+  @@index([createdAt])
+  @@map("patients")
+}
+
+enum AllergySeverity {
+  MILD
+  MODERATE
+  SEVERE
+}
+
+model Allergy {
+  id        String          @id @default(uuid())
+  patientId String
+  allergen  String
+  reaction  String?
+  severity  AllergySeverity @default(MODERATE)
+  notes     String?
+  createdAt DateTime        @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@index([patientId])
+  @@map("allergies")
+}
+
+enum HistoryType {
+  CHRONIC
+  PAST_ILLNESS
+  SURGERY
+  FAMILY
+  OTHER
+}
+
+model MedicalHistory {
+  id        String      @id @default(uuid())
+  patientId String
+  type      HistoryType
+  name      String
+  icd10Code String?
+  since     String?
+  notes     String?
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@index([patientId, type])
+  @@map("medical_histories")
+}
+
+model PatientMedication {
+  id        String   @id @default(uuid())
+  patientId String
+  name      String
+  dose      String?
+  frequency String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@index([patientId])
+  @@map("patient_medications")
+}
+
+// ───────────────────────────── Catalogs (settings) ─────────────────────────────
+
+model VisitType {
+  id          String   @id @default(uuid())
+  name        String
+  color       String?
+  durationMin Int      @default(15)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  visits       Visit[]
+  appointments Appointment[]
+
+  @@map("visit_types")
+}
+
+enum ServiceCategory {
+  EXAMINATION
+  CONSULTATION
+  PROCEDURE
+  LAB
+  NURSING
+  MEDICATION
+  OTHER
+}
+
+/// Billable catalog item ("مادة"). Invoices are built only from catalog items.
+model Service {
+  id                  String          @id @default(uuid())
+  code                String          @unique
+  name                String
+  category            ServiceCategory
+  price               Decimal         @db.Decimal(12, 3)
+  taxRate             Decimal         @default(0) @db.Decimal(5, 2)
+  allowPriceEdit      Boolean         @default(false)
+  inventoryItemId     String?
+  /// Insurance defaults (a contract's coverage rules override them).
+  insurable           Boolean         @default(true)
+  insCoveragePercent  Decimal?        @db.Decimal(5, 2)
+  insMaxAmount        Decimal?        @db.Decimal(12, 3)
+  insRequiresApproval Boolean         @default(false)
+  insRequiresReport   Boolean         @default(false)
+  insNotes            String?
+  isActive            Boolean         @default(true)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  deletedAt           DateTime?
+
+  inventoryItem  InventoryItem?           @relation(fields: [inventoryItemId], references: [id])
+  invoiceItems   InvoiceItem[]
+  templateItems  InvoiceTemplateItem[]
+  labTests       LabTest[]
+  coverageRules  InsuranceCoverageRule[]
+  authorizations InsuranceAuthorization[]
+  claimItems     InsuranceClaimItem[]
+
+  nursingNoteServices NursingNoteService[]
+
+  @@index([category, isActive])
+  @@index([inventoryItemId])
+  @@map("services")
+}
+
+model DiagnosisCode {
+  code     String  @id
+  name     String
+  nameAr   String?
+  isActive Boolean @default(true)
+
+  @@map("diagnosis_codes")
+}
+
+model Drug {
+  id               String   @id @default(uuid())
+  name             String
+  genericName      String?
+  form             String?
+  strength         String?
+  defaultDose      String?
+  defaultFrequency String?
+  defaultRoute     String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  @@index([name])
+  @@map("drugs")
+}
+
+model LabTest {
+  id             String   @id @default(uuid())
+  code           String   @unique
+  name           String
+  category       String?
+  sampleType     String?
+  unit           String?
+  referenceRange String?
+  /// Optional list of parameters for panel tests, e.g. [{"name":"WBC","unit":"10^3/uL","referenceRange":"4-11"}]
+  parameters     Json?
+  /// What the external (referral) laboratory charges the clinic for this test. The patient price is the linked service's price.
+  labCost        Decimal? @db.Decimal(12, 3)
+  serviceId      String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  service    Service?       @relation(fields: [serviceId], references: [id])
+  orderItems LabOrderItem[]
+
+  @@index([serviceId])
+  @@map("laboratory_tests")
+}
+
+// ───────────────────────────── Appointments ─────────────────────────────
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  ARRIVED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Appointment {
+  id           String            @id @default(uuid())
+  patientId    String
+  doctorId     String
+  visitTypeId  String?
+  startAt      DateTime
+  endAt        DateTime
+  reason       String?
+  notes        String?
+  status       AppointmentStatus @default(SCHEDULED)
+  cancelReason String?
+  branchId     String?
+  createdById  String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  patient   Patient    @relation(fields: [patientId], references: [id])
+  doctor    User       @relation("AppointmentDoctor", fields: [doctorId], references: [id])
+  visitType VisitType? @relation(fields: [visitTypeId], references: [id])
+  branch    Branch?    @relation(fields: [branchId], references: [id])
+  visit     Visit?
+
+  @@index([startAt])
+  @@index([doctorId, startAt])
+  @@index([patientId])
+  @@index([branchId])
+  @@index([visitTypeId])
+  @@map("appointments")
+}
+
+// ───────────────────────────── Visits & queue ─────────────────────────────
+
+enum VisitStatus {
+  WAITING
+  CALLED
+  WITH_NURSE
+  WITH_DOCTOR
+  IN_LAB
+  WAITING_PAYMENT
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum Priority {
+  NORMAL
+  URGENT
+  EMERGENCY
+}
+
+/// A visit is one encounter. Queue fields live on the visit so the queue is always
+/// consistent with the visit state machine (no second source of truth).
+model Visit {
+  id                  String      @id @default(uuid())
+  visitNumber         String      @unique
+  patientId           String
+  doctorId            String?
+  visitTypeId         String?
+  appointmentId       String?     @unique
+  branchId            String?
+  status              VisitStatus @default(WAITING)
+  priority            Priority    @default(NORMAL)
+  chiefComplaint      String?
+  notes               String?
+  queueDate           DateTime    @db.Date
+  /// Null for direct visits (opened straight to the doctor, never in the waiting queue).
+  queueNumber         Int?
+  queuePosition       Float?
+  isDirect            Boolean     @default(false)
+  /// Payer chosen when the visit was opened (snapshot of the insurance used).
+  payerType           PayerType   @default(SELF_PAY)
+  patientInsuranceId  String?
+  insuranceCompanyId  String?
+  insuranceContractId String?
+  insuranceMemberId   String?
+  arrivedAt           DateTime    @default(now())
+  calledAt            DateTime?
+  nurseStartedAt      DateTime?
+  doctorStartedAt     DateTime?
+  completedAt         DateTime?
+  cancelReason        String?
+  createdById         String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  patient          Patient                  @relation(fields: [patientId], references: [id])
+  doctor           User?                    @relation("VisitDoctor", fields: [doctorId], references: [id])
+  visitType        VisitType?               @relation(fields: [visitTypeId], references: [id])
+  appointment      Appointment?             @relation(fields: [appointmentId], references: [id])
+  branch           Branch?                  @relation(fields: [branchId], references: [id])
+  statusLogs       VisitStatusLog[]
+  vitalSigns       VitalSigns[]
+  nursingNotes     NursingNote[]
+  consultation     Consultation?
+  diagnoses        Diagnosis[]
+  prescriptions    Prescription[]
+  labOrders        LabOrder[]
+  medicalReports   MedicalReport[]
+  attachments      Attachment[]
+  invoices         Invoice[]
+  patientInsurance PatientInsurance?        @relation(fields: [patientInsuranceId], references: [id])
+  authorizations   InsuranceAuthorization[]
+  claims           InsuranceClaim[]
+
+  @@unique([queueDate, queueNumber, branchId])
+  @@index([queueDate, status])
+  @@index([doctorId, queueDate])
+  @@index([patientId, arrivedAt])
+  @@index([branchId])
+  @@index([patientInsuranceId])
+  @@index([visitTypeId])
+  @@map("visits")
+}
+
+model VisitStatusLog {
+  id         String       @id @default(uuid())
+  visitId    String
+  fromStatus VisitStatus?
+  toStatus   VisitStatus
+  userId     String?
+  note       String?
+  createdAt  DateTime     @default(now())
+
+  visit Visit @relation(fields: [visitId], references: [id])
+
+  @@index([visitId])
+  @@map("visit_status_logs")
+}
+
+model VitalSigns {
+  id               String   @id @default(uuid())
+  visitId          String
+  patientId        String
+  bpSystolic       Int?
+  bpDiastolic      Int?
+  heartRate        Int?
+  temperature      Decimal? @db.Decimal(4, 1)
+  oxygenSaturation Int?
+  respiratoryRate  Int?
+  weightKg         Decimal? @db.Decimal(5, 1)
+  heightCm         Decimal? @db.Decimal(5, 1)
+  bmi              Decimal? @db.Decimal(4, 1)
+  bloodGlucose     Int?
+  painScore        Int?
+  notes            String?
+  recordedById     String?
+  recordedAt       DateTime @default(now())
+
+  visit   Visit   @relation(fields: [visitId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@index([visitId])
+  @@index([patientId, recordedAt])
+  @@map("vital_signs")
+}
+
+model NursingNote {
+  id            String   @id @default(uuid())
+  visitId       String
+  procedure     String
+  notes         String?
+  performedById String?
+  performedAt   DateTime @default(now())
+
+  visit    Visit                @relation(fields: [visitId], references: [id])
+  services NursingNoteService[]
+
+  @@index([visitId])
+  @@map("nursing_notes")
+}
+
+/// Services billed for a nursing procedure (added to the visit's invoice); none = record only.
+model NursingNoteService {
+  id        String  @id @default(uuid())
+  noteId    String
+  serviceId String
+  quantity  Decimal @default(1) @db.Decimal(10, 2)
+
+  note    NursingNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  service Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@index([noteId])
+  @@index([serviceId])
+  @@map("nursing_note_services")
+}
+
+// ───────────────────────────── Clinical ─────────────────────────────
+
+model Consultation {
+  id             String    @id @default(uuid())
+  visitId        String    @unique
+  doctorId       String
+  chiefComplaint String?
+  presentIllness String?
+  examination    String?
+  clinicalNotes  String?
+  treatmentPlan  String?
+  followUpDate   DateTime? @db.Date
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  visit  Visit @relation(fields: [visitId], references: [id])
+  doctor User  @relation(fields: [doctorId], references: [id])
+
+  @@index([doctorId])
+  @@map("consultations")
+}
+
+enum DiagnosisType {
+  PRIMARY
+  SECONDARY
+  DIFFERENTIAL
+}
+
+model Diagnosis {
+  id          String        @id @default(uuid())
+  visitId     String
+  patientId   String
+  icd10Code   String?
+  description String
+  type        DiagnosisType @default(PRIMARY)
+  notes       String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  deletedAt   DateTime?
+
+  visit   Visit   @relation(fields: [visitId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@index([visitId])
+  @@index([patientId])
+  @@index([icd10Code])
+  @@map("diagnoses")
+}
+
+model Prescription {
+  id        String   @id @default(uuid())
+  visitId   String
+  patientId String
+  doctorId  String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  visit   Visit              @relation(fields: [visitId], references: [id])
+  patient Patient            @relation(fields: [patientId], references: [id])
+  doctor  User               @relation(fields: [doctorId], references: [id])
+  items   PrescriptionItem[]
+
+  @@index([visitId])
+  @@index([patientId])
+  @@index([doctorId])
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id             String  @id @default(uuid())
+  prescriptionId String
+  drugId         String?
+  drugName       String
+  dose           String?
+  frequency      String?
+  duration       String?
+  route          String?
+  instructions   String?
+  sortOrder      Int     @default(0)
+
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId])
+  @@map("prescription_items")
+}
+
+enum LabOrderStatus {
+  REQUESTED
+  SAMPLE_COLLECTED
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+model LabOrder {
+  id            String         @id @default(uuid())
+  orderNumber   String         @unique
+  visitId       String?
+  patientId     String
+  doctorId      String
+  status        LabOrderStatus @default(REQUESTED)
+  priority      Priority       @default(NORMAL)
+  clinicalNotes String?
+  requestedAt   DateTime       @default(now())
+  collectedAt   DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  cancelReason  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  visit       Visit?         @relation(fields: [visitId], references: [id])
+  patient     Patient        @relation(fields: [patientId], references: [id])
+  doctor      User           @relation("LabOrderDoctor", fields: [doctorId], references: [id])
+  items       LabOrderItem[]
+  attachments Attachment[]
+
+  @@index([status, requestedAt])
+  @@index([patientId])
+  @@index([visitId])
+  @@index([doctorId])
+  @@map("lab_orders")
+}
+
+model LabOrderItem {
+  id         String   @id @default(uuid())
+  labOrderId String
+  labTestId  String
+  testName   String
+  /// Snapshot of the external lab's price when ordered (what the lab will claim for it).
+  labCost    Decimal? @db.Decimal(12, 3)
+  notes      String?
+
+  labOrder LabOrder    @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  labTest  LabTest     @relation(fields: [labTestId], references: [id])
+  results  LabResult[]
+
+  @@index([labOrderId])
+  @@index([labTestId])
+  @@map("lab_order_items")
+}
+
+enum ResultFlag {
+  NORMAL
+  LOW
+  HIGH
+  ABNORMAL
+  CRITICAL
+}
+
+model LabResult {
+  id             String      @id @default(uuid())
+  labOrderItemId String
+  parameterName  String
+  value          String
+  unit           String?
+  referenceRange String?
+  flag           ResultFlag?
+  notes          String?
+  enteredById    String?
+  enteredAt      DateTime    @default(now())
+
+  item LabOrderItem @relation(fields: [labOrderItemId], references: [id], onDelete: Cascade)
+
+  @@index([labOrderItemId])
+  @@map("lab_results")
+}
+
+model MedicalReport {
+  id        String   @id @default(uuid())
+  visitId   String?
+  patientId String
+  doctorId  String
+  title     String
+  content   String
+  /// Structured "Medical Report" form (complaint, since, given, advised, diagnosis); null for free-text reports.
+  fields    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  visit   Visit?  @relation(fields: [visitId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  User    @relation(fields: [doctorId], references: [id])
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([visitId])
+  @@map("medical_reports")
+}
+
+enum AttachmentCategory {
+  REPORT
+  IMAGE
+  LAB_RESULT
+  DOCUMENT
+  INVOICE
+  INSURANCE
+  OTHER
+}
+
+model Attachment {
+  id                 String             @id @default(uuid())
+  patientId          String?
+  visitId            String?
+  labOrderId         String?
+  expenseId          String?
+  patientInsuranceId String?
+  authorizationId    String?
+  claimId            String?
+  category           AttachmentCategory @default(OTHER)
+  fileName           String
+  mimeType           String
+  size               Int
+  storageKey         String             @unique
+  description        String?
+  uploadedById       String?
+  createdAt          DateTime           @default(now())
+  deletedAt          DateTime?
+
+  patient          Patient?                @relation(fields: [patientId], references: [id])
+  visit            Visit?                  @relation(fields: [visitId], references: [id])
+  labOrder         LabOrder?               @relation(fields: [labOrderId], references: [id])
+  expense          Expense?                @relation(fields: [expenseId], references: [id])
+  patientInsurance PatientInsurance?       @relation(fields: [patientInsuranceId], references: [id])
+  authorization    InsuranceAuthorization? @relation(fields: [authorizationId], references: [id])
+  claim            InsuranceClaim?         @relation(fields: [claimId], references: [id])
+
+  @@index([patientId])
+  @@index([visitId])
+  @@index([authorizationId])
+  @@index([claimId])
+  @@index([expenseId])
+  @@index([labOrderId])
+  @@index([patientInsuranceId])
+  @@map("attachments")
+}
+
+// ───────────────────────────── Billing ─────────────────────────────
+
+/// Invoice model/template ("نموذج فاتورة"). All templates share the same invoice serial.
+model InvoiceTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items    InvoiceTemplateItem[]
+  invoices Invoice[]
+
+  @@map("invoice_templates")
+}
+
+model InvoiceTemplateItem {
+  id          String  @id @default(uuid())
+  templateId  String
+  serviceId   String
+  quantity    Decimal @default(1) @db.Decimal(10, 2)
+  isMandatory Boolean @default(true)
+
+  template InvoiceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  service  Service         @relation(fields: [serviceId], references: [id])
+
+  @@unique([templateId, serviceId])
+  @@index([serviceId])
+  @@map("invoice_template_items")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+model Invoice {
+  id                       String        @id @default(uuid())
+  invoiceNumber            String?       @unique
+  templateId               String?
+  /// SELF_PAY → the patient owes the whole total. INSURANCE → total = patientShare + insuranceShare.
+  /// Coverage is never a discount: discountTotal only holds clinic discounts.
+  payerType                PayerType     @default(SELF_PAY)
+  patientInsuranceId       String?
+  insuranceCompanyId       String?
+  insuranceContractId      String?
+  insuranceMemberId        String?
+  patientShare             Decimal       @default(0) @db.Decimal(12, 3)
+  insuranceShare           Decimal       @default(0) @db.Decimal(12, 3)
+  /// Rejected insurance amounts billed back to the patient (raises the patient balance).
+  transferredFromInsurance Decimal       @default(0) @db.Decimal(12, 3)
+  patientId                String
+  visitId                  String?
+  doctorId                 String?
+  branchId                 String?
+  status                   InvoiceStatus @default(DRAFT)
+  /// The approved invoice date used by lists, prints and all financial reports. Normally the moment of
+  /// issue; may be set earlier (back-dated) or changed later only with the invoices.backdate permission.
+  /// On a draft it holds a requested date (null = the day it is issued).
+  issuedAt                 DateTime?
+  /// When the invoice was actually issued in the system (never changes; for audit next to createdAt).
+  issuedRecordedAt         DateTime?
+  dueDate                  DateTime?
+  subtotal                 Decimal       @default(0) @db.Decimal(12, 3)
+  itemsDiscount            Decimal       @default(0) @db.Decimal(12, 3)
+  invoiceDiscount          Decimal       @default(0) @db.Decimal(12, 3)
+  discountTotal            Decimal       @default(0) @db.Decimal(12, 3)
+  taxTotal                 Decimal       @default(0) @db.Decimal(12, 3)
+  total                    Decimal       @default(0) @db.Decimal(12, 3)
+  paidAmount               Decimal       @default(0) @db.Decimal(12, 3)
+  refundedAmount           Decimal       @default(0) @db.Decimal(12, 3)
+  balance                  Decimal       @default(0) @db.Decimal(12, 3)
+  notes                    String?
+  cancelledAt              DateTime?
+  cancelledById            String?
+  cancelReason             String?
+  createdById              String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  template          InvoiceTemplate?   @relation(fields: [templateId], references: [id])
+  patient           Patient            @relation(fields: [patientId], references: [id])
+  visit             Visit?             @relation(fields: [visitId], references: [id])
+  doctor            User?              @relation("InvoiceDoctor", fields: [doctorId], references: [id])
+  branch            Branch?            @relation(fields: [branchId], references: [id])
+  items             InvoiceItem[]
+  payments          Payment[]
+  patientInsurance  PatientInsurance?  @relation(fields: [patientInsuranceId], references: [id])
+  insuranceCompany  InsuranceCompany?  @relation(fields: [insuranceCompanyId], references: [id])
+  insuranceContract InsuranceContract? @relation(fields: [insuranceContractId], references: [id])
+  claim             InsuranceClaim?
+  einvoices         EInvoice[]
+
+  @@index([status, issuedAt])
+  @@index([insuranceCompanyId, issuedAt])
+  @@index([patientId])
+  @@index([visitId])
+  @@index([doctorId, issuedAt])
+  @@index([branchId])
+  @@index([insuranceContractId])
+  @@index([patientInsuranceId])
+  @@index([templateId])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id              String          @id @default(uuid())
+  invoiceId       String
+  serviceId       String
+  description     String
+  category        ServiceCategory
+  quantity        Decimal         @db.Decimal(10, 2)
+  unitPrice       Decimal         @db.Decimal(12, 3)
+  discount        Decimal         @default(0) @db.Decimal(12, 3)
+  taxRate         Decimal         @default(0) @db.Decimal(5, 2)
+  taxAmount       Decimal         @default(0) @db.Decimal(12, 3)
+  lineTotal       Decimal         @db.Decimal(12, 3)
+  /// Insurance split of lineTotal (patientShare + insuranceShare = lineTotal).
+  coveragePercent Decimal?        @db.Decimal(5, 2)
+  insuranceShare  Decimal         @default(0) @db.Decimal(12, 3)
+  patientShare    Decimal         @default(0) @db.Decimal(12, 3)
+  authorizationId String?
+  /// Why the line is (not) covered: not covered, needs approval, limit reached, manual override…
+  coverageNote    String?
+  isMandatory     Boolean         @default(false)
+  sortOrder       Int             @default(0)
+
+  invoice       Invoice                 @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  service       Service                 @relation(fields: [serviceId], references: [id])
+  authorization InsuranceAuthorization? @relation(fields: [authorizationId], references: [id])
+  claimItems    InsuranceClaimItem[]
+
+  @@index([invoiceId])
+  @@index([authorizationId])
+  @@index([serviceId])
+  @@map("invoice_items")
+}
+
+model PaymentMethod {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  name              String
+  requiresReference Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  isSystem          Boolean  @default(false)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+
+  payments          Payment[]
+  expenses          Expense[]
+  supplierPayments  SupplierPayment[]
+  insurancePayments InsurancePayment[]
+
+  @@map("payment_methods")
+}
+
+enum PaymentType {
+  PAYMENT
+  REFUND
+}
+
+model Payment {
+  id            String      @id @default(uuid())
+  receiptNumber String      @unique
+  invoiceId     String
+  patientId     String
+  type          PaymentType @default(PAYMENT)
+  amount        Decimal     @db.Decimal(12, 3)
+  methodId      String
+  reference     String?
+  notes         String?
+  paidAt        DateTime    @default(now())
+  receivedById  String?
+  voidedAt      DateTime?
+  voidedById    String?
+  voidReason    String?
+  createdAt     DateTime    @default(now())
+
+  invoice Invoice       @relation(fields: [invoiceId], references: [id])
+  patient Patient       @relation(fields: [patientId], references: [id])
+  method  PaymentMethod @relation(fields: [methodId], references: [id])
+
+  @@index([paidAt])
+  @@index([invoiceId])
+  @@index([methodId, paidAt])
+  @@index([patientId])
+  @@map("payments")
+}
+
+// ───────────────────────────── Insurance ─────────────────────────────
+
+enum PayerType {
+  SELF_PAY
+  INSURANCE
+  CORPORATE
+  GOVERNMENT
+  OTHER
+}
+
+enum InsurancePriority {
+  PRIMARY
+  SECONDARY
+}
+
+enum InsuranceStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+}
+
+enum AuthorizationStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ClaimStatus {
+  DRAFT
+  READY
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  PARTIALLY_APPROVED
+  REJECTED
+  RESUBMISSION_REQUIRED
+  PAID
+  PARTIALLY_PAID
+  CLOSED
+  CANCELLED
+}
+
+/// Ledger entry types of a claim. Amount deltas live on the entry; claim totals are their sum.
+enum ClaimEventType {
+  CREATED
+  READY
+  SUBMITTED
+  UNDER_REVIEW
+  DECISION
+  RESUBMISSION_REQUIRED
+  RESUBMITTED
+  PAYMENT
+  TRANSFER_TO_PATIENT
+  WRITE_OFF
+  CLOSED
+  CANCELLED
+  NOTE
+}
+
+model InsuranceCompany {
+  id             String                @id @default(uuid())
+  code           String                @unique
+  nameAr         String
+  nameEn         String?
+  phone          String?
+  email          String?
+  address        String?
+  contactPerson  String?
+  contractNumber String?
+  contractStart  DateTime?             @db.Date
+  contractEnd    DateTime?             @db.Date
+  /// Amount owed by the company before the system was used (company account statement).
+  openingBalance Decimal               @default(0) @db.Decimal(12, 3)
+  /// Company tax number, sent as the buyer's TN on its own national invoice (JoFotara) when it has one.
+  taxNumber      String?
+  /// What the national invoicing system (JoFotara) receives for this company's insurance invoices.
+  einvoiceMode   EInvoiceInsuranceMode @default(NONE)
+  isActive       Boolean               @default(true)
+  notes          String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  contracts      InsuranceContract[]
+  memberships    PatientInsurance[]
+  invoices       Invoice[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
+  payments       InsurancePayment[]
+
+  @@map("insurance_companies")
+}
+
+/// A contract / insurance program of a company (e.g. "Gold", "Corporate X"). Coverage rules hang off it.
+model InsuranceContract {
+  id               String    @id @default(uuid())
+  companyId        String
+  name             String
+  contractNumber   String?
+  startDate        DateTime? @db.Date
+  endDate          DateTime? @db.Date
+  isActive         Boolean   @default(true)
+  terms            String?
+  /// Default share the company pays for covered services without a specific rule.
+  coveragePercent  Decimal   @default(80) @db.Decimal(5, 2)
+  /// Yearly cap per member (null = unlimited). A membership may override it.
+  annualLimit      Decimal?  @db.Decimal(12, 3)
+  /// Free-text summaries shown to staff; the enforceable version is the coverage rules.
+  coveredServices  String?
+  excludedServices String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  company        InsuranceCompany         @relation(fields: [companyId], references: [id])
+  rules          InsuranceCoverageRule[]
+  memberships    PatientInsurance[]
+  invoices       Invoice[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
+
+  @@index([companyId])
+  @@map("insurance_contracts")
+}
+
+/// Coverage of one service, or of a whole service category, under a contract.
+/// Precedence: service rule → category rule → service defaults → contract default.
+model InsuranceCoverageRule {
+  id               String           @id @default(uuid())
+  contractId       String
+  serviceId        String?
+  category         ServiceCategory?
+  covered          Boolean          @default(true)
+  /// Share paid by the company (0–100). Ignored when patientFixed is set.
+  coveragePercent  Decimal?         @db.Decimal(5, 2)
+  /// The patient pays this fixed amount per unit; the company pays the rest.
+  patientFixed     Decimal?         @db.Decimal(12, 3)
+  /// Highest amount the company pays per unit.
+  maxAmount        Decimal?         @db.Decimal(12, 3)
+  /// Contract price of the service (instead of the clinic price).
+  price            Decimal?         @db.Decimal(12, 3)
+  requiresApproval Boolean          @default(false)
+  requiresReport   Boolean          @default(false)
+  notes            String?
+
+  contract InsuranceContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  service  Service?          @relation(fields: [serviceId], references: [id])
+
+  @@unique([contractId, serviceId])
+  @@unique([contractId, category])
+  @@index([serviceId])
+  @@map("insurance_coverage_rules")
+}
+
+/// An insurance membership of a patient (primary or secondary).
+model PatientInsurance {
+  id              String            @id @default(uuid())
+  patientId       String
+  companyId       String
+  contractId      String
+  priority        InsurancePriority @default(PRIMARY)
+  cardNumber      String?
+  policyNumber    String?
+  memberId        String
+  subscriberName  String?
+  /// Relation to the policy holder: SELF, SPOUSE, CHILD, PARENT, OTHER.
+  relation        String            @default("SELF")
+  startDate       DateTime?         @db.Date
+  endDate         DateTime?         @db.Date
+  /// Manual status. An end date in the past always means expired, whatever this says.
+  status          InsuranceStatus   @default(ACTIVE)
+  /// Overrides of the contract defaults for this member.
+  coveragePercent Decimal?          @db.Decimal(5, 2)
+  annualLimit     Decimal?          @db.Decimal(12, 3)
+  network         String?
+  notes           String?
+  verifiedAt      DateTime?
+  verifiedById    String?
+  createdById     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+
+  patient        Patient                  @relation(fields: [patientId], references: [id])
+  company        InsuranceCompany         @relation(fields: [companyId], references: [id])
+  contract       InsuranceContract        @relation(fields: [contractId], references: [id])
+  visits         Visit[]
+  invoices       Invoice[]
+  authorizations InsuranceAuthorization[]
+  claims         InsuranceClaim[]
+  attachments    Attachment[]
+
+  @@index([patientId])
+  @@index([companyId])
+  @@index([endDate])
+  @@index([contractId])
+  @@map("patient_insurances")
+}
+
+/// Pre-authorization requested from the insurance company for a service.
+model InsuranceAuthorization {
+  id                 String              @id @default(uuid())
+  requestNumber      String              @unique
+  patientId          String
+  patientInsuranceId String
+  companyId          String
+  contractId         String
+  visitId            String?
+  doctorId           String?
+  serviceId          String
+  quantity           Decimal             @default(1) @db.Decimal(10, 2)
+  diagnosis          String?
+  reason             String?
+  medicalReportId    String?
+  status             AuthorizationStatus @default(PENDING)
+  /// Number issued by the company when it approves.
+  approvalNumber     String?
+  approvedQuantity   Decimal?            @db.Decimal(10, 2)
+  /// Highest amount the company accepts to pay for this service (null = per the contract).
+  approvedAmount     Decimal?            @db.Decimal(12, 3)
+  validUntil         DateTime?           @db.Date
+  rejectReason       String?
+  notes              String?
+  requestedAt        DateTime            @default(now())
+  submittedAt        DateTime?
+  decidedAt          DateTime?
+  decidedById        String?
+  createdById        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  patient          Patient           @relation(fields: [patientId], references: [id])
+  patientInsurance PatientInsurance  @relation(fields: [patientInsuranceId], references: [id])
+  company          InsuranceCompany  @relation(fields: [companyId], references: [id])
+  contract         InsuranceContract @relation(fields: [contractId], references: [id])
+  visit            Visit?            @relation(fields: [visitId], references: [id])
+  service          Service           @relation(fields: [serviceId], references: [id])
+  invoiceItems     InvoiceItem[]
+  attachments      Attachment[]
+
+  @@index([patientId, status])
+  @@index([status, requestedAt])
+  @@index([companyId])
+  @@index([contractId])
+  @@index([patientInsuranceId])
+  @@index([serviceId])
+  @@index([visitId])
+  @@map("insurance_authorizations")
+}
+
+/// One claim per insurance invoice. Amounts are the sum of the claim's ledger events (never edited directly).
+/// insuranceAmount = pending + approved + rejected + transferred + writtenOff;  outstanding = pending + approved − paid.
+model InsuranceClaim {
+  id                 String      @id @default(uuid())
+  claimNumber        String      @unique
+  invoiceId          String      @unique
+  patientId          String
+  companyId          String
+  contractId         String
+  patientInsuranceId String
+  visitId            String?
+  doctorId           String?
+  policyNumber       String?
+  memberId           String
+  diagnosis          String?
+  totalAmount        Decimal     @db.Decimal(12, 3)
+  insuranceAmount    Decimal     @db.Decimal(12, 3)
+  patientAmount      Decimal     @db.Decimal(12, 3)
+  submittedAmount    Decimal     @default(0) @db.Decimal(12, 3)
+  approvedAmount     Decimal     @default(0) @db.Decimal(12, 3)
+  rejectedAmount     Decimal     @default(0) @db.Decimal(12, 3)
+  paidAmount         Decimal     @default(0) @db.Decimal(12, 3)
+  transferredAmount  Decimal     @default(0) @db.Decimal(12, 3)
+  writtenOffAmount   Decimal     @default(0) @db.Decimal(12, 3)
+  pendingAmount      Decimal     @default(0) @db.Decimal(12, 3)
+  outstandingAmount  Decimal     @default(0) @db.Decimal(12, 3)
+  /// Workflow step chosen by staff (DRAFT…RESUBMISSION_REQUIRED/CANCELLED); `status` is derived from it and the amounts.
+  workflowStatus     ClaimStatus @default(DRAFT)
+  status             ClaimStatus @default(DRAFT)
+  submissionCount    Int         @default(0)
+  submittedAt        DateTime?
+  lastPaymentAt      DateTime?
+  closedAt           DateTime?
+  notes              String?
+  createdById        String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  invoice          Invoice                      @relation(fields: [invoiceId], references: [id])
+  patient          Patient                      @relation(fields: [patientId], references: [id])
+  company          InsuranceCompany             @relation(fields: [companyId], references: [id])
+  contract         InsuranceContract            @relation(fields: [contractId], references: [id])
+  patientInsurance PatientInsurance             @relation(fields: [patientInsuranceId], references: [id])
+  visit            Visit?                       @relation(fields: [visitId], references: [id])
+  items            InsuranceClaimItem[]
+  events           InsuranceClaimEvent[]
+  allocations      InsurancePaymentAllocation[]
+  attachments      Attachment[]
+
+  @@index([companyId, status])
+  @@index([status, submittedAt])
+  @@index([patientId])
+  @@index([contractId])
+  @@index([patientInsuranceId])
+  @@index([visitId])
+  @@map("insurance_claims")
+}
+
+model InsuranceClaimItem {
+  id              String  @id @default(uuid())
+  claimId         String
+  invoiceItemId   String
+  serviceId       String
+  description     String
+  quantity        Decimal @db.Decimal(10, 2)
+  unitPrice       Decimal @db.Decimal(12, 3)
+  totalAmount     Decimal @db.Decimal(12, 3)
+  insuranceAmount Decimal @db.Decimal(12, 3)
+  approvedAmount  Decimal @default(0) @db.Decimal(12, 3)
+  rejectedAmount  Decimal @default(0) @db.Decimal(12, 3)
+  rejectReason    String?
+  approvalNumber  String?
+
+  claim       InsuranceClaim @relation(fields: [claimId], references: [id])
+  invoiceItem InvoiceItem    @relation(fields: [invoiceItemId], references: [id])
+  service     Service        @relation(fields: [serviceId], references: [id])
+
+  @@index([claimId])
+  @@index([invoiceItemId])
+  @@index([serviceId])
+  @@map("insurance_claim_items")
+}
+
+/// Append-only history and money ledger of a claim (insurance_claim_status_history).
+model InsuranceClaimEvent {
+  id           String         @id @default(uuid())
+  claimId      String
+  type         ClaimEventType
+  fromStatus   ClaimStatus?
+  toStatus     ClaimStatus?
+  dApproved    Decimal        @default(0) @db.Decimal(12, 3)
+  dRejected    Decimal        @default(0) @db.Decimal(12, 3)
+  dPaid        Decimal        @default(0) @db.Decimal(12, 3)
+  dTransferred Decimal        @default(0) @db.Decimal(12, 3)
+  dWrittenOff  Decimal        @default(0) @db.Decimal(12, 3)
+  dSubmitted   Decimal        @default(0) @db.Decimal(12, 3)
+  /// Receivable dropped because the invoice (and so the claim) was cancelled.
+  dCancelled   Decimal        @default(0) @db.Decimal(12, 3)
+  reason       String?
+  notes        String?
+  allocationId String?
+  /// Set when the payment behind this entry is voided; the entry then no longer counts.
+  voidedAt     DateTime?
+  userId       String?
+  userName     String?
+  createdAt    DateTime       @default(now())
+
+  claim      InsuranceClaim              @relation(fields: [claimId], references: [id])
+  allocation InsurancePaymentAllocation? @relation(fields: [allocationId], references: [id])
+
+  @@index([claimId, createdAt])
+  @@index([type, createdAt])
+  @@index([allocationId])
+  @@map("insurance_claim_events")
+}
+
+/// Money received from an insurance company.
+model InsurancePayment {
+  id            String    @id @default(uuid())
+  receiptNumber String    @unique
+  companyId     String
+  amount        Decimal   @db.Decimal(12, 3)
+  methodId      String
+  reference     String?
+  notes         String?
+  paidAt        DateTime  @default(now())
+  receivedById  String?
+  voidedAt      DateTime?
+  voidedById    String?
+  voidReason    String?
+  createdAt     DateTime  @default(now())
+
+  company     InsuranceCompany             @relation(fields: [companyId], references: [id])
+  method      PaymentMethod                @relation(fields: [methodId], references: [id])
+  allocations InsurancePaymentAllocation[]
+
+  @@index([companyId, paidAt])
+  @@index([paidAt])
+  @@index([methodId])
+  @@map("insurance_payments")
+}
+
+model InsurancePaymentAllocation {
+  id        String  @id @default(uuid())
+  paymentId String
+  claimId   String
+  amount    Decimal @db.Decimal(12, 3)
+
+  payment InsurancePayment      @relation(fields: [paymentId], references: [id])
+  claim   InsuranceClaim        @relation(fields: [claimId], references: [id])
+  events  InsuranceClaimEvent[]
+
+  @@index([claimId])
+  @@index([paymentId])
+  @@map("insurance_payment_allocations")
+}
+
+// ───────────────────────────── Expenses ─────────────────────────────
+
+model ExpenseCategory {
+  id        String    @id @default(uuid())
+  name      String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  expenses  Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id              String    @id @default(uuid())
+  categoryId      String
+  amount          Decimal   @db.Decimal(12, 3)
+  expenseDate     DateTime  @db.Date
+  paymentMethodId String?
+  supplierId      String?
+  description     String
+  reference       String?
+  branchId        String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  voidedAt        DateTime?
+  voidedById      String?
+  voidReason      String?
+
+  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
+  paymentMethod PaymentMethod?  @relation(fields: [paymentMethodId], references: [id])
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id])
+  branch        Branch?         @relation(fields: [branchId], references: [id])
+  attachments   Attachment[]
+
+  @@index([expenseDate])
+  @@index([categoryId])
+  @@index([branchId])
+  @@index([paymentMethodId])
+  @@index([supplierId])
+  @@map("expenses")
+}
+
+// ───────────────────────────── Inventory ─────────────────────────────
+
+model InventoryCategory {
+  id        String          @id @default(uuid())
+  name      String
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  items     InventoryItem[]
+
+  @@map("inventory_categories")
+}
+
+model Unit {
+  id       String          @id @default(uuid())
+  name     String
+  symbol   String?
+  isActive Boolean         @default(true)
+  items    InventoryItem[]
+
+  @@map("units")
+}
+
+model InventoryItem {
+  id            String    @id @default(uuid())
+  name          String
+  sku           String    @unique
+  barcode       String?   @unique
+  categoryId    String?
+  unitId        String?
+  /// Cached on-hand quantity. Only ever changed together with an InventoryTransaction row.
+  quantity      Decimal   @default(0) @db.Decimal(12, 2)
+  minQuantity   Decimal   @default(0) @db.Decimal(12, 2)
+  purchasePrice Decimal   @default(0) @db.Decimal(12, 3)
+  salePrice     Decimal?  @db.Decimal(12, 3)
+  supplierId    String?
+  expiryDate    DateTime? @db.Date
+  batchNumber   String?
+  location      String?
+  notes         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  category           InventoryCategory?     @relation(fields: [categoryId], references: [id])
+  unit               Unit?                  @relation(fields: [unitId], references: [id])
+  supplier           Supplier?              @relation(fields: [supplierId], references: [id])
+  transactions       InventoryTransaction[]
+  stockCountItems    StockCountItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  services           Service[]
+  stocks             WarehouseStock[]
+  transferItems      StockTransferItem[]
+
+  @@index([name])
+  @@index([expiryDate])
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([unitId])
+  @@map("inventory_items")
+}
+
+enum InventoryTxnType {
+  PURCHASE
+  RECEIPT
+  ISSUE
+  CONSUMPTION
+  RETURN
+  ADJUSTMENT
+  STOCK_COUNT
+  SALE
+  SALE_REVERSAL
+  TRANSFER_OUT
+  TRANSFER_IN
+}
+
+model InventoryTransaction {
+  id                    String           @id @default(uuid())
+  itemId                String
+  type                  InventoryTxnType
+  /// Signed quantity: positive = stock in, negative = stock out.
+  quantity              Decimal          @db.Decimal(12, 2)
+  /// Total quantity of the item (all warehouses) after this movement.
+  balanceAfter          Decimal          @db.Decimal(12, 2)
+  warehouseId           String
+  /// Quantity of the item in this warehouse after this movement.
+  warehouseBalanceAfter Decimal?         @db.Decimal(12, 2)
+  unitCost              Decimal?         @db.Decimal(12, 3)
+  reason                String?
+  reference             String?
+  referenceType         String?
+  referenceId           String?
+  batchNumber           String?
+  expiryDate            DateTime?        @db.Date
+  userId                String?
+  createdAt             DateTime         @default(now())
+
+  item      InventoryItem @relation(fields: [itemId], references: [id])
+  warehouse Warehouse     @relation(fields: [warehouseId], references: [id])
+
+  @@index([itemId, createdAt])
+  @@index([warehouseId, createdAt])
+  @@index([type, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("inventory_transactions")
+}
+
+enum StockCountStatus {
+  IN_PROGRESS
+  APPROVED
+  CANCELLED
+}
+
+model StockCount {
+  id           String           @id @default(uuid())
+  countNumber  String           @unique
+  title        String?
+  status       StockCountStatus @default(IN_PROGRESS)
+  /// Warehouse being counted (null only on counts made before warehouses existed = the main one).
+  warehouseId  String?
+  notes        String?
+  createdById  String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  items     StockCountItem[]
+  warehouse Warehouse?       @relation(fields: [warehouseId], references: [id])
+
+  @@index([warehouseId])
+  @@map("stock_counts")
+}
+
+model StockCountItem {
+  id              String   @id @default(uuid())
+  stockCountId    String
+  itemId          String
+  systemQuantity  Decimal  @db.Decimal(12, 2)
+  countedQuantity Decimal? @db.Decimal(12, 2)
+  difference      Decimal? @db.Decimal(12, 2)
+  notes           String?
+
+  stockCount StockCount    @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@unique([stockCountId, itemId])
+  @@index([itemId])
+  @@map("stock_count_items")
+}
+
+/// A place where stock is kept. Exactly one is the default (used when no warehouse is given).
+model Warehouse {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  location  String?
+  notes     String?
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stocks       WarehouseStock[]
+  transactions InventoryTransaction[]
+  stockCounts  StockCount[]
+  transfersOut StockTransfer[]        @relation("TransferFrom")
+  transfersIn  StockTransfer[]        @relation("TransferTo")
+
+  @@map("warehouses")
+}
+
+/// Quantity of one item in one warehouse. Only changed together with an InventoryTransaction row.
+model WarehouseStock {
+  warehouseId String
+  itemId      String
+  quantity    Decimal  @default(0) @db.Decimal(12, 2)
+  updatedAt   DateTime @updatedAt
+
+  warehouse Warehouse     @relation(fields: [warehouseId], references: [id])
+  item      InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@id([warehouseId, itemId])
+  @@index([itemId])
+  @@map("warehouse_stock")
+}
+
+/// Moving goods from one warehouse to another (one TRANSFER_OUT + one TRANSFER_IN movement per line).
+model StockTransfer {
+  id              String   @id @default(uuid())
+  transferNumber  String   @unique
+  fromWarehouseId String
+  toWarehouseId   String
+  notes           String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  fromWarehouse Warehouse           @relation("TransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouse   Warehouse           @relation("TransferTo", fields: [toWarehouseId], references: [id])
+  items         StockTransferItem[]
+
+  @@index([createdAt])
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id         String  @id @default(uuid())
+  transferId String
+  itemId     String
+  quantity   Decimal @db.Decimal(12, 2)
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item     InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@unique([transferId, itemId])
+  @@index([itemId])
+  @@map("stock_transfer_items")
+}
+
+model Supplier {
+  id            String    @id @default(uuid())
+  name          String
+  phone         String?
+  email         String?
+  address       String?
+  taxNumber     String?
+  contactPerson String?
+  notes         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  items          InventoryItem[]
+  purchaseOrders PurchaseOrder[]
+  payments       SupplierPayment[]
+  expenses       Expense[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  RECEIVED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id          String              @id @default(uuid())
+  poNumber    String              @unique
+  supplierId  String
+  status      PurchaseOrderStatus @default(DRAFT)
+  orderDate   DateTime            @default(now())
+  receivedAt  DateTime?
+  total       Decimal             @default(0) @db.Decimal(12, 3)
+  notes       String?
+  createdById String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  supplier Supplier            @relation(fields: [supplierId], references: [id])
+  items    PurchaseOrderItem[]
+  payments SupplierPayment[]
+
+  @@index([supplierId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String    @id @default(uuid())
+  purchaseOrderId String
+  itemId          String
+  quantity        Decimal   @db.Decimal(12, 2)
+  unitCost        Decimal   @db.Decimal(12, 3)
+  lineTotal       Decimal   @db.Decimal(12, 3)
+  batchNumber     String?
+  expiryDate      DateTime? @db.Date
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  item          InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
+}
+
+model SupplierPayment {
+  id              String    @id @default(uuid())
+  supplierId      String
+  purchaseOrderId String?
+  amount          Decimal   @db.Decimal(12, 3)
+  methodId        String
+  reference       String?
+  notes           String?
+  paidAt          DateTime  @default(now())
+  createdById     String?
+  voidedAt        DateTime?
+  voidedById      String?
+  voidReason      String?
+  createdAt       DateTime  @default(now())
+
+  supplier      Supplier       @relation(fields: [supplierId], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  method        PaymentMethod  @relation(fields: [methodId], references: [id])
+
+  @@index([supplierId])
+  @@index([methodId])
+  @@index([purchaseOrderId])
+  @@map("supplier_payments")
+}
+
+// ───────────────────────────── Staff scheduling ─────────────────────────────
+
+enum ShiftType {
+  MORNING
+  EVENING
+  NIGHT
+  CUSTOM
+}
+
+model Shift {
+  id        String    @id @default(uuid())
+  name      String
+  type      ShiftType
+  startTime String // "HH:mm"
+  endTime   String // "HH:mm" (may be < startTime for overnight shifts)
+  color     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  assignments ShiftAssignment[]
+
+  @@map("shifts")
+}
+
+model ShiftAssignment {
+  id             String       @id @default(uuid())
+  /// Current holder. Null = vacant (released by its holder, waiting for a buyer or the administration).
+  userId         String?
+  shiftId        String
+  date           DateTime     @db.Date
+  startTime      String
+  endTime        String
+  notes          String?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  /// Staff category of the slot (who may hold it), kept when the slot is vacant.
+  staffType      StaffType?
+  /// Holder chosen by the administration when the shift was distributed.
+  originalUserId String?
+  /// How the current holder holds it (E Coin protection).
+  holding        ShiftHolding @default(ASSIGNED)
+  securedAt      DateTime?
+
+  user       User?           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  shift      Shift           @relation(fields: [shiftId], references: [id])
+  attendance Attendance[]
+  events     ShiftEvent[]
+  coverages  ShiftCoverage[]
+
+  @@unique([userId, date, shiftId])
+  @@index([date])
+  @@index([userId, date])
+  @@index([shiftId])
+  @@map("shift_assignments")
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  UNPAID
+  EMERGENCY
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model Leave {
+  id          String      @id @default(uuid())
+  userId      String
+  type        LeaveType
+  startDate   DateTime    @db.Date
+  endDate     DateTime    @db.Date
+  status      LeaveStatus @default(PENDING)
+  reason      String?
+  decidedById String?
+  decidedAt   DateTime?
+  createdById String?
+  createdAt   DateTime    @default(now())
+
+  user User @relation("LeaveUser", fields: [userId], references: [id])
+
+  @@index([userId, startDate])
+  @@map("leaves")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  EARLY_LEAVE
+  LATE_AND_EARLY
+  ABSENT
+  LEAVE
+}
+
+model Attendance {
+  id                String           @id @default(uuid())
+  userId            String
+  date              DateTime         @db.Date
+  shiftAssignmentId String?
+  checkIn           DateTime?
+  checkOut          DateTime?
+  status            AttendanceStatus
+  lateMinutes       Int              @default(0)
+  earlyLeaveMinutes Int              @default(0)
+  workedMinutes     Int              @default(0)
+  notes             String?
+  recordedById      String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  user            User             @relation("AttendanceUser", fields: [userId], references: [id])
+  shiftAssignment ShiftAssignment? @relation(fields: [shiftAssignmentId], references: [id])
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([shiftAssignmentId])
+  @@map("attendance")
+}
+
+// ───────────────────────────── Notifications & audit ─────────────────────────────
+
+enum NotificationType {
+  ECOIN
+  SHIFT_EXCHANGE
+  LOW_STOCK
+  EXPIRY
+  UNPAID_INVOICE
+  UPCOMING_APPOINTMENT
+  LAB_REQUESTED
+  LAB_RESULT_READY
+  STAFF_LATE
+  SHIFT_ENDING
+  QUEUE
+  INSURANCE
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String?
+  link      String?
+  /// Prevents the background scanner from creating the same alert twice.
+  dedupeKey String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+/// Append-only. A database trigger (see migration) rejects UPDATE/DELETE.
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  userName   String?
+  action     String
+  entityType String
+  entityId   String?
+  summary    String?
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── National e-invoicing (JoFotara, ISTD technical guide v1.5) ──
+
+/// What goes to the national system for an insurance invoice of a company.
+enum EInvoiceInsuranceMode {
+  /// Only the share the patient pays (cash invoice to the patient).
+  PATIENT_SHARE
+  /// The whole invoice amount as one cash invoice to the patient.
+  FULL_TO_PATIENT
+  /// Patient share to the patient (cash) + company share to the company (receivable).
+  PATIENT_AND_COMPANY
+  /// Nothing goes to the national system for this company's invoices (neither the patient's nor the company's share). Default.
+  NONE
+}
+
+enum EInvoiceKind {
+  SALE
+  RETURN
+}
+
+enum EInvoiceParty {
+  PATIENT
+  COMPANY
+}
+
+enum EInvoiceStatus {
+  /// Prepared, not sent yet.
+  PENDING
+  /// A send is in progress.
+  SENDING
+  /// Accepted by the national system (SUBMITTED / ALREADY_SUBMITTED with a QR code).
+  SUBMITTED
+  /// Refused with validation errors (NOT_SUBMITTED / HTTP 400). Never accepted.
+  REJECTED
+  /// Refused before validation (credentials 403, tax number / income source 500, local checks). Never accepted.
+  FAILED
+  /// No answer (timeout, network, gateway): may or may not have been accepted. Resent with the same ID+UUID.
+  UNKNOWN
+  /// Never accepted and no longer needed (its invoice was cancelled).
+  VOID
+}
+
+/// One document sent to the national system: a sale invoice (388) or a return invoice (381).
+/// docNumber + uuid are its primary key at the national system and never change once created.
+model EInvoice {
+  id            String         @id @default(uuid())
+  invoiceId     String
+  kind          EInvoiceKind
+  party         EInvoiceParty
+  /// cbc:ID
+  docNumber     String         @unique
+  /// cbc:UUID
+  uuid          String         @unique
+  /// Invoice counter (ICV), sequential from 1. Given on the first real send, so documents voided before they
+  /// were ever sent leave no gap; kept unchanged on every resend.
+  icv           Int?           @unique
+  /// InvoiceTypeCode name: 012 (cash, local) or 022 (receivable, local).
+  typeName      String
+  issueDate     DateTime       @db.Date
+  /// Return documents: the sale document they return from.
+  originalId    String?
+  reason        String?
+  total         Decimal        @db.Decimal(12, 3)
+  taxTotal      Decimal        @default(0) @db.Decimal(12, 3)
+  /// Lines as sent: [{ lineId, itemId, name, quantity, unitPrice, discount, taxPercent, taxCategory }]
+  lines         Json
+  /// Buyer block as sent (returns repeat their sale's buyer).
+  buyer         Json
+  /// The exact XML last sent (resent byte-for-byte while the outcome is unknown).
+  xml           String
+  status        EInvoiceStatus @default(PENDING)
+  attempts      Int            @default(0)
+  lastAttemptAt DateTime?
+  nextAttemptAt DateTime?
+  submittedAt   DateTime?
+  qr            String?
+  signedInvoice String?
+  einvNum       String?
+  einvUuid      String?
+  /// Short message for the user; details are in the attempts.
+  lastError     String?
+  createdById   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  invoice     Invoice           @relation(fields: [invoiceId], references: [id])
+  original    EInvoice?         @relation("EInvoiceReturns", fields: [originalId], references: [id])
+  returns     EInvoice[]        @relation("EInvoiceReturns")
+  attemptsLog EInvoiceAttempt[]
+
+  @@index([invoiceId])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+  @@index([originalId])
+  @@map("einvoices")
+}
+
+/// Every send and its answer (audit trail). Never holds credentials.
+model EInvoiceAttempt {
+  id         String   @id @default(uuid())
+  eInvoiceId String
+  at         DateTime @default(now())
+  httpStatus Int?
+  einvStatus String?
+  /// SUBMITTED / REJECTED / FAILED / UNKNOWN
+  outcome    String
+  message    String?
+  errors     Json?
+  durationMs Int?
+  /// null = automatic (issue / background retry)
+  userId     String?
+
+  eInvoice EInvoice @relation(fields: [eInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([eInvoiceId, at])
+  @@map("einvoice_attempts")
+}
+
+// ── E Coin (doctors' virtual coins) and shift exchange ──
+
+/// How the current holder holds a distributed shift.
+enum ShiftHolding {
+  /// As distributed (or swapped in): others may buy it.
+  ASSIGNED
+  /// The holder paid to protect it: nobody can buy it.
+  SECURED
+  /// Bought from another doctor: owned by the buyer and protected.
+  PURCHASED
+  /// Released by its holder: no holder until bought or reassigned.
+  VACANT
+}
+
+enum ShiftEventType {
+  ASSIGNED
+  SECURED
+  PURCHASED
+  RELEASED
+  SWAPPED
+  REASSIGNED
+  COVERAGE
+  HANDOVER
+  REVERSED
+}
+
+enum ExchangeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum ECoinSource {
+  LAB_INVOICE
+  ADJUSTMENT
+  REFUND
+}
+
+enum ECoinTxnType {
+  /// Earned for an issued invoice with lab tests.
+  EARN
+  /// Lots past their validity.
+  EXPIRE
+  /// Bought another doctor's (or a vacant) shift.
+  PURCHASE
+  /// Secured one's own shift.
+  SECURE
+  /// Manual correction by the administration (+ or -).
+  ADJUST
+  /// Earned coins taken back because their invoice was cancelled.
+  CLAWBACK
+  /// Administrative reversal of an earlier transaction.
+  REVERSAL
+}
+
+enum PenaltyStatus {
+  ACTIVE
+  ENDED
+}
+
+/// One wallet per doctor. balance = sum of unexpired lot remainders; the row is locked for every movement.
+model ECoinWallet {
+  userId                String    @id
+  balance               Int       @default(0)
+  /// Penalty rule: worked shifts up to this moment were already evaluated (blocks of N, never twice).
+  penaltyCheckedThrough DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("ecoin_wallets")
+}
+
+/// Coins earned together; each lot expires on its own date and is spent soonest-to-expire first.
+model ECoinLot {
+  id         String      @id @default(uuid())
+  userId     String
+  source     ECoinSource
+  amount     Int
+  remaining  Int
+  earnedAt   DateTime    @default(now())
+  /// When the activity happened (lab order time) — used by the penalty rule.
+  activityAt DateTime    @default(now())
+  expiresAt  DateTime
+  /// LAB_INVOICE lots: one per invoice, ever.
+  invoiceId  String?     @unique
+  expiredAt  DateTime?
+  warnedAt   DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+  @@map("ecoin_lots")
+}
+
+/// Wallet ledger. Append-only (database trigger): corrections are new rows, never edits.
+model ECoinTxn {
+  id             String       @id @default(uuid())
+  userId         String
+  type           ECoinTxnType
+  /// Signed: + adds to the balance, - takes from it.
+  amount         Int
+  balanceBefore  Int
+  balanceAfter   Int
+  lotId          String?
+  invoiceId      String?
+  assignmentId   String?
+  /// REVERSAL rows: the transaction they reverse (at most once).
+  reversalOfId   String?      @unique
+  /// Client request id: a resent request returns the first result instead of charging twice.
+  idempotencyKey String?      @unique
+  reason         String?
+  meta           Json?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+
+  uses ECoinLotUse[]
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([assignmentId])
+  @@map("ecoin_transactions")
+}
+
+/// Which lots a debit (or a refund) touched. Append-only.
+model ECoinLotUse {
+  id     String @id @default(uuid())
+  txnId  String
+  lotId  String
+  /// Positive = taken from the lot, negative = given back to it.
+  amount Int
+
+  txn ECoinTxn @relation(fields: [txnId], references: [id])
+
+  @@index([lotId])
+  @@index([txnId])
+  @@map("ecoin_lot_uses")
+}
+
+/// Custom price of one shift on a weekday or on a date (date wins over weekday, both over the duration default).
+model ShiftPriceRule {
+  id          String    @id @default(uuid())
+  shiftId     String
+  /// 0 = Sunday … 6 = Saturday
+  weekday     Int?
+  date        DateTime? @db.Date
+  price       Int
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([shiftId])
+  @@map("shift_price_rules")
+}
+
+/// Discount granted after N worked shifts without coins: applies to the doctor's next purchases.
+model ECoinPenalty {
+  id           String        @id @default(uuid())
+  userId       String
+  windowStart  DateTime
+  windowEnd    DateTime
+  /// Worked shifts evaluated (ids), for review by the administration.
+  windowShifts Json
+  coinsEarned  Int
+  discount     Int
+  usesTotal    Int
+  usesLeft     Int
+  status       PenaltyStatus @default(ACTIVE)
+  triggeredAt  DateTime      @default(now())
+  endedAt      DateTime?
+
+  @@unique([userId, windowEnd])
+  @@index([userId, status])
+  @@map("ecoin_penalties")
+}
+
+/// Full history of a shift: every holder change and protection. Append-only.
+model ShiftEvent {
+  id           String         @id @default(uuid())
+  assignmentId String
+  type         ShiftEventType
+  fromUserId   String?
+  toUserId     String?
+  price        Int?
+  txnId        String?
+  refId        String?
+  note         String?
+  createdById  String?
+  createdAt    DateTime       @default(now())
+
+  assignment ShiftAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([assignmentId, createdAt])
+  @@index([type, createdAt])
+  @@map("shift_events")
+}
+
+/// Swap request between two holders; executed only when the other side accepts.
+model ShiftSwap {
+  id               String         @id @default(uuid())
+  requesterId      String
+  targetUserId     String
+  fromAssignmentId String
+  toAssignmentId   String
+  status           ExchangeStatus @default(PENDING)
+  note             String?
+  respondedAt      DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@index([requesterId, status])
+  @@index([targetUserId, status])
+  @@map("shift_swaps")
+}
+
+/// The holder of the previous shift covers the first part of the next shift (no change of holder, no coins).
+model ShiftCoverage {
+  id           String         @id @default(uuid())
+  assignmentId String
+  requesterId  String
+  ownerId      String
+  minutes      Int
+  startAt      DateTime
+  endAt        DateTime
+  status       ExchangeStatus @default(PENDING)
+  note         String?
+  respondedAt  DateTime?
+  createdAt    DateTime       @default(now())
+
+  assignment ShiftAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@index([assignmentId, status])
+  @@index([ownerId, status])
+  @@index([requesterId, status])
+  @@map("shift_coverages")
+}
+
+/// Late arrival of the next holder and/or extension of the previous one, recorded by an authorised user.
+model ShiftHandover {
+  id               String    @id @default(uuid())
+  nextAssignmentId String?
+  prevAssignmentId String?
+  nextUserId       String?
+  prevUserId       String?
+  plannedStart     DateTime?
+  actualStart      DateTime?
+  plannedEnd       DateTime?
+  actualEnd        DateTime?
+  lateMinutes      Int       @default(0)
+  extendedMinutes  Int       @default(0)
+  reason           String?
+  recordedById     String
+  createdAt        DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([nextUserId])
+  @@index([prevUserId])
+  @@map("shift_handovers")
+}
+
+// ───────────────────────── EmergencyPlus Accounting ─────────────────────────
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountNature {
+  DEBIT
+  CREDIT
+}
+
+/// Chart of accounts (tree). A group account only totals its children; entries go to leaf accounts.
+model Account {
+  id          String        @id @default(uuid())
+  code        String        @unique
+  name        String
+  type        AccountType
+  nature      AccountNature
+  parentId    String?
+  isGroup     Boolean       @default(false)
+  isActive    Boolean       @default(true)
+  /// Created by the system (can be renamed, never deleted).
+  isSystem    Boolean       @default(false)
+  /// Fixed role used by automatic entries (e.g. CASH, VISA_CLEARING). Unique when set.
+  systemKey   String?       @unique
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  parent   Account?      @relation("AccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Account[]     @relation("AccountTree")
+  lines    JournalLine[]
+
+  @@index([parentId])
+  @@index([type])
+  @@map("acc_accounts")
+}
+
+enum FiscalStatus {
+  OPEN
+  CLOSED
+}
+
+model FiscalYear {
+  id         String       @id @default(uuid())
+  name       String
+  startDate  DateTime     @db.Date
+  endDate    DateTime     @db.Date
+  status     FiscalStatus @default(OPEN)
+  closedAt   DateTime?
+  closedById String?
+  createdAt  DateTime     @default(now())
+
+  periods FiscalPeriod[]
+
+  @@unique([startDate])
+  @@map("acc_fiscal_years")
+}
+
+model FiscalPeriod {
+  id           String       @id @default(uuid())
+  fiscalYearId String
+  name         String
+  startDate    DateTime     @db.Date
+  endDate      DateTime     @db.Date
+  status       FiscalStatus @default(OPEN)
+  closedAt     DateTime?
+  closedById   String?
+  reopenedAt   DateTime?
+  reopenedById String?
+  reopenReason String?
+
+  fiscalYear FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Restrict)
+
+  @@unique([fiscalYearId, startDate])
+  @@index([startDate, endDate])
+  @@map("acc_fiscal_periods")
+}
+
+enum JournalType {
+  GENERAL
+  OPENING
+  ADJUSTMENT
+  CLOSING
+  EXPENSE
+  REVENUE
+  RECEIPT
+  PAYMENT
+  PAYROLL
+  PURCHASE
+  CHEQUE
+  BANK_RECONCILIATION
+  DEPRECIATION
+  CORRECTION
+}
+
+enum JournalStatus {
+  /// Saved, waiting for approval (only when approval is required for this user).
+  DRAFT
+  /// Approved = posted: counts in the ledger and every report.
+  POSTED
+  /// Deleted: kept with its full history, no longer counts anywhere.
+  DELETED
+}
+
+model JournalEntry {
+  id          String        @id @default(uuid())
+  number      String        @unique
+  date        DateTime      @db.Date
+  type        JournalType   @default(GENERAL)
+  status      JournalStatus @default(DRAFT)
+  description String
+  reference   String?
+  /// Origin of an automatic entry ("invoice", "payment", "expense"…); null for a manual entry.
+  sourceType  String?
+  sourceId    String?
+  /// One entry per source operation: "invoice:<id>". Prevents duplicates on retries.
+  sourceKey   String?       @unique
+  totalDebit  Decimal       @default(0) @db.Decimal(14, 3)
+  version     Int           @default(1)
+  createdById String?
+  updatedById String?
+  postedById  String?
+  postedAt    DateTime?
+  deletedById String?
+  deletedAt   DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  lines     JournalLine[]
+  revisions JournalRevision[]
+
+  @@index([date])
+  @@index([status, date])
+  @@index([sourceType, sourceId])
+  @@map("acc_journal_entries")
+}
+
+model JournalLine {
+  id           String    @id @default(uuid())
+  entryId      String
+  lineNo       Int
+  accountId    String
+  debit        Decimal   @default(0) @db.Decimal(14, 3)
+  credit       Decimal   @default(0) @db.Decimal(14, 3)
+  description  String?
+  /// Optional sub-ledger party: PATIENT / SUPPLIER / INSURANCE / EMPLOYEE / OTHER
+  partyType    String?
+  partyId      String?
+  partyName    String?
+  /// Optional analysis: the doctor behind a revenue line.
+  doctorId     String?
+  /// Set when the line was matched with the bank statement.
+  reconciledAt DateTime?
+  reconId      String?
+
+  entry   JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([accountId])
+  @@index([partyType, partyId])
+  @@map("acc_journal_lines")
+}
+
+/// Full history of an entry: one snapshot per version (creation, every edit, approval, deletion). Append-only.
+model JournalRevision {
+  id        String   @id @default(uuid())
+  entryId   String
+  version   Int
+  action    String
+  snapshot  Json
+  changes   Json?
+  /// Optional reason given for an edit (required only when the setting says so).
+  reason    String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  entry JournalEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+
+  @@unique([entryId, version, action])
+  @@index([entryId])
+  @@map("acc_journal_revisions")
+}
+
+enum AccountingEventStatus {
+  PENDING
+  DONE
+  FAILED
+  SKIPPED
+}
+
+/// Link queue between EmergencyPlus and the books: one row per source operation ("invoice:<id>"…), written in the
+/// same transaction as the operation itself, then turned into its journal entry. Re-queued on every change.
+model AccountingEvent {
+  id          String                @id @default(uuid())
+  sourceKey   String                @unique
+  kind        String
+  sourceId    String
+  status      AccountingEventStatus @default(PENDING)
+  attempts    Int                   @default(0)
+  lastError   String?
+  note        String?
+  entryId     String?
+  queuedAt    DateTime              @default(now())
+  processedAt DateTime?
+
+  @@index([status, queuedAt])
+  @@map("acc_events")
+}
+
+// ───── Accounting: treasury (cash boxes & bank accounts), vouchers, transfers, cash counts ─────
+
+enum TreasuryKind {
+  CASH
+  BANK
+}
+
+/// A cash box or a bank account, each backed by its own ledger account (balance = that account's balance).
+model Treasury {
+  id            String       @id @default(uuid())
+  kind          TreasuryKind
+  name          String
+  accountId     String       @unique
+  custodianId   String?
+  bankName      String?
+  branch        String?
+  accountNumber String?
+  iban          String?
+  holderName    String?
+  currency      String       @default("JOD")
+  notes         String?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("acc_treasuries")
+}
+
+enum VoucherKind {
+  RECEIPT
+  PAYMENT
+}
+
+enum VoucherMethod {
+  CASH
+  VISA
+  CLIQ
+  TRANSFER
+  CHEQUE
+  OTHER
+}
+
+enum DocStatus {
+  ACTIVE
+  CANCELLED
+}
+
+/// Receipt (سند قبض) or payment (سند صرف) voucher. Posted on save; editing it updates its entry; cancelling keeps it.
+model Voucher {
+  id               String        @id @default(uuid())
+  number           String        @unique
+  kind             VoucherKind
+  date             DateTime      @db.Date
+  method           VoucherMethod
+  treasuryId       String?
+  amount           Decimal       @db.Decimal(14, 3)
+  counterAccountId String
+  partyType        String?
+  partyId          String?
+  partyName        String
+  purpose          String
+  reference        String?
+  notes            String?
+  status           DocStatus     @default(ACTIVE)
+  version          Int           @default(1)
+  cancelReason     String?
+  cancelledAt      DateTime?
+  cancelledById    String?
+  createdById      String?
+  updatedById      String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([date])
+  @@index([kind, date])
+  @@index([treasuryId])
+  @@map("acc_vouchers")
+}
+
+/// Money moved between two treasuries (cash → bank deposit, bank → cash withdrawal, box → box, bank → bank).
+model TreasuryTransfer {
+  id           String    @id @default(uuid())
+  number       String    @unique
+  date         DateTime  @db.Date
+  fromId       String
+  toId         String
+  amount       Decimal   @db.Decimal(14, 3)
+  fee          Decimal   @default(0) @db.Decimal(14, 3)
+  reference    String?
+  notes        String?
+  status       DocStatus @default(ACTIVE)
+  cancelReason String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+
+  @@index([date])
+  @@map("acc_treasury_transfers")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Physical count of a cash box (also its daily close). A difference changes the books only once approved.
+model CashCount {
+  id            String         @id @default(uuid())
+  number        String         @unique
+  treasuryId    String
+  date          DateTime       @db.Date
+  denominations Json
+  counted       Decimal        @db.Decimal(14, 3)
+  book          Decimal        @db.Decimal(14, 3)
+  difference    Decimal        @db.Decimal(14, 3)
+  reason        String?
+  isClose       Boolean        @default(false)
+  status        ApprovalStatus @default(PENDING)
+  countedById   String?
+  approvedById  String?
+  approvedAt    DateTime?
+  decisionNote  String?
+  createdAt     DateTime       @default(now())
+
+  @@index([treasuryId, date])
+  @@map("acc_cash_counts")
+}
+
+/// History of accounting documents (vouchers, transfers, cheques, assets, payroll…): one snapshot per change. Append-only.
+model DocRevision {
+  id        String   @id @default(uuid())
+  docType   String
+  docId     String
+  version   Int
+  action    String
+  snapshot  Json
+  changes   Json?
+  reason    String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([docType, docId])
+  @@map("acc_doc_revisions")
+}
+
+// ───── Visa (card payments) until they reach the bank ─────
+
+enum VisaStatus {
+  PENDING
+  PARTIAL
+  SETTLED
+  CANCELLED
+  REFUNDED
+  REVIEW
+}
+
+/// One card payment, from the swipe until the money reaches the bank.
+model VisaTransaction {
+  id            String     @id @default(uuid())
+  sourceType    String
+  sourceId      String
+  date          DateTime
+  amount        Decimal    @db.Decimal(14, 3)
+  settled       Decimal    @default(0) @db.Decimal(14, 3)
+  posReference  String?
+  terminal      String?
+  provider      String?
+  invoiceNumber String?
+  patientName   String?
+  recordedBy    String?
+  status        VisaStatus @default(PENDING)
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  lines VisaSettlementLine[]
+
+  @@unique([sourceType, sourceId])
+  @@index([status, date])
+  @@index([posReference])
+  @@map("acc_visa_transactions")
+}
+
+/// A transfer received from the card company / bank covering one or more card payments (gross − fee = net).
+model VisaSettlement {
+  id          String    @id @default(uuid())
+  number      String    @unique
+  date        DateTime  @db.Date
+  treasuryId  String
+  gross       Decimal   @db.Decimal(14, 3)
+  fee         Decimal   @default(0) @db.Decimal(14, 3)
+  net         Decimal   @db.Decimal(14, 3)
+  reference   String?
+  notes       String?
+  status      DocStatus @default(ACTIVE)
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  lines VisaSettlementLine[]
+
+  @@index([date])
+  @@map("acc_visa_settlements")
+}
+
+model VisaSettlementLine {
+  id            String  @id @default(uuid())
+  settlementId  String
+  transactionId String
+  amount        Decimal @db.Decimal(14, 3)
+
+  settlement  VisaSettlement  @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  transaction VisaTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId])
+  @@index([settlementId])
+  @@map("acc_visa_settlement_lines")
+}
+
+// ───── Cheques ─────
+
+enum ChequeDirection {
+  IN
+  OUT
+}
+
+enum ChequeStatus {
+  RECEIVED
+  IN_SAFE
+  READY
+  DEPOSITED
+  UNDER_COLLECTION
+  COLLECTED
+  BOUNCED
+  CANCELLED
+  REPLACED
+  RETURNED_TO_OWNER
+  DRAFT
+  ISSUED
+  DELIVERED
+  DUE
+  CLEARED
+  STOPPED
+}
+
+model Cheque {
+  id               String          @id @default(uuid())
+  ref              String          @unique
+  direction        ChequeDirection
+  number           String
+  bankName         String
+  drawer           String
+  counterparty     String
+  accountNumber    String?
+  issueDate        DateTime?       @db.Date
+  dueDate          DateTime        @db.Date
+  amount           Decimal         @db.Decimal(14, 3)
+  currency         String          @default("JOD")
+  reason           String?
+  reference        String?
+  treasuryId       String?
+  counterAccountId String
+  status           ChequeStatus
+  depositId        String?
+  replacedById     String?
+  fees             Decimal         @default(0) @db.Decimal(14, 3)
+  notes            String?
+  /// The receipt / payment voucher it came with (a voucher may carry several cheques).
+  voucherId        String?
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  events ChequeEvent[]
+
+  @@unique([direction, bankName, number])
+  @@index([status, dueDate])
+  @@index([voucherId])
+  @@map("acc_cheques")
+}
+
+/// Every status change of a cheque (who, when, why) and its accounting effect. Append-only.
+model ChequeEvent {
+  id         String        @id @default(uuid())
+  chequeId   String
+  fromStatus ChequeStatus?
+  toStatus   ChequeStatus
+  date       DateTime      @db.Date
+  treasuryId String?
+  fee        Decimal       @default(0) @db.Decimal(14, 3)
+  note       String?
+  userId     String?
+  createdAt  DateTime      @default(now())
+
+  cheque Cheque @relation(fields: [chequeId], references: [id], onDelete: Restrict)
+
+  @@index([chequeId])
+  @@map("acc_cheque_events")
+}
+
+model ChequeDeposit {
+  id          String   @id @default(uuid())
+  number      String   @unique
+  date        DateTime @db.Date
+  treasuryId  String
+  slipNumber  String?
+  reference   String?
+  notes       String?
+  total       Decimal  @db.Decimal(14, 3)
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@map("acc_cheque_deposits")
+}
+
+/// Physical count of the cheques held: found / missing / not registered. Changes no balance by itself.
+model ChequeCount {
+  id           String         @id @default(uuid())
+  number       String         @unique
+  date         DateTime       @db.Date
+  lines        Json
+  extra        Json?
+  notes        String?
+  status       ApprovalStatus @default(PENDING)
+  countedById  String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@map("acc_cheque_counts")
+}
+
+// ───── Payroll (real money only — E Coin is never money) ─────
+
+model SalaryProfile {
+  userId        String   @id
+  jobTitle      String?
+  basic         Decimal  @default(0) @db.Decimal(12, 3)
+  /// MONTHLY: fixed monthly salary (basic). HOURLY: paid by the hours worked × hourlyRate.
+  payType       String   @default("MONTHLY")
+  hourlyRate    Decimal  @default(0) @db.Decimal(12, 3)
+  allowances    Json     @default("[]")
+  paymentMethod String   @default("TRANSFER")
+  treasuryId    String?
+  isActive      Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+
+  @@map("acc_salary_profiles")
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PAID
+}
+
+model PayrollRun {
+  id           String        @id @default(uuid())
+  month        String        @unique
+  status       PayrollStatus @default(DRAFT)
+  dueDate      DateTime?     @db.Date
+  paidDate     DateTime?     @db.Date
+  treasuryId   String?
+  notes        String?
+  createdById  String?
+  approvedById String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  slips Payslip[]
+
+  @@map("acc_payroll_runs")
+}
+
+model Payslip {
+  id               String  @id @default(uuid())
+  runId            String
+  userId           String
+  jobTitle         String?
+  basic            Decimal @default(0) @db.Decimal(12, 3)
+  payType          String  @default("MONTHLY")
+  hours            Decimal @default(0) @db.Decimal(8, 2)
+  hourlyRate       Decimal @default(0) @db.Decimal(12, 3)
+  allowances       Decimal @default(0) @db.Decimal(12, 3)
+  commission       Decimal @default(0) @db.Decimal(12, 3)
+  bonus            Decimal @default(0) @db.Decimal(12, 3)
+  overtime         Decimal @default(0) @db.Decimal(12, 3)
+  absenceDays      Decimal @default(0) @db.Decimal(6, 2)
+  lateMinutes      Int     @default(0)
+  absenceDeduction Decimal @default(0) @db.Decimal(12, 3)
+  deductions       Decimal @default(0) @db.Decimal(12, 3)
+  advance          Decimal @default(0) @db.Decimal(12, 3)
+  net              Decimal @default(0) @db.Decimal(12, 3)
+  notes            String?
+
+  run PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, userId])
+  @@map("acc_payslips")
+}
+
+model EmployeeAdvance {
+  id          String    @id @default(uuid())
+  number      String    @unique
+  userId      String
+  date        DateTime  @db.Date
+  amount      Decimal   @db.Decimal(12, 3)
+  installment Decimal   @db.Decimal(12, 3)
+  recovered   Decimal   @default(0) @db.Decimal(12, 3)
+  treasuryId  String
+  notes       String?
+  status      DocStatus @default(ACTIVE)
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@map("acc_employee_advances")
+}
+
+// ───── Fixed assets ─────
+
+enum AssetStatus {
+  ACTIVE
+  DISPOSED
+  SOLD
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  DECLINING
+}
+
+model FixedAsset {
+  id                String             @id @default(uuid())
+  code              String             @unique
+  name              String
+  accountId         String
+  purchaseDate      DateTime           @db.Date
+  cost              Decimal            @db.Decimal(14, 3)
+  salvage           Decimal            @default(0) @db.Decimal(14, 3)
+  usefulLifeMonths  Int
+  method            DepreciationMethod @default(STRAIGHT_LINE)
+  rate              Decimal?           @db.Decimal(6, 2)
+  supplierId        String?
+  fundingAccountId  String
+  location          String?
+  notes             String?
+  status            AssetStatus        @default(ACTIVE)
+  disposedAt        DateTime?          @db.Date
+  proceeds          Decimal?           @db.Decimal(14, 3)
+  proceedsAccountId String?
+  createdById       String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  depreciations AssetDepreciation[]
+
+  @@map("acc_fixed_assets")
+}
+
+/// Depreciation of one asset for one month (one entry per month for all assets).
+model AssetDepreciation {
+  id      String  @id @default(uuid())
+  assetId String
+  month   String
+  amount  Decimal @db.Decimal(14, 3)
+
+  asset FixedAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([assetId, month])
+  @@index([month])
+  @@map("acc_asset_depreciations")
+}
+
+// ───── Bank reconciliation ─────
+
+model BankReconciliation {
+  id               String         @id @default(uuid())
+  number           String         @unique
+  treasuryId       String
+  statementDate    DateTime       @db.Date
+  statementBalance Decimal        @db.Decimal(14, 3)
+  bookBalance      Decimal        @db.Decimal(14, 3)
+  lines            Json
+  status           ApprovalStatus @default(PENDING)
+  notes            String?
+  createdById      String?
+  approvedById     String?
+  approvedAt       DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@map("acc_bank_reconciliations")
+}

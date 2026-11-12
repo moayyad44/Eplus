@@ -1,0 +1,128 @@
+# EmergencyPlus — real clinic use.  Windows: double-click start.bat  ·  or:  docker compose up -d --build
+# Works out of the box on one computer / clinic network (http). Every value below can be
+# overridden from a .env file next to this file (start.bat creates one; see .env.production.example).
+# The demo (docker-compose.demo.yml) is a separate installation with its own data.
+# Optional: HTTPS through the clinic's own domain (e.g. https://eplus.life) — the "domain" profile below,
+# switched on by domain-setup.bat. The database and files stay on this computer either way.
+name: eplus-clinic
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eplus
+      POSTGRES_USER: eplus
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-eplus-local-db}
+      TZ: ${TZ:-Asia/Amman}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eplus -d eplus"]
+      interval: 5s
+      retries: 20
+    logging: *logging
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://eplus:${DB_PASSWORD:-eplus-local-db}@db:5432/eplus?schema=public
+      # Leave empty to auto-generate one (stored in the data volume).
+      JWT_SECRET: ${JWT_SECRET:-}
+      PORT: 4000
+      APP_PORT: ${APP_PORT:-4080}
+      TZ: ${TZ:-Asia/Amman}
+      UPLOAD_DIR: /data/uploads
+      BACKUP_DIR: /backups
+      # auto: HTTPS-only cookies/HSTS for requests through the domain, plain cookies on the http IP address.
+      SECURE_COOKIES: ${SECURE_COOKIES:-auto}
+      # Forwarded headers are trusted only from the Caddy container's fixed address (never from other devices).
+      TRUST_PROXY: ${TRUST_PROXY:-172.31.250.10}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@12345}
+      # The first admin must replace the initial password at first sign-in.
+      ADMIN_FORCE_CHANGE: ${ADMIN_FORCE_CHANGE:-true}
+      DEMO_DATA: ${DEMO_DATA:-false}
+    volumes:
+      - appdata:/data
+      - ${BACKUP_DIR:-./backups}:/backups
+    # Clinic network access by IP address (http://<this computer's IP>:4080) — unchanged.
+    ports:
+      - "${APP_PORT:-4080}:4000"
+    networks:
+      - default
+      - edge
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 3
+    logging: *logging
+
+  # Daily backup of the database + uploaded files into BACKUP_DIR (default: the "backups" folder here).
+  # Point BACKUP_DIR at an external disk or a OneDrive/Google Drive folder to keep a copy off this computer.
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["sh", "/backup.sh"]
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-eplus-local-db}
+      TZ: ${TZ:-Asia/Amman}
+      BACKUP_TIME: ${BACKUP_TIME:-02:00}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+    volumes:
+      - ./docker/backup.sh:/backup.sh:ro
+      - appdata:/appdata
+      - ${BACKUP_DIR:-./backups}:/backups
+    logging: *logging
+
+  # HTTPS for the clinic's domain (profile "domain", enabled by domain-setup.bat through COMPOSE_PROFILES in .env).
+  # Only port 443 is published, and only on this computer: it is reached from the clinic network and from
+  # devices joined to the clinic's private VPN (Tailscale) — no router port is opened to the internet.
+  caddy:
+    build: ./docker/caddy
+    profiles: ["domain"]
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      DNS_API_TOKEN: ${DNS_API_TOKEN:-}
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      # Certificates and their private keys stay on this computer.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge:
+        ipv4_address: 172.31.250.10
+    logging: *logging
+
+networks:
+  default:
+  # Private link between the proxy and the app. The database is not on it and is never published.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  pgdata:
+  appdata:
+  caddy_data:
+  caddy_config:

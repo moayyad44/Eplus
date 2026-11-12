@@ -1,0 +1,430 @@
+import { useEffect, type ReactNode } from 'react';
+import { EInvoiceQr, useEInvoiceDocs } from '@/components/shared/EInvoiceCard';
+import { Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { Printer, X } from 'lucide-react';
+import clsx from 'clsx';
+import { api, type Paged } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { fmtDate, fmtDateTime, money, num, qty } from '@/lib/format';
+import type { Invoice } from '@/lib/billing';
+import type { Patient } from '@/lib/types';
+import { bp, type LabOrder, type ReportFields, type RxItem, type TimelineVisit } from '@/lib/clinical';
+import { ErrorState, PageLoader } from '@/components/ui';
+import type { TransferDoc } from '@/pages/inventory/TransferDetail';
+
+type Settings = { clinic: { name: string; nameEn: string; address: string; phone: string; email: string; taxNumber: string; reportFooter: string; logoKey: string | null }; financial: { invoiceFooter: string }; medical: { prescriptionFooter: string; reportDoctorName?: string } };
+const useSettings = () => useQuery({ queryKey: ['settings-public'], queryFn: () => api.get<Settings>('/settings/public'), staleTime: 5 * 60_000 });
+
+/** Common A4 / thermal shell: clinic header, title, body, footer; opens the print dialog once data is ready. */
+function Shell({ title, ready, children, thermal, footer }: { title: string; ready: boolean; children: ReactNode; thermal?: boolean; footer?: string }) {
+  const { t } = useTranslation();
+  const { me } = useAuth();
+  const s = useSettings();
+  useEffect(() => {
+    if (!ready || !s.data) return;
+    document.title = title;
+    const id = setTimeout(() => window.print(), 400);
+    return () => clearTimeout(id);
+  }, [ready, s.data, title]);
+  if (!s.data) return <PageLoader />;
+  const c = s.data.clinic;
+  return (
+    <div className="min-h-screen bg-surface-sunken py-6 print:bg-white print:py-0">
+      <div className="no-print mx-auto mb-4 flex max-w-[210mm] justify-end gap-2 px-4">
+        <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2 text-sm font-semibold text-white"><Printer className="h-4 w-4" />{t('print.print')}</button>
+        <button onClick={() => window.close()} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold"><X className="h-4 w-4" />{t('print.close')}</button>
+      </div>
+      <div className={clsx('print-page mx-auto bg-white text-[13px] leading-relaxed text-black shadow-pop', thermal ? 'print-thermal p-3 text-[11px]' : 'w-full max-w-[210mm] p-[12mm]')}>
+        <header className={clsx('flex items-start justify-between gap-4 border-b-2 border-primary-400 pb-3', thermal && 'flex-col items-center text-center')}>
+          <div className={clsx('flex items-center gap-3', thermal && 'flex-col')}>
+            {c.logoKey ? <img src="/api/public/logo" alt="" className={thermal ? 'h-10' : 'h-14'} /> : (
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-primary-400"><svg viewBox="0 0 24 24" className="h-7 w-7" fill="white"><path d="M9.5 3h5v6.5H21v5h-6.5V21h-5v-6.5H3v-5h6.5z" /></svg></span>
+            )}
+            <div>
+              <p className={clsx('font-extrabold', thermal ? 'text-sm' : 'text-lg')}>{c.name}</p>
+              {!thermal && c.nameEn && <p className="text-xs text-gray-600" dir="ltr">{c.nameEn}</p>}
+            </div>
+          </div>
+          <div className={clsx('text-xs text-gray-700', thermal ? 'text-center' : 'text-end')}>
+            {c.address && <p>{c.address}</p>}
+            {c.phone && <p dir="ltr">{c.phone}</p>}
+            {c.email && <p dir="ltr">{c.email}</p>}
+            {c.taxNumber && <p>TAX: {c.taxNumber}</p>}
+          </div>
+        </header>
+        <h1 className={clsx('my-4 text-center font-bold', thermal ? 'text-sm' : 'text-xl')}>{title}</h1>
+        {children}
+        <footer className="mt-8 border-t border-gray-300 pt-2 text-center text-[10px] text-gray-500">
+          {footer && <p className="mb-1 text-xs text-gray-700">{footer}</p>}
+          <p>{c.reportFooter} {t('common.generatedAt')}: {fmtDateTime(new Date())} · {t('common.printedBy')}: {me?.user.fullName}</p>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+const Row = ({ k, v }: { k: string; v: ReactNode }) => <div><span className="text-gray-500">{k}: </span><b>{v || '—'}</b></div>;
+
+function InvoicePrint() {
+  const { id } = useParams();
+  const [p] = useSearchParams();
+  const { t } = useTranslation();
+  const s = useSettings();
+  const thermal = !!p.get('thermal');
+  const q = useQuery({ queryKey: ['invoice', id], queryFn: () => api.get<Invoice>(`/billing/invoices/${id}`) });
+  // National e-invoicing: the patient's accepted document carries the official QR printed on the invoice.
+  const einv = useEInvoiceDocs(id!, !!q.data && q.data.status !== 'DRAFT');
+  if (q.error) return <ErrorState error={q.error} />;
+  const inv = q.data;
+  const national = einv.data?.find((d) => d.kind === 'SALE' && d.party === 'PATIENT' && d.status !== 'VOID');
+  const ready = !!inv && (inv.status === 'DRAFT' || !einv.isLoading);
+  return (
+    <Shell title={`${t('print.invoice')} ${inv?.invoiceNumber ?? ''}`} ready={ready} thermal={thermal} footer={s.data?.financial.invoiceFooter}>
+      {inv && (
+        <>
+          <div className={clsx('mb-4 grid gap-1', thermal ? 'grid-cols-1' : 'grid-cols-2')}>
+            <Row k={t('billing.invoiceNumber')} v={inv.invoiceNumber} />
+            <Row k={t('common.date')} v={fmtDateTime(inv.issuedAt)} />
+            <Row k={t('print.patientName')} v={inv.patient.fullName} />
+            <Row k={t('patients.fileNumber')} v={inv.patient.fileNumber} />
+            {inv.doctor && <Row k={t('common.doctor')} v={inv.doctor.fullName} />}
+            <Row k={t('common.status')} v={t(`enum.InvoiceStatus.${inv.status}`)} />
+            {inv.payerType === 'INSURANCE' && (
+              <>
+                <Row k={t('ins.company')} v={`${inv.insuranceCompany?.nameAr ?? ''} — ${inv.insuranceContract?.name ?? ''}`} />
+                <Row k={t('ins.m.memberId')} v={inv.patientInsurance?.memberId} />
+                {inv.claim && <Row k={t('ins.c.number')} v={inv.claim.claimNumber} />}
+              </>
+            )}
+          </div>
+          <table className="w-full border-collapse">
+            <thead><tr className="bg-primary-50 text-xs"><th className="border border-gray-300 p-1.5 text-start">{t('billing.service')}</th><th className="border border-gray-300 p-1.5">{t('common.quantity')}</th>{!thermal && <th className="border border-gray-300 p-1.5">{t('billing.unitPrice')}</th>}{!thermal && <th className="border border-gray-300 p-1.5">{t('common.discount')}</th>}<th className="border border-gray-300 p-1.5 text-end">{t('billing.lineTotal')}</th>{inv.payerType === 'INSURANCE' && !thermal && <><th className="border border-gray-300 p-1.5 text-end">{t('ins.inv.insuranceShare')}</th><th className="border border-gray-300 p-1.5 text-end">{t('ins.inv.patientShare')}</th></>}</tr></thead>
+            <tbody>
+              {inv.items.map((i) => (
+                <tr key={i.id}><td className="border border-gray-300 p-1.5">{i.description}</td><td className="border border-gray-300 p-1.5 text-center">{qty(i.quantity)}</td>{!thermal && <td className="border border-gray-300 p-1.5 text-center">{money(i.unitPrice)}</td>}{!thermal && <td className="border border-gray-300 p-1.5 text-center">{num(i.discount) ? money(i.discount) : '—'}</td>}<td className="border border-gray-300 p-1.5 text-end">{money(i.lineTotal)}</td>{inv.payerType === 'INSURANCE' && !thermal && <><td className="border border-gray-300 p-1.5 text-end">{money(i.insuranceShare)}</td><td className="border border-gray-300 p-1.5 text-end">{money(i.patientShare)}</td></>}</tr>
+              ))}
+            </tbody>
+          </table>
+          <div className={clsx('mt-3 space-y-1', thermal ? '' : 'ms-auto w-72')}>
+            <div className="flex justify-between"><span>{t('common.subtotal')}</span><span>{money(inv.subtotal)}</span></div>
+            {num(inv.discountTotal) > 0 && <div className="flex justify-between"><span>{t('common.discount')}</span><span>-{money(inv.discountTotal)}</span></div>}
+            {num(inv.taxTotal) > 0 && <div className="flex justify-between"><span>{t('common.tax')}</span><span>{money(inv.taxTotal)}</span></div>}
+            <div className="flex justify-between border-t border-gray-400 pt-1 text-base font-bold"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.total') : t('billing.total')}</span><span>{money(inv.total)}</span></div>
+            {inv.payerType === 'INSURANCE' && (
+              <>
+                <div className="flex justify-between"><span>{t('ins.inv.insuranceShare')}</span><span>{money(inv.insuranceShare)}</span></div>
+                <div className="flex justify-between font-bold"><span>{t('ins.inv.patientShare')}</span><span>{money(num(inv.patientShare) + num(inv.transferredFromInsurance))}</span></div>
+              </>
+            )}
+            <div className="flex justify-between"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.patientPaid') : t('common.paid')}</span><span>{money(num(inv.paidAmount) - num(inv.refundedAmount))}</span></div>
+            <div className="flex justify-between font-bold"><span>{inv.payerType === 'INSURANCE' ? t('ins.inv.patientBalance') : t('common.balance')}</span><span>{money(inv.balance)}</span></div>
+            {(inv.overpaid ?? 0) > 0 && <div className="flex justify-between font-bold"><span>{t('billing.overpaid')}</span><span>{money(inv.overpaid)}</span></div>}
+          </div>
+          {inv.payments.filter((x) => !x.voidedAt).length > 0 && (
+            <div className="mt-4 text-xs">
+              <p className="mb-1 font-bold">{t('billing.payments')}</p>
+              {inv.payments.filter((x) => !x.voidedAt).map((x) => <p key={x.id}>{x.receiptNumber} · {fmtDate(x.paidAt)} · {x.method.name} · {x.type === 'REFUND' ? '-' : ''}{money(x.amount)}</p>)}
+            </div>
+          )}
+          {national && (
+            <div className={clsx('mt-4 flex items-center gap-3 border-t border-gray-300 pt-3 text-xs', thermal && 'flex-col text-center')}>
+              {national.status === 'SUBMITTED' && national.qrSvg ? (
+                <>
+                  <EInvoiceQr svg={national.qrSvg} size={thermal ? 110 : 104} />
+                  <div>
+                    <p className="font-bold">{t('print.einvoice.submitted')}</p>
+                    <p>{t('print.einvoice.number')}: <span dir="ltr" className="font-mono">{national.docNumber}</span></p>
+                    {national.party === 'PATIENT' && inv.payerType === 'INSURANCE' && Math.abs(national.total - num(inv.total)) > 0.0005 && <p>{t('print.einvoice.amount')}: {money(national.total)}</p>}
+                  </div>
+                </>
+              ) : <p className="text-gray-600">{t('print.einvoice.notYet')}</p>}
+            </div>
+          )}
+          {!thermal && <div className="mt-12 flex justify-between text-xs"><span>{t('print.signature')}: ____________</span><span>{t('print.stamp')}: ____________</span></div>}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+function TransferPrint() {
+  const { id } = useParams();
+  const { t } = useTranslation();
+  const q = useQuery({ queryKey: ['transfers', id], queryFn: () => api.get<TransferDoc>(`/inventory/transfers/${id}`) });
+  const d = q.data;
+  if (q.error) return <ErrorState error={q.error} />;
+  return (
+    <Shell title={t('inventory.tr.title')} ready={!!d}>
+      {d && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Row k={t('inventory.tr.number')} v={<span dir="ltr">{d.transferNumber}</span>} />
+            <Row k={t('common.date')} v={fmtDateTime(d.createdAt)} />
+            <Row k={t('inventory.tr.from')} v={d.fromWarehouse.name} />
+            <Row k={t('inventory.tr.to')} v={d.toWarehouse.name} />
+          </div>
+          <table className="w-full border-collapse text-[12px]">
+            <thead><tr className="bg-primary-50"><th className="border border-gray-300 p-1.5 text-start">#</th><th className="border border-gray-300 p-1.5 text-start">{t('suppliers.item')}</th><th className="border border-gray-300 p-1.5 text-start">SKU</th><th className="border border-gray-300 p-1.5">{t('inventory.tr.qty')}</th></tr></thead>
+            <tbody>
+              {d.items.map((i, n) => <tr key={i.id}><td className="border border-gray-300 p-1.5">{n + 1}</td><td className="border border-gray-300 p-1.5">{i.item.name}</td><td className="border border-gray-300 p-1.5" dir="ltr">{i.item.sku}</td><td className="border border-gray-300 p-1.5 text-center">{qty(i.quantity)} {i.item.unit?.symbol ?? i.item.unit?.name ?? ''}</td></tr>)}
+            </tbody>
+          </table>
+          {d.notes && <Row k={t('inventory.tr.notes')} v={d.notes} />}
+          <div className="grid grid-cols-2 gap-6 pt-10 text-xs">
+            <p>{d.createdBy ?? ''}<br />{t('print.signature')}: ____________</p>
+            <p>{t('inventory.tr.receivedBy')}: ____________<br />{t('print.signature')}: ____________</p>
+          </div>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+function ReceiptPrint() {
+  const { id } = useParams();
+  const { t } = useTranslation();
+  const s = useSettings();
+  const q = useQuery({ queryKey: ['receipt', id], queryFn: () => api.get<{ receiptNumber: string; type: string; amount: number; paidAt: string; reference: string | null; notes: string | null; receivedBy: string | null; method: { name: string }; patient: { fullName: string; fileNumber: string }; invoice: { invoiceNumber: string; total: number; balance: number; overpaid?: number } }>(`/billing/payments/${id}`) });
+  const r = q.data;
+  const thermal = (s.data as unknown as { financial: { thermalReceipt?: boolean } })?.financial?.thermalReceipt;
+  if (q.error) return <ErrorState error={q.error} />;
+  return (
+    <Shell title={r?.type === 'REFUND' ? t('print.refundReceipt') : t('print.receipt')} ready={!!r} thermal={thermal}>
+      {r && (
+        <div className="space-y-2">
+          <Row k={t('billing.receiptNumber')} v={r.receiptNumber} />
+          <Row k={t('common.date')} v={fmtDateTime(r.paidAt)} />
+          <Row k={t('print.receivedFrom')} v={`${r.patient.fullName} (#${r.patient.fileNumber})`} />
+          <div className="my-3 rounded-lg border-2 border-primary-300 p-3 text-center text-xl font-extrabold">{money(r.amount)}</div>
+          <Row k={t('billing.method')} v={r.method.name} />
+          {r.reference && <Row k={t('billing.reference')} v={<span dir="ltr">{r.reference}</span>} />}
+          <Row k={t('print.forInvoice')} v={r.invoice.invoiceNumber} />
+          <Row k={t('print.remainingOnInvoice')} v={money(r.invoice.balance)} />
+          {(r.invoice.overpaid ?? 0) > 0 && <Row k={t('billing.overpaid')} v={money(r.invoice.overpaid)} />}
+          {r.notes && <Row k={t('common.notes')} v={r.notes} />}
+          <Row k={t('billing.receivedBy')} v={r.receivedBy} />
+          <p className="pt-8 text-xs">{t('print.signature')}: ____________</p>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+function PrescriptionPrint() {
+  const { id } = useParams();
+  const { t } = useTranslation();
+  const s = useSettings();
+  const q = useQuery({ queryKey: ['rx', id], queryFn: () => api.get<{ createdAt: string; notes: string | null; items: RxItem[]; doctor: { fullName: string; specialty: string | null; licenseNumber: string | null }; patient: { fullName: string; fileNumber: string; gender: string; age: number | null; allergies: { allergen: string }[] }; visit: { visitNumber: string; diagnoses: { description: string; icd10Code: string | null }[] } }>(`/prescriptions/${id}`) });
+  const rx = q.data;
+  if (q.error) return <ErrorState error={q.error} />;
+  return (
+    <Shell title={t('print.prescription')} ready={!!rx} footer={s.data?.medical.prescriptionFooter}>
+      {rx && (
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-1">
+            <Row k={t('print.patientName')} v={rx.patient.fullName} />
+            <Row k={t('common.date')} v={fmtDate(rx.createdAt)} />
+            <Row k={t('patients.fileNumber')} v={rx.patient.fileNumber} />
+            <Row k={t('patients.age')} v={`${rx.patient.age ?? '—'} · ${t(`enum.Gender.${rx.patient.gender}`)}`} />
+            <Row k={t('print.diagnosis')} v={rx.visit.diagnoses.map((d) => d.description).join('، ')} />
+            <Row k={t('print.allergies')} v={rx.patient.allergies.map((a) => a.allergen).join('، ') || t('print.none')} />
+          </div>
+          <p className="mb-2 text-3xl font-bold text-primary-600" dir="ltr">℞</p>
+          <ol className="space-y-3">
+            {rx.items.map((i, idx) => (
+              <li key={idx} className="border-b border-dashed border-gray-300 pb-2">
+                <p className="font-bold" dir="ltr">{idx + 1}. {i.drugName}</p>
+                <p>{[i.dose, i.frequency, i.duration && `${t('visit.rx.duration')}: ${i.duration}`, i.route].filter(Boolean).join(' — ')}</p>
+                {i.instructions && <p className="text-gray-600">{i.instructions}</p>}
+              </li>
+            ))}
+          </ol>
+          {rx.notes && <p className="mt-3">{rx.notes}</p>}
+          <div className="mt-12 text-end">
+            <p className="font-bold">{rx.doctor.fullName}</p>
+            <p className="text-xs text-gray-600">{rx.doctor.specialty}{rx.doctor.licenseNumber && ` · ${t('print.licensed')}: ${rx.doctor.licenseNumber}`}</p>
+            <p className="mt-6 text-xs">{t('print.doctorSignature')}: ____________</p>
+          </div>
+        </>
+      )}
+    </Shell>
+  );
+}
+
+function MedicalReportPrint() {
+  const { id } = useParams();
+  const { t } = useTranslation();
+  const s = useSettings();
+  const q = useQuery({ queryKey: ['medical-report', id], queryFn: () => api.get<{ title: string; content: string; fields: ReportFields | null; createdAt: string; doctor: { fullName: string; specialty: string | null; licenseNumber: string | null }; patient: { fullName: string; fileNumber: string; gender: string; age: number | null; nationalId: string | null }; visit: { visitNumber: string; arrivedAt: string } | null }>(`/medical-reports/${id}`) });
+  const r = q.data;
+  if (q.error) return <ErrorState error={q.error} />;
+  return (
+    <Shell title={r?.title ?? t('print.medicalReport')} ready={!!r}>
+      {r?.fields && <MedicalReportForm r={r as typeof r & { fields: ReportFields }} doctorName={s.data?.medical.reportDoctorName} />}
+      {r && !r.fields && (
+        <>
+          <div className="mb-5 grid grid-cols-2 gap-1">
+            <Row k={t('print.patientName')} v={r.patient.fullName} />
+            <Row k={t('common.date')} v={fmtDate(r.createdAt)} />
+            <Row k={t('patients.fileNumber')} v={r.patient.fileNumber} />
+            <Row k={t('patients.nationalId')} v={r.patient.nationalId} />
+            <Row k={t('patients.age')} v={`${r.patient.age ?? '—'} · ${t(`enum.Gender.${r.patient.gender}`)}`} />
+            {r.visit && <Row k={t('billing.visit')} v={`${r.visit.visitNumber} · ${fmtDate(r.visit.arrivedAt)}`} />}
+          </div>
+          <p className="min-h-[40mm] whitespace-pre-wrap text-[14px] leading-loose">{r.content}</p>
+          <div className="mt-12 text-end">
+            <p className="font-bold">{r.doctor.fullName}</p>
+            <p className="text-xs text-gray-600">{r.doctor.specialty}{r.doctor.licenseNumber && ` · ${t('print.licensed')}: ${r.doctor.licenseNumber}`}</p>
+            <p className="mt-6 text-xs">{t('print.doctorSignature')}: ____________</p>
+          </div>
+        </>
+      )}
+    </Shell>
+  );
+}
+
+const EnRow = ({ k, v }: { k: string; v: ReactNode }) => <div><span className="text-gray-500">{k}: </span><b>{v || '—'}</b></div>;
+
+/** The clinic's "Medical Report" sheet, in English, filled from the structured form. Empty lines are left out. */
+function MedicalReportForm({ r, doctorName }: { doctorName?: string; r: { title: string; fields: ReportFields; createdAt: string; doctor: { fullName: string }; patient: { fullName: string; fileNumber: string; gender: string; age: number | null; nationalId: string | null }; visit: { visitNumber: string; arrivedAt: string } | null } }) {
+  const f = r.fields;
+  const lines: [string, string][] = [
+    ['Patient came to our emergency department complaining of', f.complaint], ['Since', f.since], ['And was given', f.given],
+    ['And is advised to', f.advised], ['And was diagnosed with', f.diagnosis],
+  ];
+  return (
+    <div dir="ltr" className="text-[15px] leading-relaxed">
+      {/* Patient & visit details, laid out like the invoice's info block. */}
+      <div className="mb-6 grid grid-cols-2 gap-x-6 gap-y-1 text-[13px]">
+        <EnRow k="Patient Name" v={<span dir="auto">{r.patient.fullName}</span>} />
+        <EnRow k="Date" v={new Date(r.createdAt).toLocaleDateString('en-GB')} />
+        <EnRow k="File No." v={r.patient.fileNumber} />
+        <EnRow k="Visit No." v={r.visit?.visitNumber} />
+        <EnRow k="Age" v={r.patient.age ?? undefined} />
+        <EnRow k="Gender" v={r.patient.gender === 'FEMALE' ? 'Female' : 'Male'} />
+        <EnRow k="National ID" v={r.patient.nationalId} />
+        <EnRow k="Visit Date" v={r.visit ? new Date(r.visit.arrivedAt).toLocaleDateString('en-GB') : undefined} />
+      </div>
+      {lines.filter(([, v]) => v.trim()).map(([label, v]) => (
+        <p key={label} className="mb-4 whitespace-pre-wrap">{label} <b dir="auto">{v}</b></p>
+      ))}
+      <p className="mt-8">Patient was given this report upon {r.patient.gender === 'FEMALE' ? 'her' : 'his'} request.</p>
+      <p>This report is not to be used for legal matters.</p>
+      {/* The clinic's report always carries the same doctor's name (Settings → Medical), not the author's account name. */}
+      <p className="mt-12 font-bold" dir="auto">{doctorName || `Dr. ${r.doctor.fullName}`}</p>
+      <p className="mt-6 text-xs">Signature: ____________</p>
+    </div>
+  );
+}
+
+const labCostOf = (i: object) => { const v = (i as { labCost?: string | number | null }).labCost; return v == null ? null : Number(v); };
+
+function LabPrint() {
+  const { id } = useParams();
+  const [p] = useSearchParams();
+  const { t } = useTranslation();
+  const result = p.get('mode') === 'result';
+  const q = useQuery({ queryKey: ['lab', id], queryFn: () => api.get<LabOrder & { patient: { fullName: string; fileNumber: string; gender: string; age: number | null }; doctor: { fullName: string }; collectedAt: string | null }>(`/lab/orders/${id}`) });
+  const o = q.data;
+  if (q.error) return <ErrorState error={q.error} />;
+  return (
+    <Shell title={result ? t('print.labResult') : t('print.labRequest')} ready={!!o}>
+      {o && (
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-1">
+            <Row k={t('lab.orderNumber')} v={o.orderNumber} />
+            <Row k={t('lab.requestedAt')} v={fmtDateTime(o.requestedAt)} />
+            <Row k={t('print.patientName')} v={o.patient.fullName} />
+            <Row k={t('patients.age')} v={`${o.patient.age ?? '—'} · ${t(`enum.Gender.${o.patient.gender}`)}`} />
+            <Row k={t('lab.requestedBy')} v={o.doctor.fullName} />
+            {result ? <Row k={t('lab.completedAt')} v={fmtDateTime(o.completedAt)} /> : <Row k={t('reception.priority')} v={t(`enum.Priority.${o.priority}`)} />}
+          </div>
+          {!result && o.clinicalNotes && <p className="mb-3"><b>{t('lab.clinicalNotes')}:</b> {o.clinicalNotes}</p>}
+          {result ? o.items.map((i) => (
+            <div key={i.id} className="mb-4">
+              <p className="mb-1 font-bold">{i.testName}</p>
+              <table className="w-full border-collapse text-xs" dir="ltr">
+                <thead><tr className="bg-primary-50"><th className="border border-gray-300 p-1 text-left">Test</th><th className="border border-gray-300 p-1">Result</th><th className="border border-gray-300 p-1">Unit</th><th className="border border-gray-300 p-1">Reference</th><th className="border border-gray-300 p-1">Flag</th></tr></thead>
+                <tbody>{i.results.map((r) => <tr key={r.id} className={r.flag && r.flag !== 'NORMAL' ? 'font-bold' : ''}><td className="border border-gray-300 p-1">{r.parameterName}</td><td className="border border-gray-300 p-1 text-center">{r.value}</td><td className="border border-gray-300 p-1 text-center">{r.unit}</td><td className="border border-gray-300 p-1 text-center">{r.referenceRange}</td><td className="border border-gray-300 p-1 text-center">{r.flag && r.flag !== 'NORMAL' ? r.flag : ''}</td></tr>)}</tbody>
+              </table>
+              {i.notes && <p className="text-xs">{i.notes}</p>}
+            </div>
+          )) : (
+            <>
+              <ol className="list-inside list-decimal space-y-1">
+                {o.items.map((i) => (
+                  <li key={i.id}>
+                    <b>{i.testName}</b> {i.labTest?.sampleType && <span className="text-gray-600">({i.labTest.sampleType})</span>}
+                    <b className="float-left text-base tabular-nums">{labCostOf(i) == null ? '—' : money(labCostOf(i))}</b>
+                  </li>
+                ))}
+              </ol>
+              {/* What the referral lab charges the clinic for this patient (the lab price stored with the order). */}
+              <div className="mt-4 flex items-center justify-between rounded-lg border-2 border-gray-800 px-4 py-3">
+                <span className="text-lg font-bold">{t('print.labDue')}</span>
+                <span className="text-2xl font-extrabold tabular-nums">{money(o.items.reduce((sum, i) => sum + (labCostOf(i) ?? 0), 0))}</span>
+              </div>
+              {o.items.some((i) => labCostOf(i) == null) && <p className="mt-1 text-xs">{t('print.labDueMissing')}</p>}
+            </>
+          )}
+          <p className="mt-12 text-xs">{t('print.signature')}: ____________</p>
+        </>
+      )}
+    </Shell>
+  );
+}
+
+function PatientPrint() {
+  const { id } = useParams();
+  const { t } = useTranslation();
+  const p = useQuery({ queryKey: ['patient', id], queryFn: () => api.get<Patient>(`/patients/${id}`) });
+  const tl = useQuery({ queryKey: ['timeline', id, 'print'], queryFn: () => api.get<Paged<TimelineVisit>>(`/patients/${id}/timeline`, { pageSize: 50 }) });
+  const pt = p.data;
+  if (p.error) return <ErrorState error={p.error} />;
+  return (
+    <Shell title={t('print.patientReport')} ready={!!pt && !!tl.data}>
+      {pt && (
+        <>
+          <div className="mb-4 grid grid-cols-3 gap-1">
+            <Row k={t('print.patientName')} v={pt.fullName} /><Row k={t('patients.fileNumber')} v={pt.fileNumber} /><Row k={t('patients.phone')} v={<span dir="ltr">{pt.phone}</span>} />
+            <Row k={t('patients.gender')} v={t(`enum.Gender.${pt.gender}`)} /><Row k={t('patients.dateOfBirth')} v={fmtDate(pt.dateOfBirth)} /><Row k={t('patients.bloodType')} v={pt.bloodType} />
+          </div>
+          <p><b>{t('patients.allergies')}:</b> {pt.allergies?.map((a) => `${a.allergen} (${t(`enum.AllergySeverity.${a.severity}`)})`).join('، ') || t('print.none')}</p>
+          <p><b>{t('patients.histories')}:</b> {pt.histories?.filter((h) => h.isActive).map((h) => `${h.name} (${t(`enum.HistoryType.${h.type}`)})`).join('، ') || t('print.none')}</p>
+          <p className="mb-4"><b>{t('patients.medications')}:</b> {pt.medications?.filter((m) => m.isActive).map((m) => `${m.name} ${m.dose ?? ''}`).join('، ') || t('print.none')}</p>
+          <h2 className="mb-2 border-b border-gray-300 pb-1 font-bold">{t('patients.visitsTimeline')}</h2>
+          {tl.data?.items.map((v) => (
+            <div key={v.id} className="mb-3 border-b border-dashed border-gray-300 pb-2 text-xs" style={{ breakInside: 'avoid' }}>
+              <p className="font-bold">{fmtDateTime(v.arrivedAt)} — {v.doctor?.fullName ?? ''} — {v.visitNumber}</p>
+              {(v.consultation?.chiefComplaint || v.chiefComplaint) && <p>{t('patients.chiefComplaint')}: {v.consultation?.chiefComplaint ?? v.chiefComplaint}</p>}
+              {v.vitalSigns[0] && <p>{t('patients.vitals')}: BP {bp(v.vitalSigns[0])} · HR {v.vitalSigns[0].heartRate ?? '—'} · T {v.vitalSigns[0].temperature ?? '—'} · SpO2 {v.vitalSigns[0].oxygenSaturation ?? '—'}</p>}
+              {v.diagnoses.length > 0 && <p>{t('patients.diagnosis')}: {v.diagnoses.map((d) => `${d.description}${d.icd10Code ? ` (${d.icd10Code})` : ''}`).join('، ')}</p>}
+              {v.prescriptions.length > 0 && <p>{t('patients.prescription')}: <span dir="ltr">{v.prescriptions.flatMap((x) => x.items).map((i) => `${i.drugName} ${i.dose ?? ''}`).join(', ')}</span></p>}
+              {v.labOrders.length > 0 && <p>{t('patients.labs')}: {v.labOrders.flatMap((o) => o.items).map((i) => `${i.testName}${i.results.length ? `: ${i.results.map((r) => `${r.parameterName} ${r.value}`).join(', ')}` : ''}`).join(' | ')}</p>}
+            </div>
+          ))}
+        </>
+      )}
+    </Shell>
+  );
+}
+
+export default function PrintRoutes() {
+  const { me, loading } = useAuth();
+  const loc = useLocation();
+  if (loading) return <PageLoader />;
+  if (!me) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
+  return (
+    <Routes>
+      <Route path="invoice/:id" element={<InvoicePrint />} />
+      <Route path="receipt/:id" element={<ReceiptPrint />} />
+      <Route path="transfer/:id" element={<TransferPrint />} />
+      <Route path="prescription/:id" element={<PrescriptionPrint />} />
+      <Route path="medical-report/:id" element={<MedicalReportPrint />} />
+      <Route path="lab/:id" element={<LabPrint />} />
+      <Route path="patient/:id" element={<PatientPrint />} />
+    </Routes>
+  );
+}

@@ -1,0 +1,42 @@
+export default {
+  expenses: {
+    title: 'المصروفات', subtitle: 'تسجيل ومتابعة مصروفات العيادة', new: 'مصروف جديد', edit: 'تعديل المصروف', category: 'التصنيف', amount: 'المبلغ', date: 'التاريخ',
+    method: 'طريقة الدفع', supplier: 'المورد', description: 'الوصف', reference: 'رقم الفاتورة / المرجع', attachment: 'المرفقات', void: 'إلغاء المصروف', voidReason: 'سبب الإلغاء',
+    supplierHint: 'الدفع لمورد يُسجَّل من صفحة المورد («تسجيل دفعة للمورد»)، ويُحسب تلقائياً ضمن المصروفات والصندوق وصافي الدخل.',
+    total: 'إجمالي الفترة', voided: 'ملغى', includeVoided: 'إظهار الملغاة', createdBy: 'سجله',
+  },
+  inventory: {
+    title: 'الأصناف والمخزون', subtitle: 'إدارة الأصناف والكميات — الكمية تتغير فقط عبر حركات المخزون', newItem: 'صنف جديد', editItem: 'تعديل الصنف', name: 'اسم الصنف',
+    sku: 'SKU', barcode: 'الباركود', category: 'التصنيف', unit: 'الوحدة', quantity: 'الكمية الحالية', minQuantity: 'الحد الأدنى', purchasePrice: 'سعر الشراء',
+    salePrice: 'سعر البيع', supplier: 'المورد', expiryDate: 'تاريخ الانتهاء', batch: 'رقم التشغيلة', location: 'الموقع', openingQuantity: 'الكمية الافتتاحية',
+    stockValue: 'قيمة المخزون', filters: { all: 'الكل', low: 'منخفض', out: 'نفد', expiring: 'قريب الانتهاء', expired: 'منتهي', inactive: 'غير فعال' },
+    movement: 'حركة مخزون', newMovement: 'تسجيل حركة', movementType: 'نوع الحركة', movementQty: 'الكمية', adjustHint: 'للتعديل: رقم موجب للزيادة وسالب للنقص', unitCost: 'تكلفة الوحدة',
+    reason: 'السبب', reference: 'المرجع', balanceAfter: 'الرصيد بعد', movements: 'حركات المخزون', movementsSubtitle: 'سجل كامل لكل تغيير في الكميات', lastMovements: 'آخر الحركات',
+    low: 'منخفض', expired: 'منتهي', expiringSoon: 'قريب الانتهاء', archiveHint: 'لا يمكن أرشفة صنف له رصيد', qtyLocked: 'الكمية لا تُعدّل مباشرة — استخدم حركة مخزون',
+    stockCounts: 'جلسات الجرد', stockCountsSubtitle: 'لا يتغير المخزون إلا بعد اعتماد الجرد', newCount: 'جلسة جرد جديدة', countTitle: 'عنوان الجلسة', allItems: 'كل الأصناف الفعالة',
+    byCategory: 'حسب التصنيف', systemQty: 'كمية النظام', countedQty: 'الكمية الفعلية', difference: 'الفرق', diffValue: 'قيمة الفرق', approve: 'اعتماد الجرد', approveConfirm: 'اعتماد الجرد سيعدّل كميات المخزون حسب الفروقات. متابعة؟',
+    warehouse: 'المستودع', allWarehouses: 'كل المستودعات', inWarehouse: 'في المستودع', total: 'الإجمالي', available: 'المتوفر في المستودع: {{q}}',
+    byWarehouse: 'الكمية في المستودعات', openingWarehouse: 'مستودع الكمية الافتتاحية', receiveInto: 'استلام البضاعة إلى', countWarehouse: 'المستودع الذي يُجرد',
+    wh: {
+      title: 'المستودعات', subtitle: 'أماكن حفظ البضاعة وما في كل منها', new: 'مستودع جديد', edit: 'تعديل المستودع', code: 'الرمز', codeHint: 'أحرف إنجليزية وأرقام (مثل ER)',
+      location: 'المكان', items: 'أصناف فيه', value: 'قيمة البضاعة', default: 'الافتراضي', sale: 'صرف الفواتير', inactive: 'متوقف', makeDefault: 'اجعله افتراضياً',
+      stop: 'إيقاف', activate: 'تفعيل', showItems: 'عرض الأصناف', defaultHint: 'المستودع الافتراضي يُستخدم عندما لا يُختار مستودع (الحركات، الاستلام، الجرد).',
+      stopConfirm: 'إيقاف المستودع "{{name}}"؟ لا يمكن إيقاف مستودع فيه بضاعة.',
+    },
+    tr: {
+      title: 'نقل البضاعة', subtitle: 'سندات نقل البضاعة بين المستودعات', new: 'نقل بضاعة', number: 'رقم السند', from: 'من مستودع', to: 'إلى مستودع', lines: 'الأصناف',
+      addItem: 'أضف صنفاً', searchItem: 'ابحث عن صنف في المستودع المصدر…', qty: 'الكمية المنقولة', none: 'لا توجد أصناف بعد', by: 'بواسطة', notes: 'ملاحظات',
+      save: 'تنفيذ النقل', confirm: 'نقل {{n}} صنف من "{{from}}" إلى "{{to}}"؟ تتغير الكميات فوراً.', done: 'تم النقل — سند {{number}}', print: 'طباعة السند',
+      pickFrom: 'اختر المستودع المصدر أولاً', more: 'أكثر من المتوفر', allOrNothing: 'يُنفّذ السند كاملاً أو لا شيء: إذا نقص أي صنف لا يتغير شيء.', reverse: 'نقل عكسي',
+      receivedBy: 'المستلم', signature: 'التوقيع',
+    },
+    approved: 'تم اعتماد الجرد — تعديل {{count}} صنف', saveCounts: 'حفظ الكميات', cancelCount: 'إلغاء الجلسة', itemsCount: 'عدد الأصناف', counted: 'تم عدّه', progress: 'التقدم',
+  },
+  suppliers: {
+    title: 'الموردون', subtitle: 'بيانات الموردين والمشتريات والمبالغ المستحقة', new: 'مورد جديد', edit: 'تعديل المورد', name: 'اسم المورد', contactPerson: 'الشخص المسؤول',
+    taxNumber: 'الرقم الضريبي', purchases: 'المشتريات المستلمة', paid: 'المدفوع', balance: 'المستحق للمورد', payments: 'دفعات المورد', addPayment: 'تسجيل دفعة للمورد',
+    orders: 'أوامر الشراء', purchaseOrder: 'أمر شراء', newPO: 'أمر شراء جديد', poNumber: 'رقم الأمر', orderDate: 'تاريخ الطلب', markOrdered: 'تأكيد الطلب',
+    receive: 'استلام البضاعة', receiveConfirm: 'سيتم إدخال الكميات إلى المخزون. متابعة؟', received: 'تم الاستلام وإدخال الكميات للمخزون', cancelPO: 'إلغاء الأمر', addLine: 'إضافة صنف',
+    item: 'الصنف', qty: 'الكمية', cost: 'التكلفة', lineTotal: 'المجموع', purchasesTitle: 'أوامر الشراء', purchasesSubtitle: 'الطلب من الموردين واستلام البضاعة',
+  },
+};
