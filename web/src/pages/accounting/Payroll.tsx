@@ -50,7 +50,7 @@ function Runs() {
   );
 }
 
-interface Slip { id: string; userId: string; user: string; jobTitle: string | null; payType: 'MONTHLY' | 'HOURLY'; hours: string; hourlyRate: string; basic: string; allowances: string; commission: string; bonus: string; overtime: string; absenceDays: string; lateMinutes: number; absenceDeduction: string; deductions: string; advance: string; net: string; notes: string | null }
+interface Slip { id: string; userId: string; user: string; jobTitle: string | null; payType: 'MONTHLY' | 'HOURLY'; hours: string; hourlyRate: string; basic: string; allowances: string; commission: string; bonus: string; overtime: string; absenceDays: string; lateMinutes: number; absenceDeduction: string; deductions: string; advance: string; net: string; notes: string | null; noCheckout?: number }
 interface Run extends RunRow { slips: Slip[]; entries: { id: string; number: string; sourceKey: string; status: string }[] }
 const EDIT = ['commission', 'bonus', 'overtime', 'absenceDeduction', 'deductions', 'advance'] as const;
 
@@ -86,7 +86,7 @@ export function PayrollRun() {
             <thead><tr className="border-b border-line bg-surface-subtle text-xs text-ink-muted"><th className="p-2 text-start">{t('ao.pay.employee')}</th>{cols.map((c) => <th key={c} className="p-2 text-end">{t(`ao.pay.f.${c}`)}</th>)}<th className="p-2 print:hidden" /></tr></thead>
             <tbody>{r.slips.map((s) => (
               <tr key={s.id} className="border-b border-line/60">
-                <td className="p-2"><b>{s.user}</b><span className="block text-xs text-ink-muted">{s.payType === 'HOURLY' && <span className="me-1 rounded bg-primary-50 px-1 text-primary-800">{t('ao.pay.hoursLine', { h: Number(s.hours), r: amt0(s.hourlyRate) })}</span>}{s.jobTitle}{Number(s.absenceDays) > 0 && s.payType !== 'HOURLY' && ` · ${t('ao.pay.absent', { n: Number(s.absenceDays) })}`}{s.lateMinutes > 0 && ` · ${t('ao.pay.late', { n: s.lateMinutes })}`}</span></td>
+                <td className="p-2"><b>{s.user}</b><span className="block text-xs text-ink-muted">{s.payType === 'HOURLY' && <span className="me-1 rounded bg-primary-50 px-1 text-primary-800">{t('ao.pay.hoursLine', { h: Number(s.hours), r: amt0(s.hourlyRate) })}</span>}{s.jobTitle}{Number(s.absenceDays) > 0 && s.payType !== 'HOURLY' && ` · ${t('ao.pay.absent', { n: Number(s.absenceDays) })}`}{s.lateMinutes > 0 && ` · ${t('ao.pay.late', { n: s.lateMinutes })}`}{s.payType === 'HOURLY' && !!s.noCheckout && <span className="ms-1 rounded bg-warning-50 px-1 text-warning-800" title={t('ao.pay.noCheckoutHint')}>{t('ao.pay.noCheckout', { n: s.noCheckout })}</span>}</span></td>
                 {cols.map((c) => <td key={c} className={`p-2 text-end ${c === 'net' ? 'font-bold' : ''}`}><Money v={s[c]} /></td>)}
                 <td className="p-2 print:hidden"><div className="flex gap-1">{manage && r.status === 'DRAFT' && <Button size="sm" variant="ghost" onClick={() => setEdit(s)}>{t('common.edit')}</Button>}<Button size="sm" variant="ghost" icon={<Printer className="h-3.5 w-3.5" />} onClick={() => setPrint(s)}>{t('ao.pay.slip')}</Button></div></td>
               </tr>

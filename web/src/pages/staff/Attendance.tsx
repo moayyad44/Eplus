@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApiMutation, usePagedList } from '@/lib/hooks';
@@ -21,6 +21,7 @@ export default function Attendance() {
   const list = usePagedList<Row, { from: string; to: string; userId?: string; status?: string }>('attendance', '/staff/attendance', { pageSize: 30, filters: presetRange('week') });
   const totals = (list.data as unknown as { totals?: { lateMinutes: number; earlyLeaveMinutes: number; workedMinutes: number } })?.totals;
   const [rec, setRec] = useState(false);
+  const [fix, setFix] = useState<Row | null>(null);
   return (
     <div>
       <PageHeader
@@ -72,20 +73,24 @@ export default function Attendance() {
             { key: 'st', header: t('common.status'), cell: (r) => <StatusBadge enumName="AttendanceStatus" value={r.status} /> },
             { key: 'l', header: t('staff.late'), hideOnMobile: true, cell: (r) => (r.lateMinutes ? t('staff.minutesShort', { m: r.lateMinutes }) : '—') },
             { key: 'e', header: t('staff.early'), hideOnMobile: true, cell: (r) => (r.earlyLeaveMinutes ? t('staff.minutesShort', { m: r.earlyLeaveMinutes }) : '—') },
-            { key: 'w', header: t('staff.worked'), hideOnMobile: true, cell: (r) => (r.workedMinutes ? (r.workedMinutes / 60).toFixed(1) : '—') },
+            { key: 'w', header: t('staff.worked'), cell: (r) => (r.workedMinutes ? (r.workedMinutes / 60).toFixed(1) : r.checkIn && !r.checkOut ? <span className="rounded bg-warning-50 px-1.5 py-0.5 text-xs text-warning-800" title={t('staff.noCheckoutHint')}>{t('staff.noCheckout')}</span> : '—') },
+            ...(manage ? [{ key: 'x', header: '', cell: (r: Row) => <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} title={t('staff.fixRow')} onClick={() => setFix(r)}>{t('common.edit')}</Button> }] : []),
           ]}
         />
         {list.data && <Pagination {...list.data} onPage={list.setPage} />}
       </Card>
       {rec && <RecordDialog users={users.data ?? []} onClose={() => setRec(false)} />}
+      {fix && <RecordDialog users={users.data ?? []} onClose={() => setFix(null)} initial={{ userId: fix.user.id, date: fix.date.slice(0, 10), checkIn: hhmm(fix.checkIn), checkOut: hhmm(fix.checkOut), notes: fix.notes ?? '', status: fix.status === 'ABSENT' || fix.status === 'LEAVE' ? fix.status : '' }} />}
     </div>
   );
 }
 
 /** Manual attendance entry; also used from the schedule to correct an automatic «غائب». */
-export function RecordDialog({ users, onClose, initial }: { users: UserLite[]; onClose: () => void; initial?: { userId: string; date: string; checkIn?: string; checkOut?: string } }) {
+const hhmm = (v: string | null) => (v ? `${String(new Date(v).getHours()).padStart(2, '0')}:${String(new Date(v).getMinutes()).padStart(2, '0')}` : '');
+
+export function RecordDialog({ users, onClose, initial }: { users: UserLite[]; onClose: () => void; initial?: { userId: string; date: string; checkIn?: string; checkOut?: string; notes?: string; status?: string } }) {
   const { t } = useTranslation();
-  const [v, setV] = useState({ userId: initial?.userId ?? '', date: initial?.date ?? ymd(), status: '', checkIn: initial?.checkIn ?? '', checkOut: initial?.checkOut ?? '', notes: '' });
+  const [v, setV] = useState({ userId: initial?.userId ?? '', date: initial?.date ?? ymd(), status: initial?.status ?? '', checkIn: initial?.checkIn ?? '', checkOut: initial?.checkOut ?? '', notes: initial?.notes ?? '' });
   const at = (hhmm: string) => (hhmm ? new Date(`${v.date}T${hhmm}:00`).toISOString() : null);
   // Overnight shifts: a leave time earlier than the arrival time belongs to the next day.
   const out = () => { const o = at(v.checkOut); return o && v.checkIn && v.checkOut <= v.checkIn ? new Date(new Date(o).getTime() + 86_400_000).toISOString() : o; };

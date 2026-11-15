@@ -85,7 +85,10 @@ async function loadRun(id: string) {
   if (!r) throw notFound('كشف الرواتب غير موجود');
   const users = await prisma.user.findMany({ where: { id: { in: r.slips.map((s) => s.userId) } }, select: { id: true, fullName: true } });
   const entries = await prisma.journalEntry.findMany({ where: { sourceKey: { in: [`payroll:${r.id}`, `payroll-pay:${r.id}`] } }, select: { id: true, number: true, sourceKey: true, status: true } });
-  return { ...r, dueDate: r.dueDate && dateOnlyStr(r.dueDate), paidDate: r.paidDate && dateOnlyStr(r.paidDate), entries, slips: r.slips.map((s) => ({ ...s, user: users.find((u) => u.id === s.userId)?.fullName ?? '' })).sort((a, b) => a.user.localeCompare(b.user, 'ar')) };
+  // Days with an arrival but no leave time count zero hours: shown so an hourly salary is not paid short by mistake.
+  const [y, m] = r.month.split('-').map(Number);
+  const open = await prisma.attendance.groupBy({ by: ['userId'], where: { userId: { in: r.slips.map((s) => s.userId) }, date: { gte: new Date(Date.UTC(y, m - 1, 1)), lte: new Date(Date.UTC(y, m, 0)) }, checkIn: { not: null }, checkOut: null }, _count: { _all: true } });
+  return { ...r, dueDate: r.dueDate && dateOnlyStr(r.dueDate), paidDate: r.paidDate && dateOnlyStr(r.paidDate), entries, slips: r.slips.map((s) => ({ ...s, user: users.find((u) => u.id === s.userId)?.fullName ?? '', noCheckout: open.find((o) => o.userId === s.userId)?._count._all ?? 0 })).sort((a, b) => a.user.localeCompare(b.user, 'ar')) };
 }
 
 payrollRouter.get('/payroll/runs', requireAnyPerm('accounting.payroll.view', 'accounting.payroll.manage'), ah(async (_req, res) => {
