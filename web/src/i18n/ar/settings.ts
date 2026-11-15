@@ -1,7 +1,7 @@
 export default {
   settings: {
     title: 'الإعدادات', subtitle: 'إعدادات العيادة والقوائم والصلاحيات',
-    tabs: { clinic: 'العيادة', financial: 'المالية', paymentMethods: 'طرق الدفع', templates: 'نماذج الفواتير', services: 'الخدمات والمواد', medical: 'الطبية', visitTypes: 'أنواع الزيارات', labTests: 'التحاليل', diagnoses: 'التشخيصات ICD-10', drugs: 'الأدوية', inventory: 'المخزون', expenses: 'تصنيفات المصروفات', shifts: 'الشفتات', roles: 'الأدوار والصلاحيات', backups: 'النسخ الاحتياطي' },
+    tabs: { clinic: 'العيادة', financial: 'المالية', paymentMethods: 'طرق الدفع', templates: 'نماذج الفواتير', services: 'الخدمات والمواد', medical: 'الطبية', visitTypes: 'أنواع الزيارات', labTests: 'التحاليل', diagnoses: 'التشخيصات ICD-10', drugs: 'الأدوية', inventory: 'المخزون', expenses: 'تصنيفات المصروفات', shifts: 'الشفتات', payroll: 'الدوام والرواتب', roles: 'الأدوار والصلاحيات', backups: 'النسخ الاحتياطي' },
     clinic: { name: 'اسم العيادة', nameEn: 'الاسم بالإنجليزية', address: 'العنوان', phone: 'الهاتف', email: 'البريد', website: 'الموقع', workingHours: 'ساعات العمل', taxNumber: 'الرقم الضريبي', reportFooter: 'تذييل التقارير', logo: 'الشعار', uploadLogo: 'رفع شعار' },
     financial: { currency: 'رمز العملة', currencySymbol: 'رمز العرض', decimals: 'الخانات العشرية', defaultTaxRate: 'نسبة الضريبة الافتراضية %', invoicePrefix: 'بادئة رقم الفاتورة', receiptPrefix: 'بادئة رقم الإيصال', invoiceDueDays: 'أيام الاستحقاق (بعدها تصبح الفاتورة متأخرة)', invoiceFooter: 'تذييل الفاتورة', thermalReceipt: 'استخدام الطابعة الحرارية للإيصالات افتراضياً' },
     medicalS: { defaultAppointmentMinutes: 'مدة الموعد الافتراضية (دقيقة)', prescriptionFooter: 'تذييل الوصفة الطبية', reportDoctorName: 'اسم الطبيب في التقرير الطبي (يُطبع دائماً)' },

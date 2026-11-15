@@ -259,7 +259,7 @@ function ProfileForm({ p, onClose }: { p: Prof; onClose: () => void }) {
   const [v, setV] = useState({ jobTitle: p.profile?.jobTitle ?? '', payType: p.profile?.payType ?? 'MONTHLY', basic: p.profile ? String(Number(p.profile.basic)) : '', hourlyRate: p.profile ? String(Number(p.profile.hourlyRate)) : '', paymentMethod: p.profile?.paymentMethod ?? 'TRANSFER', treasuryId: p.profile?.treasuryId ?? '', isActive: p.profile?.isActive ?? true });
   const [al, setAl] = useState<{ name: string; amount: string }[]>((p.profile?.allowances ?? []).map((a) => ({ name: a.name, amount: String(a.amount) })));
   const general = useAttendancePolicy().data;
-  // A new profile starts with the pay type chosen in Settings → Medical.
+  // A new profile starts with the pay type chosen in Settings → الدوام والرواتب.
   useEffect(() => { if (!p.profile && general) setV((x) => ({ ...x, payType: general.payroll.defaultPayType })); }, [general, p.profile]);
   const [pol, setPol] = useState<EmpPolicy>(p.profile?.policy ?? {});
   const save = useApiMutation(() => api.put(`/accounting/payroll/profiles/${p.user.id}`, { ...v, jobTitle: v.jobTitle || null, basic: Number(v.basic || 0), hourlyRate: Number(v.hourlyRate || 0), treasuryId: v.treasuryId || null, allowances: al.filter((a) => a.name).map((a) => ({ name: a.name, amount: Number(a.amount || 0) })), policy: Object.fromEntries(Object.entries(pol).filter(([, x]) => x !== undefined && x !== '')) }), { invalidate: [['acc']], onSuccess: onClose });

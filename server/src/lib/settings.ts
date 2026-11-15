@@ -72,7 +72,7 @@ export const settingSchemas = {
     /** Warehouse stock sold through invoices comes out of (null = the default warehouse). */
     saleWarehouseId: z.string().uuid().nullable().default(null),
   }),
-  /** Staff, attendance and payroll policies (Settings → Medical). Each policy is independent of the others. */
+  /** Staff, attendance and payroll policies (Settings → الدوام والرواتب). Each policy is independent of the others. */
   attendance: z.object({
     /** CLOCK: the employee's check-in/out are the source of the worked time. SCHEDULE: the shift schedule is the
      *  source; actual check-in/out (when recorded) only measure lateness, early leave and overtime. */

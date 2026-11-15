@@ -18,15 +18,23 @@ import { CatalogEditor, type FieldDef, type FilterDef } from './CatalogEditor';
 import { Backups } from './Backups';
 import { AttendancePolicyCard } from './AttendancePolicy';
 
-type Tab = 'clinic' | 'financial' | 'paymentMethods' | 'templates' | 'services' | 'medical' | 'visitTypes' | 'labTests' | 'diagnoses' | 'drugs' | 'inventory' | 'expenses' | 'shifts' | 'roles' | 'backups';
+type Tab = 'clinic' | 'financial' | 'paymentMethods' | 'templates' | 'services' | 'medical' | 'visitTypes' | 'labTests' | 'diagnoses' | 'drugs' | 'inventory' | 'expenses' | 'shifts' | 'payroll' | 'roles' | 'backups';
 type SettingsData = Record<string, Record<string, unknown>>;
 
 export default function Settings() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
-  const keys: Tab[] = ['clinic', 'financial', 'paymentMethods', 'templates', 'services', 'medical', 'visitTypes', 'labTests', 'diagnoses', 'drugs', 'inventory', 'expenses', 'shifts', 'roles', ...(can('backups.manage') ? (['backups'] as const) : [])];
-  const tab: Tab = keys.find((k) => k === params.get('tab')) ?? 'clinic';
+  const general = can('settings.view') || can('settings.manage');
+  const payroll = can('attendance.settings.view') || can('attendance.settings.manage');
+  // Someone given only the attendance/payroll settings sees that tab alone.
+  const keys: Tab[] = [
+    ...(general ? (['clinic', 'financial', 'paymentMethods', 'templates', 'services', 'medical', 'visitTypes', 'labTests', 'diagnoses', 'drugs', 'inventory', 'expenses', 'shifts'] as const) : []),
+    ...(payroll ? (['payroll'] as const) : []),
+    ...(general ? (['roles'] as const) : []),
+    ...(can('backups.manage') ? (['backups'] as const) : []),
+  ];
+  const tab: Tab = keys.find((k) => k === params.get('tab')) ?? keys[0];
   const setTab = (k: Tab) => setParams({ tab: k }, { replace: true });
   return (
     <div>
@@ -41,7 +49,6 @@ export default function Settings() {
         <div className="space-y-4">
           <KeyValueForm settingKey="medical" fields={[['defaultAppointmentMinutes', 'number'], ['prescriptionFooter', 'textarea'], ['reportDoctorName', 'text']]} ns="medicalS" />
           <NursingPresetsCard />
-          {(can('attendance.settings.view') || can('attendance.settings.manage')) && <AttendancePolicyCard />}
         </div>
       )}
       {tab === 'visitTypes' && <VisitTypes />}
@@ -60,6 +67,7 @@ export default function Settings() {
       )}
       {tab === 'expenses' && <CatalogEditor path="expense-categories" fields={[{ key: 'name', label: t('settings.fields.name'), required: true }]} columns={[{ key: 'n', header: t('settings.fields.name'), cell: (r) => <b>{String(r.name)}</b> }]} />}
       {tab === 'shifts' && <Shifts />}
+      {tab === 'payroll' && <AttendancePolicyCard />}
       {tab === 'roles' && <Roles />}
       {tab === 'backups' && <Backups />}
     </div>

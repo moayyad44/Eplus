@@ -85,7 +85,7 @@ export const NAV: NavSection[] = [
     items: [
       { to: '/reports', label: 'nav.reports', icon: i(BarChart3), any: ['reports.patients', 'reports.doctors', 'reports.financial', 'reports.inventory', 'reports.attendance'] },
       { to: '/audit', label: 'nav.audit', icon: i(History), any: ['audit.view'] },
-      { to: '/settings', label: 'nav.settings', icon: i(Settings), any: ['settings.view', 'settings.manage'] },
+      { to: '/settings', label: 'nav.settings', icon: i(Settings), any: ['settings.view', 'settings.manage', 'attendance.settings.view', 'attendance.settings.manage'] },
       { to: '/help', label: 'nav.help', icon: i(LifeBuoy), any: [] },
     ],
   },

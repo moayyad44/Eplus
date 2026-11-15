@@ -79,7 +79,7 @@ function LeaveDialog({ manage, onClose }: { manage: boolean; onClose: () => void
 }
 
 interface Bal { year: number; annualDays: number; sickDays: number; rows: { user: { id: string; fullName: string }; annualUsed: number; annualLeft: number; sickUsed: number; sickLeft: number; unpaidUsed: number; otherUsed: number }[] }
-/** Approved leave days of the year against the entitlements set in Settings → Medical (the employee sees his own). */
+/** Approved leave days of the year against the entitlements set in Settings → الدوام والرواتب (the employee sees his own). */
 function Balances() {
   const { t } = useTranslation();
   const q = useQuery({ queryKey: ['leaves', 'balances'], queryFn: () => api.get<Bal>('/staff/leaves/balances') });

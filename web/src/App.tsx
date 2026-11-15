@@ -208,7 +208,7 @@ export default function App() {
         <Route path="reports" element={<Guard any={['reports.patients', 'reports.doctors', 'reports.financial', 'reports.inventory', 'reports.attendance']}><Reports /></Guard>} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="audit" element={<Guard any={['audit.view']}><AuditLogs /></Guard>} />
-        <Route path="settings" element={<Guard any={['settings.view', 'settings.manage']}><Settings /></Guard>} />
+        <Route path="settings" element={<Guard any={['settings.view', 'settings.manage', 'attendance.settings.view', 'attendance.settings.manage']}><Settings /></Guard>} />
         <Route path="account" element={<Account />} />
         <Route path="help" element={<Help />} />
         <Route path="*" element={<NotFound />} />

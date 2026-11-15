@@ -33,7 +33,7 @@ settingsRouter.get(
   }),
 );
 
-/** Staff, attendance and payroll policies: their own permissions (Settings → Medical). */
+/** Staff, attendance and payroll policies: their own permissions (Settings → الدوام والرواتب). */
 settingsRouter.get('/attendance', requireAnyPerm('attendance.settings.view', 'attendance.settings.manage'), ah(async (_req, res) => res.json(await getSetting('attendance'))));
 
 settingsRouter.put(

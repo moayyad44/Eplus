@@ -1,4 +1,4 @@
-/** Staff, attendance and payroll policies (Settings → Medical), attendance screen and payroll lines. */
+/** Staff, attendance and payroll policies (Settings → الدوام والرواتب), attendance screen and payroll lines. */
 export default {
   pol: {
     title: 'إعدادات الموظفين والدوام والرواتب',

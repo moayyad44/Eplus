@@ -5,7 +5,7 @@ import { dateOnlyStr } from '../../lib/dates';
 import { type EmpPolicy, type Policy, graceOf } from '../staff/policy';
 
 /**
- * Turns a month of attendance into payslip lines, following the policy (Settings → Medical → staff, attendance and
+ * Turns a month of attendance into payslip lines, following the policy (Settings → الدوام والرواتب: staff, attendance and
  * payroll) and the employee's own exceptions. Every line keeps its source (attendance record, leave day, manual
  * overtime) and is unique per (slip, kind, source), so recalculating a draft never counts anything twice.
  *
