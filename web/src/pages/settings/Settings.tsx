@@ -16,6 +16,7 @@ import { Badge, Button, Card, CardHeader, Checkbox, Dialog, Field, IconButton, I
 import { usePermissionCatalog, useRoles } from '../staff/Users';
 import { CatalogEditor, type FieldDef, type FilterDef } from './CatalogEditor';
 import { Backups } from './Backups';
+import { AttendancePolicyCard } from './AttendancePolicy';
 
 type Tab = 'clinic' | 'financial' | 'paymentMethods' | 'templates' | 'services' | 'medical' | 'visitTypes' | 'labTests' | 'diagnoses' | 'drugs' | 'inventory' | 'expenses' | 'shifts' | 'roles' | 'backups';
 type SettingsData = Record<string, Record<string, unknown>>;
@@ -40,7 +41,7 @@ export default function Settings() {
         <div className="space-y-4">
           <KeyValueForm settingKey="medical" fields={[['defaultAppointmentMinutes', 'number'], ['prescriptionFooter', 'textarea'], ['reportDoctorName', 'text']]} ns="medicalS" />
           <NursingPresetsCard />
-          <KeyValueForm settingKey="attendance" fields={[['graceMinutes', 'number'], ['autoAbsent', 'checkbox']]} ns="attendanceS" />
+          {(can('attendance.settings.view') || can('attendance.settings.manage')) && <AttendancePolicyCard />}
         </div>
       )}
       {tab === 'visitTypes' && <VisitTypes />}

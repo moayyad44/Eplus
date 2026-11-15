@@ -26,7 +26,7 @@ export default {
     ShiftType: { MORNING: 'صباحي', EVENING: 'مسائي', NIGHT: 'ليلي', CUSTOM: 'مخصص' },
     LeaveType: { ANNUAL: 'سنوية', SICK: 'مرضية', UNPAID: 'بدون راتب', EMERGENCY: 'طارئة', OTHER: 'أخرى' },
     LeaveStatus: { PENDING: 'بانتظار الموافقة', APPROVED: 'موافق عليها', REJECTED: 'مرفوضة', CANCELLED: 'ملغاة' },
-    AttendanceStatus: { PRESENT: 'حاضر', LATE: 'متأخر', EARLY_LEAVE: 'مغادرة مبكرة', LATE_AND_EARLY: 'تأخير ومغادرة مبكرة', ABSENT: 'غائب', LEAVE: 'إجازة' },
+    AttendanceStatus: { PRESENT: 'حاضر', LATE: 'متأخر', EARLY_LEAVE: 'مغادرة مبكرة', LATE_AND_EARLY: 'تأخير ومغادرة مبكرة', ABSENT: 'غائب', LEAVE: 'إجازة', NO_RECORD: 'لم يسجل الحضور' },
     AttachmentCategory: { REPORT: 'تقرير', IMAGE: 'صورة', LAB_RESULT: 'نتيجة تحليل', DOCUMENT: 'مستند', INVOICE: 'فاتورة', INSURANCE: 'تأمين', OTHER: 'أخرى' },
     PayerType: { SELF_PAY: 'نقدي', INSURANCE: 'مؤمّن', CORPORATE: 'تأمين شركات', GOVERNMENT: 'تأمين حكومي', OTHER: 'أخرى' },
     InsurancePriority: { PRIMARY: 'أساسي', SECONDARY: 'ثانوي' },

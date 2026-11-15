@@ -1907,6 +1907,8 @@ enum AttendanceStatus {
   LATE_AND_EARLY
   ABSENT
   LEAVE
+  /// Scheduled but nothing recorded: not assumed present nor absent until reviewed.
+  NO_RECORD
 }
 
 model Attendance {
@@ -1920,6 +1922,22 @@ model Attendance {
   lateMinutes       Int              @default(0)
   earlyLeaveMinutes Int              @default(0)
   workedMinutes     Int              @default(0)
+  /// Minutes stayed after the scheduled end (capped at the employee's next shift). Paid only per the overtime policy.
+  overtimeMinutes   Int              @default(0)
+  /// Absence accepted as justified by the administration (its effect on the salary follows the policy).
+  excused           Boolean          @default(false)
+  /// Lateness: DEDUCT (approved for deduction) / EXEMPT (waived). Null = by the policy.
+  lateDecision      String?
+  /// Employee's justification of the lateness and the administration's answer (PENDING / ACCEPTED / REJECTED).
+  lateExcuse        String?
+  lateExcuseStatus  String?
+  /// Overtime: APPROVED / REJECTED. Null = by the policy (pending when approval is required).
+  overtimeDecision  String?
+  reviewedById      String?
+  reviewedAt        DateTime?
+  editedById        String?
+  editedAt          DateTime?
+  editReason        String?
   notes             String?
   recordedById      String?
   createdAt         DateTime         @default(now())
@@ -2929,6 +2947,8 @@ model SalaryProfile {
   paymentMethod String   @default("TRANSFER")
   treasuryId    String?
   isActive      Boolean  @default(true)
+  /// Employee-specific attendance/payroll policy; a key that is absent uses the general settings.
+  policy        Json     @default("{}")
   updatedAt     DateTime @updatedAt
 
   @@map("acc_salary_profiles")
@@ -2978,11 +2998,64 @@ model Payslip {
   advance          Decimal @default(0) @db.Decimal(12, 3)
   net              Decimal @default(0) @db.Decimal(12, 3)
   notes            String?
+  workDays         Int     @default(0)
+  leaveDays        Decimal @default(0) @db.Decimal(6, 2)
+  lateCount        Int     @default(0)
+  lateDeduction    Decimal @default(0) @db.Decimal(12, 3)
+  earlyMinutes     Int     @default(0)
+  earlyDeduction   Decimal @default(0) @db.Decimal(12, 3)
+  overtimeMinutes  Int     @default(0)
+  /// Days still needing review (no record / no leave time) when the slip was calculated.
+  reviewDays       Int     @default(0)
+  /// Manual changes waiting for a payroll approver ({ values, byId, byName, at }).
+  pendingAdjust    Json?
 
-  run PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  run   PayrollRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  items PayslipItem[]
 
   @@unique([runId, userId])
   @@map("acc_payslips")
+}
+
+/// One line of a payslip coming from attendance (lateness, early leave, absence, leave, overtime): kept with its source
+/// so every amount opens to its record. Unique per (slip, kind, source): recalculating never adds a line twice.
+model PayslipItem {
+  id          String   @id @default(uuid())
+  slipId      String
+  kind        String
+  sourceType  String
+  sourceId    String
+  date        DateTime @db.Date
+  minutes     Int      @default(0)
+  days        Decimal  @default(0) @db.Decimal(6, 2)
+  amount      Decimal  @default(0) @db.Decimal(12, 3)
+  /// DEDUCTED / PAID / EXEMPT / EXCUSED / PENDING / REJECTED / OFF / BELOW_MIN / NOT_ELIGIBLE / HOURLY / WAIVED
+  state       String
+  note        String?
+  waived      Boolean  @default(false)
+  waiveReason String?
+
+  slip Payslip @relation(fields: [slipId], references: [id], onDelete: Cascade)
+
+  @@unique([slipId, kind, sourceId])
+  @@index([sourceType, sourceId])
+  @@map("acc_payslip_items")
+}
+
+/// Overtime recorded by a manager (with its reason), e.g. work on a day without a scheduled shift.
+model OvertimeEntry {
+  id          String   @id @default(uuid())
+  userId      String
+  date        DateTime @db.Date
+  startAt     DateTime
+  endAt       DateTime
+  minutes     Int
+  reason      String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, date])
+  @@map("overtime_entries")
 }
 
 model EmployeeAdvance {

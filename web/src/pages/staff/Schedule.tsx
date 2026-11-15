@@ -134,7 +134,7 @@ export default function Schedule() {
           </div>
         )}
       </Card>
-      {fixing && <RecordDialog users={staff.data ?? []} initial={fixing} onClose={() => setFixing(null)} />}
+      {fixing && <RecordDialog users={staff.data ?? []} editing initial={fixing} onClose={() => setFixing(null)} />}
       {assigning && <AssignDialog staff={staff.data ?? []} onClose={() => setAssigning(false)} defaultFrom={from} defaultTo={to} />}
     </div>
   );

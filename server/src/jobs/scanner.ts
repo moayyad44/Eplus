@@ -78,16 +78,17 @@ export async function runScan(now = new Date()) {
     await notifyUsers([a.userId], { type: 'SHIFT_ENDING', title: 'انتهى الشفت', body: 'لا تنسَ تسجيل المغادرة', link: '/staff/attendance', dedupeKey: `shiftend:${a.id}` });
   }
 
-  // 6. Yesterday's scheduled staff with no attendance record and no approved leave → ABSENT (can be turned off in settings)
+  // 6. Yesterday's scheduled staff with nothing recorded: approved leave → LEAVE; otherwise ABSENT, or NO_RECORD
+  // (not assumed present nor absent, waiting for a manager's review) when automatic absence is turned off.
   const yesterday = addDays(today, -1);
   const { autoAbsent } = await getSetting('attendance');
-  const missing = autoAbsent ? await prisma.shiftAssignment.findMany({ where: { date: yesterday, userId: { not: null }, attendance: { none: {} } }, select: { id: true, userId: true } }) : [];
+  const missing = await prisma.shiftAssignment.findMany({ where: { date: yesterday, userId: { not: null }, attendance: { none: {} } }, select: { id: true, userId: true } });
   for (const m of missing) {
     if (!m.userId) continue; // vacant slot
     const onLeave = await prisma.leave.findFirst({ where: { userId: m.userId, status: 'APPROVED', startDate: { lte: yesterday }, endDate: { gte: yesterday } } });
     await prisma.attendance.upsert({
       where: { userId_date: { userId: m.userId, date: yesterday } },
-      create: { userId: m.userId, date: yesterday, shiftAssignmentId: m.id, status: onLeave ? 'LEAVE' : 'ABSENT', notes: 'تسجيل تلقائي' },
+      create: { userId: m.userId, date: yesterday, shiftAssignmentId: m.id, status: onLeave ? 'LEAVE' : autoAbsent ? 'ABSENT' : 'NO_RECORD', notes: 'تسجيل تلقائي' },
       update: {},
     });
   }

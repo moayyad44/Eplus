@@ -10,7 +10,7 @@ const TONES: Record<string, Record<string, Tone>> = {
   StockCountStatus: { IN_PROGRESS: 'warning', APPROVED: 'success', CANCELLED: 'neutral' },
   PurchaseOrderStatus: { DRAFT: 'neutral', ORDERED: 'info', RECEIVED: 'success', CANCELLED: 'neutral' },
   LeaveStatus: { PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger', CANCELLED: 'neutral' },
-  AttendanceStatus: { PRESENT: 'success', LATE: 'warning', EARLY_LEAVE: 'warning', LATE_AND_EARLY: 'danger', ABSENT: 'danger', LEAVE: 'violet' },
+  AttendanceStatus: { PRESENT: 'success', LATE: 'warning', EARLY_LEAVE: 'warning', LATE_AND_EARLY: 'danger', ABSENT: 'danger', LEAVE: 'violet', NO_RECORD: 'neutral' },
   ResultFlag: { NORMAL: 'success', LOW: 'warning', HIGH: 'warning', ABNORMAL: 'danger', CRITICAL: 'danger' },
   AllergySeverity: { MILD: 'warning', MODERATE: 'warning', SEVERE: 'danger' },
   ClaimStatus: { DRAFT: 'neutral', READY: 'info', SUBMITTED: 'primary', UNDER_REVIEW: 'violet', APPROVED: 'success', PARTIALLY_APPROVED: 'warning', REJECTED: 'danger', RESUBMISSION_REQUIRED: 'warning', PAID: 'success', PARTIALLY_PAID: 'warning', CLOSED: 'success', CANCELLED: 'neutral' },

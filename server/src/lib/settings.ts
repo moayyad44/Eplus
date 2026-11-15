@@ -72,9 +72,72 @@ export const settingSchemas = {
     /** Warehouse stock sold through invoices comes out of (null = the default warehouse). */
     saleWarehouseId: z.string().uuid().nullable().default(null),
   }),
+  /** Staff, attendance and payroll policies (Settings → Medical). Each policy is independent of the others. */
   attendance: z.object({
+    /** CLOCK: the employee's check-in/out are the source of the worked time. SCHEDULE: the shift schedule is the
+     *  source; actual check-in/out (when recorded) only measure lateness, early leave and overtime. */
+    method: z.enum(['CLOCK', 'SCHEDULE']).default('CLOCK'),
     graceMinutes: z.number().int().min(0).max(120).default(10),
+    /** A scheduled shift with nothing recorded the next day: ABSENT automatically, or NO_RECORD (needs review). */
     autoAbsent: z.boolean().default(true),
+    late: z.object({
+      deduct: z.boolean().default(false),
+      /** MINUTE / Q15 / Q30 / HOUR: each started block counts in full. */
+      rounding: z.enum(['MINUTE', 'Q15', 'Q30', 'HOUR']).default('MINUTE'),
+      /** HOUR_VALUE: the late time × the hour value; FIXED: an amount per late arrival; PERCENT: % of the day's wage per late arrival. */
+      method: z.enum(['HOUR_VALUE', 'FIXED', 'PERCENT']).default('HOUR_VALUE'),
+      fixedAmount: z.number().min(0).max(1000).default(0),
+      percent: z.number().min(0).max(100).default(0),
+      /** AUTO: deducted when the payroll is prepared; APPROVAL: only lateness a manager approved for deduction. */
+      mode: z.enum(['AUTO', 'APPROVAL']).default('AUTO'),
+      allowExemption: z.boolean().default(true),
+      allowExcuse: z.boolean().default(true),
+    }).default({}),
+    early: z.object({
+      /** Early leave uses the lateness rounding and method. */
+      deduct: z.boolean().default(false),
+    }).default({}),
+    overtime: z.object({
+      enabled: z.boolean().default(false),
+      /** Overtime is proven only by an actual leave time; otherwise a shift extension recorded at handover also counts. */
+      requireCheckout: z.boolean().default(true),
+      minMinutes: z.number().int().min(0).max(240).default(30),
+      method: z.enum(['HOUR_VALUE', 'MULTIPLIER', 'FIXED']).default('MULTIPLIER'),
+      multiplier: z.number().min(1).max(5).default(1.25),
+      fixedRate: z.number().min(0).max(1000).default(0),
+      holidayEnabled: z.boolean().default(false),
+      holidayMultiplier: z.number().min(1).max(5).default(1.5),
+      /** Weekly rest days (0 = Sunday … 6 = Saturday) and official holidays (YYYY-MM-DD). */
+      holidayWeekdays: z.array(z.number().int().min(0).max(6)).max(7).default([5]),
+      holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(100).default([]),
+      needsApproval: z.boolean().default(true),
+    }).default({}),
+    payroll: z.object({
+      /** Pay type proposed for a new salary profile (each employee keeps his own). */
+      defaultPayType: z.enum(['MONTHLY', 'HOURLY']).default('MONTHLY'),
+      /** Day value = monthly salary ÷ dayDivisor; hour value = day value ÷ dailyHours. */
+      dayDivisor: z.number().int().min(20).max(31).default(30),
+      dailyHours: z.number().min(1).max(24).default(8),
+      absenceAffects: z.boolean().default(true),
+      autoAllowances: z.boolean().default(true),
+      adjustmentsNeedApproval: z.boolean().default(false),
+      lockOnApproval: z.boolean().default(true),
+    }).default({}),
+    leaves: z.object({
+      needsApproval: z.boolean().default(true),
+      /** Effect of each leave type and of a justified / unjustified absence: PAID (no deduction), HALF, UNPAID (a day's wage). */
+      pay: z.object({
+        ANNUAL: z.enum(['PAID', 'HALF', 'UNPAID']).default('PAID'),
+        SICK: z.enum(['PAID', 'HALF', 'UNPAID']).default('PAID'),
+        UNPAID: z.enum(['PAID', 'HALF', 'UNPAID']).default('UNPAID'),
+        EMERGENCY: z.enum(['PAID', 'HALF', 'UNPAID']).default('PAID'),
+        OTHER: z.enum(['PAID', 'HALF', 'UNPAID']).default('PAID'),
+      }).default({}),
+      excusedAbsence: z.enum(['PAID', 'HALF', 'UNPAID']).default('PAID'),
+      unexcusedAbsence: z.enum(['PAID', 'HALF', 'UNPAID']).default('UNPAID'),
+      annualDays: z.number().int().min(0).max(60).default(14),
+      sickDays: z.number().int().min(0).max(60).default(14),
+    }).default({}),
   }),
   /** E Coin: doctors' virtual coins (no cash value). Earned on lab invoices, spent on shifts. */
   ecoin: z.object({

@@ -6,7 +6,8 @@ import { prisma } from '../../lib/prisma';
 import { ah, nullableStr } from '../../lib/http';
 import { parse } from '../../lib/validate';
 import { audit } from '../../lib/audit';
-import { badRequest, notFound } from '../../lib/errors';
+import { badRequest, forbidden, notFound } from '../../lib/errors';
+import { can } from '../../auth/context';
 import { requireAnyPerm, requirePerm, requireStaff } from '../../middleware/auth';
 import { getAllSettings, getSetting, settingSchemas, type SettingKey } from '../../lib/settings';
 import { catalogRouter } from './catalog';
@@ -32,14 +33,20 @@ settingsRouter.get(
   }),
 );
 
+/** Staff, attendance and payroll policies: their own permissions (Settings → Medical). */
+settingsRouter.get('/attendance', requireAnyPerm('attendance.settings.view', 'attendance.settings.manage'), ah(async (_req, res) => res.json(await getSetting('attendance'))));
+
 settingsRouter.put(
   '/:key',
-  requirePerm('settings.manage'),
+  requireAnyPerm('settings.manage', 'attendance.settings.manage'),
   ah(async (req, res) => {
     const key = req.params.key as SettingKey;
     if (!(key in settingSchemas)) throw notFound('إعداد غير معروف');
+    if (!can(req.ctx, key === 'attendance' ? 'attendance.settings.manage' : 'settings.manage')) throw forbidden();
+    const { reason, ...body } = (req.body ?? {}) as Record<string, unknown>;
+    if (key === 'attendance' && (typeof reason !== 'string' || reason.trim().length < 3)) throw badRequest('اكتب سبب تعديل إعدادات الدوام والرواتب');
     const current = await getSetting(key);
-    const value = (settingSchemas[key] as z.AnyZodObject).parse({ ...current, ...req.body });
+    const value = (settingSchemas[key] as z.AnyZodObject).parse({ ...current, ...body });
     if (key === 'medical') {
       const ids = [...new Set((value.nursingProcedures as { services: { serviceId: string }[] }[]).flatMap((x) => x.services.map((y) => y.serviceId)))];
       if (ids.length && (await prisma.service.count({ where: { id: { in: ids }, deletedAt: null } })) !== ids.length) throw badRequest('خدمة مرتبطة بأحد الإجراءات غير موجودة');
@@ -52,7 +59,7 @@ settingsRouter.put(
     }
     await prisma.$transaction(async (tx) => {
       await tx.setting.upsert({ where: { key }, create: { key, value, updatedBy: req.ctx.userId }, update: { value, updatedBy: req.ctx.userId } });
-      await audit(tx, req.ctx, { action: 'settings.update', entityType: 'setting', entityId: key, before: current, after: value });
+      await audit(tx, req.ctx, { action: 'settings.update', entityType: 'setting', entityId: key, summary: typeof reason === 'string' && reason.trim() ? `تعديل إعدادات ${key === 'attendance' ? 'الدوام والرواتب' : key} — السبب: ${reason.trim()}` : undefined, before: current, after: value });
     });
     res.json(value);
   }),

@@ -12,6 +12,9 @@ import { dateOnlyStr } from '../../lib/dates';
 import { dayOf } from './journal';
 import { postDoc } from './link';
 import { docNumber } from './common';
+import { calculate, netOf, totals } from './payrollCalc';
+import { empPolicySchema, getPolicy, readEmpPolicy, reevaluate } from '../staff/policy';
+import { can } from '../../auth/context';
 
 /**
  * Payroll on the existing staff (no duplicate employee records). Real money only: E Coin is never money, never a
@@ -32,7 +35,7 @@ payrollRouter.get('/payroll/profiles', requireAnyPerm('accounting.payroll.view',
 }));
 
 payrollRouter.put('/payroll/profiles/:userId', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
-  const b = parse(z.object({ jobTitle: nullableStr(100), payType: z.enum(['MONTHLY', 'HOURLY']).default('MONTHLY'), basic: z.coerce.number().min(0).max(1_000_000).default(0), hourlyRate: z.coerce.number().min(0).max(10_000).default(0), allowances: allowances.default([]), paymentMethod: z.enum(['CASH', 'TRANSFER', 'CHEQUE']).default('TRANSFER'), treasuryId: z.string().uuid().nullable().optional(), isActive: z.boolean().default(true) }), req.body);
+  const b = parse(z.object({ jobTitle: nullableStr(100), payType: z.enum(['MONTHLY', 'HOURLY']).default('MONTHLY'), basic: z.coerce.number().min(0).max(1_000_000).default(0), hourlyRate: z.coerce.number().min(0).max(10_000).default(0), allowances: allowances.default([]), paymentMethod: z.enum(['CASH', 'TRANSFER', 'CHEQUE']).default('TRANSFER'), treasuryId: z.string().uuid().nullable().optional(), isActive: z.boolean().default(true), policy: empPolicySchema.optional() }), req.body);
   const u = await prisma.user.findUnique({ where: { id: req.params.userId } });
   if (!u) throw notFound('الموظف غير موجود');
   const before = await prisma.salaryProfile.findUnique({ where: { userId: u.id } });
@@ -77,18 +80,15 @@ payrollRouter.post('/payroll/advances/:id/cancel', requirePerm('accounting.payro
 
 // ───── Monthly payroll ─────
 
-const net = (s: { basic: Prisma.Decimal.Value; allowances: Prisma.Decimal.Value; commission: Prisma.Decimal.Value; bonus: Prisma.Decimal.Value; overtime: Prisma.Decimal.Value; absenceDeduction: Prisma.Decimal.Value; deductions: Prisma.Decimal.Value; advance: Prisma.Decimal.Value }) =>
-  r3(D(s.basic).add(s.allowances).add(s.commission).add(s.bonus).add(s.overtime).sub(s.absenceDeduction).sub(s.deductions).sub(s.advance));
-
 async function loadRun(id: string) {
-  const r = await prisma.payrollRun.findUnique({ where: { id }, include: { slips: true } });
+  const r = await prisma.payrollRun.findUnique({ where: { id }, include: { slips: { include: { items: { orderBy: [{ date: 'asc' }, { kind: 'asc' }] } } } } });
   if (!r) throw notFound('كشف الرواتب غير موجود');
   const users = await prisma.user.findMany({ where: { id: { in: r.slips.map((s) => s.userId) } }, select: { id: true, fullName: true } });
   const entries = await prisma.journalEntry.findMany({ where: { sourceKey: { in: [`payroll:${r.id}`, `payroll-pay:${r.id}`] } }, select: { id: true, number: true, sourceKey: true, status: true } });
-  // Days with an arrival but no leave time count zero hours: shown so an hourly salary is not paid short by mistake.
-  const [y, m] = r.month.split('-').map(Number);
-  const open = await prisma.attendance.groupBy({ by: ['userId'], where: { userId: { in: r.slips.map((s) => s.userId) }, date: { gte: new Date(Date.UTC(y, m - 1, 1)), lte: new Date(Date.UTC(y, m, 0)) }, checkIn: { not: null }, checkOut: null }, _count: { _all: true } });
-  return { ...r, dueDate: r.dueDate && dateOnlyStr(r.dueDate), paidDate: r.paidDate && dateOnlyStr(r.paidDate), entries, slips: r.slips.map((s) => ({ ...s, user: users.find((u) => u.id === s.userId)?.fullName ?? '', noCheckout: open.find((o) => o.userId === s.userId)?._count._all ?? 0 })).sort((a, b) => a.user.localeCompare(b.user, 'ar')) };
+  return {
+    ...r, dueDate: r.dueDate && dateOnlyStr(r.dueDate), paidDate: r.paidDate && dateOnlyStr(r.paidDate), entries,
+    slips: r.slips.map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, date: dateOnlyStr(i.date) })), user: users.find((u) => u.id === s.userId)?.fullName ?? '' })).sort((a, b) => a.user.localeCompare(b.user, 'ar')),
+  };
 }
 
 payrollRouter.get('/payroll/runs', requireAnyPerm('accounting.payroll.view', 'accounting.payroll.manage'), ah(async (_req, res) => {
@@ -97,59 +97,149 @@ payrollRouter.get('/payroll/runs', requireAnyPerm('accounting.payroll.view', 'ac
 }));
 payrollRouter.get('/payroll/runs/:id', requireAnyPerm('accounting.payroll.view', 'accounting.payroll.manage'), ah(async (req, res) => res.json(await loadRun(req.params.id))));
 
+const monthRange = (month: string) => { const [y, m] = month.split('-').map(Number); return { from: new Date(Date.UTC(y, m - 1, 1)), to: new Date(Date.UTC(y, m, 0)) }; };
+
 /**
- * Prepare a month: every employee with an active salary profile; advance installments. Monthly salaries: absences and
- * lateness from attendance. Hourly: the hours worked in attendance (check-in to check-out) × the hourly rate.
+ * (Re)calculates the slips of a draft month from attendance, leaves and manual overtime. The manual amounts (commission,
+ * bonus, other deductions, advance recovery, notes) are kept; lines keep their waivers; a line is never added twice.
  */
+async function calculateRun(tx: Tx, runId: string, month: string, fresh: boolean) {
+  const { from, to } = monthRange(month);
+  const policy = await getPolicy(tx);
+  const profiles = await tx.salaryProfile.findMany({ where: { isActive: true, OR: [{ basic: { gt: 0 } }, { payType: 'HOURLY', hourlyRate: { gt: 0 } }] } });
+  if (!profiles.length) throw badRequest('لا يوجد موظفون لهم بيانات راتب');
+  const emp = new Map(profiles.map((p) => [p.userId, readEmpPolicy(p.policy)]));
+  await reevaluate(tx, profiles.map((p) => p.userId), from, to, policy, emp);
+  const adv = await tx.employeeAdvance.findMany({ where: { status: 'ACTIVE', userId: { in: profiles.map((p) => p.userId) } } });
+  const existing = await tx.payslip.findMany({ where: { runId }, include: { items: true } });
+  for (const p of profiles) {
+    const { items, fields } = await calculate(tx, p, from, to, policy, emp.get(p.userId) ?? {});
+    const old = existing.find((s) => s.userId === p.userId);
+    const keep = new Map((old?.items ?? []).map((i) => [`${i.kind}|${i.sourceId}`, i]));
+    const lines = items.map((i) => { const k = keep.get(`${i.kind}|${i.sourceId}`); return { ...i, waived: k?.waived ?? false, waiveReason: k?.waiveReason ?? null }; });
+    const manual = old
+      ? { commission: old.commission, bonus: old.bonus, deductions: old.deductions, advance: old.advance, ...(!policy.payroll.autoAllowances && { allowances: old.allowances }) }
+      : { commission: D(0), bonus: D(0), deductions: D(0), advance: r3(adv.filter((a) => a.userId === p.userId).reduce((t, a) => t.add(Prisma.Decimal.min(a.installment, D(a.amount).sub(a.recovered))), D(0))) };
+    const data = { ...fields, ...manual, ...totals(lines) };
+    const slip = old
+      ? await tx.payslip.update({ where: { id: old.id }, data: { ...data, net: netOf(data) } })
+      : await tx.payslip.create({ data: { runId, userId: p.userId, ...data, net: netOf(data) } });
+    const now = new Set(lines.map((i) => `${i.kind}|${i.sourceId}`));
+    const gone = (old?.items ?? []).filter((i) => !now.has(`${i.kind}|${i.sourceId}`)).map((i) => i.id);
+    if (gone.length) await tx.payslipItem.deleteMany({ where: { id: { in: gone } } });
+    for (const i of lines) {
+      const k = keep.get(`${i.kind}|${i.sourceId}`);
+      const { kind, sourceId, ...rest } = i;
+      if (k) await tx.payslipItem.update({ where: { id: k.id }, data: rest });
+      else await tx.payslipItem.create({ data: { slipId: slip.id, kind, sourceId, ...rest } });
+    }
+  }
+  // Employees no longer paid (profile stopped) leave a draft that is recalculated.
+  if (!fresh) {
+    const stale = existing.filter((s) => !profiles.some((p) => p.userId === s.userId)).map((s) => s.id);
+    if (stale.length) await tx.payslip.deleteMany({ where: { id: { in: stale } } });
+  }
+  return profiles.length;
+}
+
 payrollRouter.post('/payroll/runs', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
   const b = parse(z.object({ month, dueDate: day.nullable().optional() }), req.body);
-  const [y, m] = b.month.split('-').map(Number);
-  const from = new Date(Date.UTC(y, m - 1, 1)), to = new Date(Date.UTC(y, m, 0));
+  const { to } = monthRange(b.month);
   const run = await prisma.$transaction(async (tx) => {
     if (await tx.payrollRun.findUnique({ where: { month: b.month } })) throw badRequest('كشف هذا الشهر موجود');
-    const profiles = await tx.salaryProfile.findMany({ where: { isActive: true, OR: [{ basic: { gt: 0 } }, { payType: 'HOURLY', hourlyRate: { gt: 0 } }] } });
-    if (!profiles.length) throw badRequest('لا يوجد موظفون لهم بيانات راتب');
-    const att = await tx.attendance.findMany({ where: { userId: { in: profiles.map((p) => p.userId) }, date: { gte: from, lte: to } } });
-    const adv = await tx.employeeAdvance.findMany({ where: { status: 'ACTIVE', userId: { in: profiles.map((p) => p.userId) } } });
     const created = await tx.payrollRun.create({ data: { month: b.month, dueDate: b.dueDate ? dayOf(b.dueDate) : to, createdById: req.ctx.userId } });
-    for (const p of profiles) {
-      const mine = att.filter((a) => a.userId === p.userId);
-      const absenceDays = mine.filter((a) => a.status === 'ABSENT').length;
-      const lateMinutes = mine.reduce((t, a) => t + a.lateMinutes, 0);
-      const allow = (p.allowances as { amount: number }[]).reduce((t, a) => t.add(a.amount), D(0));
-      const hourly = p.payType === 'HOURLY';
-      const hours = D(mine.reduce((t, a) => t + a.workedMinutes, 0)).div(60).toDecimalPlaces(2);
-      const basic = hourly ? r3(hours.mul(p.hourlyRate)) : D(p.basic);
-      const absenceDeduction = hourly ? D(0) : r3(D(p.basic).div(30).mul(absenceDays));
-      const advance = r3(adv.filter((a) => a.userId === p.userId).reduce((t, a) => t.add(Prisma.Decimal.min(a.installment, D(a.amount).sub(a.recovered))), D(0)));
-      const s = { basic, allowances: allow, commission: 0, bonus: 0, overtime: 0, absenceDeduction, deductions: 0, advance };
-      await tx.payslip.create({ data: { runId: created.id, userId: p.userId, jobTitle: p.jobTitle, payType: p.payType, hours: hourly ? hours : 0, hourlyRate: hourly ? p.hourlyRate : 0, absenceDays, lateMinutes, ...s, net: net(s) } });
-    }
-    await audit(tx, req.ctx, { action: 'payroll.prepare', entityType: 'payroll_run', entityId: created.id, summary: `إعداد رواتب ${b.month}: ${profiles.length} موظف` });
+    const n = await calculateRun(tx, created.id, b.month, true);
+    await audit(tx, req.ctx, { action: 'payroll.prepare', entityType: 'payroll_run', entityId: created.id, summary: `إعداد رواتب ${b.month}: ${n} موظف` });
     return created;
-  });
+  }, { timeout: 60_000 });
   res.status(201).json(await loadRun(run.id));
 }));
 
-payrollRouter.put('/payroll/runs/:id/slips/:slipId', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
-  const b = parse(z.object({ hours: z.coerce.number().min(0).max(744), hourlyRate: z.coerce.number().min(0).max(10_000), commission: z.coerce.number().min(0), bonus: z.coerce.number().min(0), overtime: z.coerce.number().min(0), absenceDeduction: z.coerce.number().min(0), deductions: z.coerce.number().min(0), advance: z.coerce.number().min(0), notes: nullableStr(300) }).partial(), req.body);
+payrollRouter.post('/payroll/runs/:id/recalculate', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
   await prisma.$transaction(async (tx) => {
-    const s = await tx.payslip.findUnique({ where: { id: req.params.slipId }, include: { run: true } });
-    if (!s || s.runId !== req.params.id) throw notFound();
-    if (s.run.status !== 'DRAFT') throw badRequest('الكشف معتمد؛ أعد فتحه للتعديل');
-    const { hours, hourlyRate, ...rest } = b;
-    const hourly = s.payType === 'HOURLY';
-    if (!hourly && (hours !== undefined || hourlyRate !== undefined)) throw badRequest('الساعات وأجر الساعة للموظفين بالساعة فقط');
-    const hrs = hours !== undefined ? D(hours).toDecimalPlaces(2) : D(s.hours), rate = hourlyRate !== undefined ? r3(hourlyRate) : D(s.hourlyRate);
-    const hourData = hourly ? { hours: hrs, hourlyRate: rate, basic: r3(hrs.mul(rate)) } : {};
-    const merged = { ...s, ...hourData, ...Object.fromEntries(Object.entries(rest).filter(([k]) => k !== 'notes').map(([k, v]) => [k, r3(v as number)])) };
-    if (b.advance !== undefined) {
-      const open = (await tx.employeeAdvance.findMany({ where: { userId: s.userId, status: 'ACTIVE' } })).reduce((t, a) => t.add(D(a.amount).sub(a.recovered)), D(0));
-      if (D(b.advance).gt(open)) throw badRequest(`استرداد السلف أكبر من المتبقي (${open.toFixed(3)})`);
+    const r = await tx.payrollRun.findUnique({ where: { id: req.params.id } });
+    if (!r) throw notFound('كشف الرواتب غير موجود');
+    if (r.status !== 'DRAFT') throw badRequest('الكشف معتمد؛ أعد فتحه لإعادة الاحتساب');
+    const n = await calculateRun(tx, r.id, r.month, false);
+    await audit(tx, req.ctx, { action: 'payroll.recalculate', entityType: 'payroll_run', entityId: r.id, summary: `إعادة احتساب رواتب ${r.month} من الدوام: ${n} موظف` });
+  }, { timeout: 60_000 });
+  res.json(await loadRun(req.params.id));
+}));
+
+const slipEdit = z.object({ hours: z.coerce.number().min(0).max(744), hourlyRate: z.coerce.number().min(0).max(10_000), allowances: z.coerce.number().min(0), commission: z.coerce.number().min(0), bonus: z.coerce.number().min(0), deductions: z.coerce.number().min(0), advance: z.coerce.number().min(0), notes: nullableStr(300) }).partial();
+
+/** Applies manual amounts to a slip (validated: hours only for hourly staff, advance within what is owed, net not negative). */
+async function applyEdit(tx: Tx, slipId: string, b: z.infer<typeof slipEdit>) {
+  const s = await tx.payslip.findUniqueOrThrow({ where: { id: slipId } });
+  const { hours, hourlyRate, notes, ...money } = b;
+  const hourly = s.payType === 'HOURLY';
+  if (!hourly && (hours !== undefined || hourlyRate !== undefined)) throw badRequest('الساعات وأجر الساعة للموظفين بالساعة فقط');
+  const hrs = hours !== undefined ? D(hours).toDecimalPlaces(2) : D(s.hours), rate = hourlyRate !== undefined ? r3(hourlyRate) : D(s.hourlyRate);
+  const hourData = hourly ? { hours: hrs, hourlyRate: rate, basic: r3(hrs.mul(rate)) } : {};
+  const moneyData = Object.fromEntries(Object.entries(money).filter(([, v]) => v !== undefined).map(([k, v]) => [k, r3(v as number)]));
+  if (b.advance !== undefined) {
+    const open = (await tx.employeeAdvance.findMany({ where: { userId: s.userId, status: 'ACTIVE' } })).reduce((t, a) => t.add(D(a.amount).sub(a.recovered)), D(0));
+    if (D(b.advance).gt(open)) throw badRequest(`استرداد السلف أكبر من المتبقي (${open.toFixed(3)})`);
+  }
+  const merged = { ...s, ...hourData, ...moneyData };
+  const n = netOf(merged);
+  if (n.lt(0)) throw badRequest('صافي الراتب سالب');
+  await tx.payslip.update({ where: { id: s.id }, data: { ...hourData, ...moneyData, ...(notes !== undefined && { notes }), net: n, pendingAdjust: Prisma.DbNull } });
+}
+
+async function draftSlip(tx: Tx, runId: string, slipId: string) {
+  const s = await tx.payslip.findUnique({ where: { id: slipId }, include: { run: true } });
+  if (!s || s.runId !== runId) throw notFound();
+  if (s.run.status !== 'DRAFT') throw badRequest('الكشف معتمد؛ أعد فتحه للتعديل');
+  return s;
+}
+
+payrollRouter.put('/payroll/runs/:id/slips/:slipId', requirePerm('accounting.payroll.adjust'), ah(async (req, res) => {
+  const b = parse(slipEdit, req.body);
+  const pending = await prisma.$transaction(async (tx) => {
+    const s = await draftSlip(tx, req.params.id, req.params.slipId);
+    const policy = await getPolicy(tx);
+    // Additions and deductions waiting for a payroll approver (when the policy says so): the slip keeps its amounts until then.
+    if (policy.payroll.adjustmentsNeedApproval && !can(req.ctx, 'accounting.payroll.approve')) {
+      const { notes, ...values } = b;
+      await tx.payslip.update({ where: { id: s.id }, data: { pendingAdjust: { values, byId: req.ctx.userId, byName: req.ctx.userName, at: new Date().toISOString() }, ...(notes !== undefined && { notes }) } });
+      await audit(tx, req.ctx, { action: 'payroll.adjust_request', entityType: 'payslip', entityId: s.id, summary: 'تعديل على قسيمة راتب بانتظار الاعتماد', after: values });
+      return true;
     }
-    const n = net(merged);
+    await applyEdit(tx, s.id, b);
+    await audit(tx, req.ctx, { action: 'payroll.adjust', entityType: 'payslip', entityId: s.id, summary: 'تعديل قسيمة راتب', before: s, after: await tx.payslip.findUnique({ where: { id: s.id } }) });
+    return false;
+  });
+  res.json({ ...(await loadRun(req.params.id)), pending });
+}));
+
+payrollRouter.post('/payroll/runs/:id/slips/:slipId/adjust-decision', requirePerm('accounting.payroll.approve'), ah(async (req, res) => {
+  const b = parse(z.object({ accept: z.boolean(), reason: z.string().trim().max(300).optional() }), req.body);
+  await prisma.$transaction(async (tx) => {
+    const s = await draftSlip(tx, req.params.id, req.params.slipId);
+    const pa = s.pendingAdjust as { values?: z.infer<typeof slipEdit> } | null;
+    if (!pa?.values) throw badRequest('لا يوجد تعديل بانتظار الاعتماد');
+    if (b.accept) await applyEdit(tx, s.id, slipEdit.parse(pa.values));
+    else await tx.payslip.update({ where: { id: s.id }, data: { pendingAdjust: Prisma.DbNull } });
+    await audit(tx, req.ctx, { action: b.accept ? 'payroll.adjust_approve' : 'payroll.adjust_reject', entityType: 'payslip', entityId: s.id, summary: `${b.accept ? 'اعتماد' : 'رفض'} تعديل قسيمة راتب${b.reason ? ` — ${b.reason}` : ''}`, before: pa.values });
+  });
+  res.json(await loadRun(req.params.id));
+}));
+
+/** Waives (or restores) one line of a draft slip, with the reason; the line stays visible with its original amount. */
+payrollRouter.post('/payroll/runs/:id/items/:itemId/waive', requirePerm('accounting.payroll.approve'), ah(async (req, res) => {
+  const b = parse(z.object({ waived: z.boolean(), reason: z.string().trim().min(3, 'اكتب سبب الإعفاء').max(300) }), req.body);
+  await prisma.$transaction(async (tx) => {
+    const it = await tx.payslipItem.findUnique({ where: { id: req.params.itemId } });
+    if (!it) throw notFound();
+    const s = await draftSlip(tx, req.params.id, it.slipId);
+    await tx.payslipItem.update({ where: { id: it.id }, data: { waived: b.waived, waiveReason: b.waived ? b.reason : null } });
+    const items = await tx.payslipItem.findMany({ where: { slipId: s.id } });
+    const t = totals(items);
+    const n = netOf({ ...s, ...t });
     if (n.lt(0)) throw badRequest('صافي الراتب سالب');
-    await tx.payslip.update({ where: { id: s.id }, data: { ...hourData, ...Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, k === 'notes' ? v : r3(v as number)])), net: n } });
+    await tx.payslip.update({ where: { id: s.id }, data: { ...t, net: n } });
+    await audit(tx, req.ctx, { action: b.waived ? 'payroll.item_waive' : 'payroll.item_restore', entityType: 'payslip_item', entityId: it.id, summary: `${b.waived ? 'إعفاء من' : 'إلغاء إعفاء'} ${it.kind} ${dateOnlyStr(it.date)} (${it.amount}) — ${b.reason}` });
   });
   res.json(await loadRun(req.params.id));
 }));
@@ -170,10 +260,12 @@ async function recover(tx: Tx, runId: string, sign: 1 | -1) {
   }
 }
 
-payrollRouter.post('/payroll/runs/:id/approve', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
+payrollRouter.post('/payroll/runs/:id/approve', requirePerm('accounting.payroll.approve'), ah(async (req, res) => {
   await prisma.$transaction(async (tx) => {
     const r = await tx.payrollRun.findUnique({ where: { id: req.params.id } });
     if (!r || r.status !== 'DRAFT') throw badRequest('الكشف غير موجود أو معتمد');
+    const waiting = await tx.payslip.count({ where: { runId: r.id, pendingAdjust: { not: Prisma.DbNull } } });
+    if (waiting) throw badRequest(`يوجد ${waiting} تعديل على القسائم بانتظار الاعتماد؛ اعتمدها أو ارفضها أولاً`);
     await tx.payrollRun.update({ where: { id: r.id }, data: { status: 'APPROVED', approvedById: req.ctx.userId } });
     await recover(tx, r.id, 1);
     await postDoc(tx, 'payroll', r.id);
@@ -182,7 +274,7 @@ payrollRouter.post('/payroll/runs/:id/approve', requirePerm('accounting.payroll.
   res.json(await loadRun(req.params.id));
 }));
 
-payrollRouter.post('/payroll/runs/:id/reopen', requirePerm('accounting.payroll.manage'), ah(async (req, res) => {
+payrollRouter.post('/payroll/runs/:id/reopen', requirePerm('accounting.payroll.approve'), ah(async (req, res) => {
   await prisma.$transaction(async (tx) => {
     const r = await tx.payrollRun.findUnique({ where: { id: req.params.id } });
     if (!r || r.status !== 'APPROVED') throw badRequest('يمكن إعادة فتح كشف معتمد غير مدفوع فقط');

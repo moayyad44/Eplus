@@ -88,8 +88,9 @@ export async function planDoc(db: Db, kind: DocKind, id: string, m: Mapping): Pr
     case 'payroll': {
       const r = await db.payrollRun.findUnique({ where: { id }, include: { slips: true } });
       if (!r || r.status === 'DRAFT') return { do: 'undo', why: 'كشف رواتب غير معتمد' };
-      const sum = (k: 'basic' | 'allowances' | 'commission' | 'bonus' | 'overtime' | 'absenceDeduction' | 'deductions' | 'advance' | 'net') => r.slips.reduce((t, s) => t.add(s[k]), D(0));
-      const expense = sum('basic').add(sum('allowances')).add(sum('commission')).add(sum('bonus')).add(sum('overtime')).sub(sum('absenceDeduction')).sub(sum('deductions'));
+      const sum = (k: 'basic' | 'allowances' | 'commission' | 'bonus' | 'overtime' | 'absenceDeduction' | 'lateDeduction' | 'earlyDeduction' | 'deductions' | 'advance' | 'net') => r.slips.reduce((t, s) => t.add(s[k]), D(0));
+      // Salaries expense = what the staff earned after attendance deductions (lateness, early leave, absence, unpaid leave).
+      const expense = sum('basic').add(sum('allowances')).add(sum('commission')).add(sum('bonus')).add(sum('overtime')).sub(sum('absenceDeduction')).sub(sum('lateDeduction')).sub(sum('earlyDeduction')).sub(sum('deductions'));
       return {
         do: 'post', date: r.dueDate ? dateOnlyStr(r.dueDate) : `${r.month}-28`, type: 'PAYROLL', description: `رواتب شهر ${r.month}`, reference: `PAY-${r.month}`,
         lines: nonZero([L(m.role('SALARIES'), expense, 0), L(m.role('SALARIES_PAYABLE'), 0, sum('net')), L(m.role('EMPLOYEE_ADVANCES'), 0, sum('advance'), { description: 'استرداد سلف' })]),

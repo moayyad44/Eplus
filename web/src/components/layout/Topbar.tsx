@@ -97,7 +97,7 @@ function NotificationBell() {
 function AttendanceButton() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ['attendance', 'me'], queryFn: () => api.get<{ record: { checkIn: string | null; checkOut: string | null } | null }>('/staff/attendance/me') });
+  const q = useQuery({ queryKey: ['attendance', 'me'], queryFn: () => api.get<{ record: { checkIn: string | null; checkOut: string | null } | null; canCheckIn?: boolean; canCheckOut?: boolean }>('/staff/attendance/me') });
   const [busy, setBusy] = useState(false);
   const rec = q.data?.record;
   const checkedIn = !!rec?.checkIn && !rec.checkOut;
@@ -113,7 +113,8 @@ function AttendanceButton() {
       setBusy(false);
     }
   };
-  if (q.isLoading || rec?.checkOut) return null;
+  // Hidden for a user without the permission for the next action (check-in or check-out).
+  if (q.isLoading || rec?.checkOut || (checkedIn ? q.data?.canCheckOut === false : q.data?.canCheckIn === false)) return null;
   return (
     <button
       onClick={act}

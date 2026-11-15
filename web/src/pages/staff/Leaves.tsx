@@ -17,7 +17,7 @@ export default function Leaves() {
   const { can } = useAuth();
   const manage = can('shifts.manage');
   const list = usePagedList<Row, { status?: string }>('leaves', '/staff/leaves', { filters: { status: manage ? 'PENDING' : undefined } });
-  const decide = useApiMutation((v: { id: string; status: string }) => api.post(`/staff/leaves/${v.id}/decision`, { status: v.status }), { invalidate: [['leaves'], ['schedule']] });
+  const decide = useApiMutation((v: { id: string; status: string }) => api.post(`/staff/leaves/${v.id}/decision`, { status: v.status }), { invalidate: [['leaves'], ['schedule'], ['attendance']] });
   const [open, setOpen] = useState(false);
   return (
     <div>
@@ -52,6 +52,7 @@ export default function Leaves() {
           {list.data && <Pagination {...list.data} onPage={list.setPage} />}
         </div>
       </Card>
+      <Balances />
       {open && <LeaveDialog manage={manage} onClose={() => setOpen(false)} />}
     </div>
   );
@@ -74,5 +75,28 @@ function LeaveDialog({ manage, onClose }: { manage: boolean; onClose: () => void
         <Field label={t('common.reason')}><Input value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>
       </div>
     </Dialog>
+  );
+}
+
+interface Bal { year: number; annualDays: number; sickDays: number; rows: { user: { id: string; fullName: string }; annualUsed: number; annualLeft: number; sickUsed: number; sickLeft: number; unpaidUsed: number; otherUsed: number }[] }
+/** Approved leave days of the year against the entitlements set in Settings → Medical (the employee sees his own). */
+function Balances() {
+  const { t } = useTranslation();
+  const q = useQuery({ queryKey: ['leaves', 'balances'], queryFn: () => api.get<Bal>('/staff/leaves/balances') });
+  if (!q.data) return null;
+  const left = (n: number) => <b className={n < 0 ? 'text-danger-700' : 'text-success-700'}>{n}</b>;
+  return (
+    <Card padded={false} className="mt-4">
+      <p className="p-4 pb-0 font-bold">{t('pol.leaves.balances', { y: q.data.year })}</p>
+      <div className="p-4">
+        <DataTable rows={q.data.rows} rowKey={(r) => r.user.id} columns={[
+          { key: 'u', header: t('staff.employee'), cell: (r) => <b>{r.user.fullName}</b> },
+          { key: 'a', header: `${t('pol.leaves.annual')} (${q.data.annualDays})`, cell: (r) => <>{t('pol.leaves.used')} {r.annualUsed} · {t('pol.leaves.left')} {left(r.annualLeft)}</> },
+          { key: 's', header: `${t('pol.leaves.sick')} (${q.data.sickDays})`, cell: (r) => <>{t('pol.leaves.used')} {r.sickUsed} · {t('pol.leaves.left')} {left(r.sickLeft)}</> },
+          { key: 'n', header: t('pol.leaves.unpaid'), hideOnMobile: true, cell: (r) => r.unpaidUsed || '—' },
+          { key: 'o', header: t('pol.leaves.other'), hideOnMobile: true, cell: (r) => r.otherUsed || '—' },
+        ]} />
+      </div>
+    </Card>
   );
 }

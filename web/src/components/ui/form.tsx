@@ -75,3 +75,21 @@ export function SearchInput({ value, onChange, placeholder, delay = 300, classNa
     </div>
   );
 }
+
+/** On/off switch for a policy, with a short description of its effect. */
+export function Switch({ checked, onChange, label, hint, disabled, className }: { checked: boolean; onChange: (v: boolean) => void; label: ReactNode; hint?: ReactNode; disabled?: boolean; className?: string }) {
+  return (
+    <label className={clsx('flex cursor-pointer items-start justify-between gap-3', disabled && 'cursor-not-allowed opacity-70', className)}>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-ink">{label}</span>
+        {hint && <span className="mt-0.5 block text-xs text-ink-muted">{hint}</span>}
+      </span>
+      <span className="relative mt-0.5 inline-flex shrink-0">
+        <input type="checkbox" role="switch" className="peer sr-only" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+        <span className={clsx('flex h-6 w-11 items-center rounded-full p-0.5 transition peer-focus-visible:ring-2 peer-focus-visible:ring-primary-300', checked ? 'justify-end bg-primary-500' : 'justify-start bg-line-strong')}>
+          <span className="h-5 w-5 rounded-full bg-white shadow" />
+        </span>
+      </span>
+    </label>
+  );
+}
