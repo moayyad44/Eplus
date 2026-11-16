@@ -401,11 +401,23 @@ staffRouter.get(
         ...(policy.overtime.enabled ? [{ overtimeMinutes: { gte: Math.max(1, policy.overtime.minMinutes) }, overtimeDecision: null }] : []),
       ] }),
     };
-    const [items, total, totals] = await Promise.all([
-      prisma.attendance.findMany({ where, ...paginate(q), orderBy: [{ date: 'desc' }], include: recordInclude }),
+    const scope = !can(req.ctx, 'attendance.manage') ? req.ctx.userId : q.userId;
+    // Shifts that are over with nothing recorded are listed too (not saved): «لم يسجل الحضور», needing review.
+    const virtual = !q.status || q.status === 'NO_RECORD' ? await missingShifts(scope, dateOnly(q.from), dateOnly(q.to)) : [];
+    const [page, total, totals] = await Promise.all([
+      virtual.length
+        ? prisma.attendance.findMany({ where, orderBy: [{ date: 'desc' }], include: recordInclude, take: 5000 })
+        : prisma.attendance.findMany({ where, ...paginate(q), orderBy: [{ date: 'desc' }], include: recordInclude }),
       prisma.attendance.count({ where }),
       prisma.attendance.aggregate({ where, _sum: { lateMinutes: true, earlyLeaveMinutes: true, workedMinutes: true, overtimeMinutes: true } }),
     ]);
+    const items = page as (typeof page[number] | VirtualRow)[];
+    if (virtual.length) {
+      items.push(...virtual);
+      items.sort((a, b) => b.date.getTime() - a.date.getTime() || a.user.fullName.localeCompare(b.user.fullName, 'ar'));
+      items.splice(0, (q.page - 1) * q.pageSize);
+      items.splice(q.pageSize);
+    }
     const ids = [...new Set(items.map((r) => r.userId))];
     const [emp, jobs, editors] = await Promise.all([
       empPolicies(prisma, ids),
@@ -418,12 +430,45 @@ staffRouter.get(
         ...r,
         jobTitle: jobs.find((j) => j.userId === r.userId)?.jobTitle ?? null,
         editedBy: editors.find((u) => u.id === r.editedById)?.fullName ?? null,
-        ...display(r, policy, emp.get(r.userId) ?? {}, now),
-      })), total, q),
+        ...('virtual' in r ? { state: 'NO_RECORD', review: 'NEEDS_REVIEW', pending: ['NO_RECORD'] } : display(r, policy, emp.get(r.userId) ?? {}, now)),
+      })), total + virtual.length, q),
       totals: totals._sum,
     });
   }),
 );
+
+type VirtualRow = ReturnType<typeof virtualRow>;
+const virtualRow = (a: Prisma.ShiftAssignmentGetPayload<{ include: { user: typeof userMini; shift: { select: { name: true } } } }>) => ({
+  id: `shift:${a.id}`, virtual: true as const, userId: a.userId!, date: a.date, checkIn: null, checkOut: null, status: 'NO_RECORD' as const,
+  lateMinutes: 0, earlyLeaveMinutes: 0, workedMinutes: 0, overtimeMinutes: 0, excused: false, lateDecision: null, lateExcuse: null, lateExcuseStatus: null,
+  overtimeDecision: null, editReason: null, editedById: null as string | null, notes: null, user: a.user!,
+  shiftAssignment: { id: a.id, date: a.date, startTime: a.startTime, endTime: a.endTime, shift: a.shift },
+});
+
+/** Shifts already over with no attendance record and no approved leave (one per employee and day). Nothing is saved. */
+async function missingShifts(userId: string | undefined, from: Date, to: Date) {
+  const now = new Date();
+  const list = await prisma.shiftAssignment.findMany({
+    where: { date: { gte: from, lte: to }, userId: userId ?? { not: null } },
+    include: { user: userMini, shift: { select: { name: true } } }, orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+  });
+  const ended = list.filter((a) => a.user && shiftWindow(a).end < now);
+  if (!ended.length) return [];
+  const users = [...new Set(ended.map((a) => a.userId!))];
+  const [recs, leaves] = await Promise.all([
+    prisma.attendance.findMany({ where: { userId: { in: users }, date: { gte: from, lte: to } }, select: { userId: true, date: true } }),
+    prisma.leave.findMany({ where: { userId: { in: users }, status: 'APPROVED', startDate: { lte: to }, endDate: { gte: from } }, select: { userId: true, startDate: true, endDate: true } }),
+  ]);
+  const seen = new Set(recs.map((r) => `${r.userId}|${dateOnlyStr(r.date)}`));
+  const out: VirtualRow[] = [];
+  for (const a of ended) {
+    const key = `${a.userId}|${dateOnlyStr(a.date)}`;
+    if (seen.has(key) || leaves.some((l) => l.userId === a.userId && l.startDate <= a.date && l.endDate >= a.date)) continue;
+    seen.add(key);
+    out.push(virtualRow(a));
+  }
+  return out;
+}
 
 // ── Manual overtime (recorded by a manager, with its reason) ──
 

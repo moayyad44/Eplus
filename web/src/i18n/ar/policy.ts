@@ -49,7 +49,7 @@ export default {
       absence: 'نوع الغياب', excused: 'غياب مبرر', unexcused: 'غياب غير مبرر', approveRecord: 'اعتماد السجل',
       reason: 'السبب', reasonReq: 'السبب (إلزامي)', edited: 'عُدّل: {{r}} — {{u}}',
       manualOt: 'العمل الإضافي اليدوي', manualOtHint: 'لعمل خارج الشفتات (مثلاً يوم بلا دوام). لا يُقبل وقت داخل شفت أو محسوب مسبقاً.', addOt: 'تسجيل عمل إضافي', from: 'من', to: 'إلى',
-      noShift: 'بدون شفت', statusNoRecord: 'لم يسجل الحضور', delete: 'حذف', deleteReason: 'سبب الحذف', byShift: 'حسب الجدول',
+      noShift: 'بدون شفت', statusNoRecord: 'لم يسجل الحضور', delete: 'حذف', deleteReason: 'سبب الحذف', byShift: 'حسب الجدول', recordNow: 'تسجيل', recordHint: 'شفت انتهى بدون أي تسجيل؛ سجّل حضوره أو غيابه أو إجازته',
     },
     leaves: { balances: 'أرصدة الإجازات {{y}}', annual: 'السنوية', sick: 'المرضية', unpaid: 'غير مدفوعة', other: 'أخرى', used: 'مستخدم', left: 'المتبقي' },
     pay: {

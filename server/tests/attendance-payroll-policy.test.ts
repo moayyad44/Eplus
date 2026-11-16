@@ -232,3 +232,22 @@ describe('payroll from attendance', () => {
     await prisma.salaryProfile.updateMany({ where: { userId: { in: [M, X, H] } }, data: { isActive: false } }); // out of other tests' months
   });
 });
+
+describe('attendance list: shifts over with nothing recorded', () => {
+  it('are listed as «لم يسجل الحضور» (not saved), a recorded day keeps its own status, a leave day is not listed', async () => {
+    const list = (await admin.get(`/api/staff/attendance?from=${day(1)}&to=${day(11)}&userId=${X}&pageSize=50`)).body;
+    const at = (d: number) => list.items.filter((r: { date: string }) => r.date.slice(0, 10) === day(d));
+    expect(at(1)).toEqual([expect.objectContaining({ virtual: true, state: 'NO_RECORD', review: 'NEEDS_REVIEW' })]);
+    expect(at(3)).toEqual([expect.objectContaining({ state: 'LATE' })]);
+    expect(at(3)[0].virtual).toBeUndefined();
+    expect(list.total).toBe(11); // 2 records (days 3, 4) + 9 shifts with nothing recorded
+    expect(await prisma.attendance.count({ where: { userId: X } })).toBe(2);
+    const m = (await admin.get(`/api/staff/attendance?from=${day(8)}&to=${day(9)}&userId=${M}`)).body;
+    expect(m.items.map((r: { state: string }) => r.state)).toEqual(['LEAVE']); // day 8: leave record; day 9: approved unpaid leave, nothing listed
+    const other = (await admin.get(`/api/staff/attendance?from=${day(1)}&to=${day(11)}&userId=${X}&status=LATE`)).body;
+    expect(other.items.every((r: { virtual?: boolean }) => !r.virtual)).toBe(true);
+    // the employee sees only his own
+    const own = (await clerk.get(`/api/staff/attendance?from=${day(1)}&to=${day(11)}`)).body;
+    expect(own.items.length).toBe(0);
+  });
+});

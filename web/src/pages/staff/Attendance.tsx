@@ -15,6 +15,8 @@ interface Row {
   id: string; userId: string; date: string; checkIn: string | null; checkOut: string | null; status: string; lateMinutes: number; earlyLeaveMinutes: number; workedMinutes: number; overtimeMinutes: number;
   notes: string | null; excused: boolean; lateDecision: string | null; lateExcuse: string | null; lateExcuseStatus: string | null; overtimeDecision: string | null; editReason: string | null; editedBy: string | null;
   jobTitle: string | null; state: string; review: 'OK' | 'APPROVED' | 'NEEDS_REVIEW'; pending: string[];
+  /** A shift that is over with nothing recorded: listed for review, not saved. */
+  virtual?: boolean;
   user: { id: string; fullName: string; staffType: string }; shiftAssignment: { startTime: string; endTime: string; shift: { name: string } } | null;
 }
 
@@ -49,6 +51,7 @@ function Records() {
   const [rec, setRec] = useState(false);
   const [fix, setFix] = useState<Row | null>(null);
   const [act, setAct] = useState<Row | null>(null);
+  const [create, setCreate] = useState<Row | null>(null);
   const canAct = (r: Row) => manage || can('attendance.late.approve') || can('attendance.overtime.approve') || (r.userId === user?.id && r.lateMinutes > 0 && policy.data?.late.allowExcuse);
   return (
     <>
@@ -100,13 +103,14 @@ function Records() {
             { key: 'w', header: t('staff.worked'), hideOnMobile: true, cell: (r) => (r.workedMinutes ? (r.workedMinutes / 60).toFixed(1) : '—') },
             { key: 'st', header: t('common.status'), cell: (r) => <><Badge tone={STATE_TONE[r.state] ?? 'neutral'} dot>{t(`pol.st.${r.state}`)}</Badge>{r.status === 'ABSENT' && r.excused && <span className="block text-xs text-ink-muted">{t('pol.a.excused')}</span>}</> },
             { key: 'rv', header: t('pol.a.review'), cell: (r) => <span title={r.pending.map((p) => t(`pol.pend.${p}`)).join('، ')}><Badge tone={REVIEW_TONE[r.review]} dot={false}>{t(`pol.rv.${r.review}`)}</Badge>{r.editReason && <span className="block max-w-40 truncate text-[11px] text-ink-muted" title={r.editReason}>{t('pol.a.edited', { r: r.editReason, u: r.editedBy ?? '' })}</span>}</span> },
-            { key: 'x', header: '', cell: (r) => canAct(r) && <Button size="sm" variant="ghost" icon={<MoreHorizontal className="h-4 w-4" />} onClick={() => setAct(r)}>{t('pol.a.actions')}</Button> },
+            { key: 'x', header: '', cell: (r) => r.virtual ? manage && <Button size="sm" variant="outline" icon={<Plus className="h-4 w-4" />} title={t('pol.a.recordHint')} onClick={() => setCreate(r)}>{t('pol.a.recordNow')}</Button> : canAct(r) && <Button size="sm" variant="ghost" icon={<MoreHorizontal className="h-4 w-4" />} onClick={() => setAct(r)}>{t('pol.a.actions')}</Button> },
           ]}
         />
         {list.data && <Pagination {...list.data} onPage={list.setPage} />}
       </Card>
       {rec && <RecordDialog users={users.data ?? []} onClose={() => setRec(false)} />}
       {fix && <RecordDialog users={users.data ?? []} onClose={() => setFix(null)} editing initial={{ userId: fix.user.id, date: fix.date.slice(0, 10), checkIn: hhmm(fix.checkIn), checkOut: hhmm(fix.checkOut), notes: fix.notes ?? '', status: ['ABSENT', 'LEAVE', 'NO_RECORD'].includes(fix.status) ? fix.status : '', excused: fix.excused, shift: fix.shiftAssignment ? { start: fix.shiftAssignment.startTime, end: fix.shiftAssignment.endTime } : undefined }} />}
+      {create && <RecordDialog users={users.data ?? []} onClose={() => setCreate(null)} initial={{ userId: create.userId, date: create.date.slice(0, 10), shift: create.shiftAssignment ? { start: create.shiftAssignment.startTime, end: create.shiftAssignment.endTime } : undefined }} />}
       {act && <ActionsDialog row={act} onEdit={() => { setFix(act); setAct(null); }} onClose={() => setAct(null)} />}
     </>
   );
