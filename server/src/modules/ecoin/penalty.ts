@@ -37,11 +37,12 @@ export async function evaluatePenalties(now = new Date()) {
     if (!ended.length) continue;
     const days = ended.map((x) => x.a.date);
     const [absent, leaves] = await Promise.all([
-      prisma.attendance.findMany({ where: { userId, date: { in: days }, status: { in: ['ABSENT', 'LEAVE'] } }, select: { date: true } }),
+      prisma.attendance.findMany({ where: { userId, date: { in: days }, status: { in: ['ABSENT', 'LEAVE'] } }, select: { date: true, shiftAssignmentId: true } }),
       prisma.leave.findMany({ where: { userId, status: 'APPROVED', startDate: { lte: days[days.length - 1] }, endDate: { gte: days[0] } } }),
     ]);
-    const missed = (d: Date) => absent.some((x) => x.date.getTime() === d.getTime()) || leaves.some((l) => l.startDate <= d && l.endDate >= d);
-    const worked = ended.filter((x) => !missed(x.a.date));
+    // Attendance is per shift: a missed shift does not cancel the other shift of the same day (a record outside any shift counts for the day).
+    const missed = (a: { id: string; date: Date }) => absent.some((x) => (x.shiftAssignmentId ? x.shiftAssignmentId === a.id : x.date.getTime() === a.date.getTime())) || leaves.some((l) => l.startDate <= a.date && l.endDate >= a.date);
+    const worked = ended.filter((x) => !missed(x.a));
     let through = since;
     for (let i = 0; i + cfg.penaltyWindowShifts <= worked.length; i += cfg.penaltyWindowShifts) {
       const block = worked.slice(i, i + cfg.penaltyWindowShifts);

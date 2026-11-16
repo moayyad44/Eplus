@@ -51,21 +51,32 @@ export async function calculate(tx: Tx, profile: SalaryProfile, from: Date, to: 
   };
   const otNeedsApproval = e.overtimeNeedsApproval ?? p.overtime.needsApproval;
 
-  let regularMinutes = 0, workDays = 0, absenceDays = 0, reviewDays = 0, lateCount = 0, lateMinutes = 0, earlyMinutes = 0;
+  // Records are per shift; days are counted once (a doctor with two shifts in a day works or misses one day).
+  let regularMinutes = 0, lateCount = 0, lateMinutes = 0, earlyMinutes = 0;
+  const present = new Set(att.filter((r) => r.checkIn || r.workedMinutes > 0).map((r) => dateOnlyStr(r.date)));
+  const review = new Set(att.filter((r) => !r.reviewedAt && (r.status === 'NO_RECORD' || (r.checkIn && !r.checkOut))).map((r) => dateOnlyStr(r.date)));
+  const absentDays = new Map<string, typeof att>();
+  for (const r of att) if (r.status === 'ABSENT' && !onLeave.has(dateOnlyStr(r.date))) absentDays.set(dateOnlyStr(r.date), [...(absentDays.get(dateOnlyStr(r.date)) ?? []), r]);
+  let absenceDays = 0;
+  for (const [day, recs] of absentDays) {
+    if (present.has(day)) {
+      // Missed one shift but worked another that day: shown, not deducted as a day (a deduction can be added on the slip).
+      for (const r of recs) items.push({ kind: 'ABSENCE', sourceType: 'attendance', sourceId: r.id, date: r.date, minutes: 0, days: 0, amount: zero, state: 'PARTIAL', note: 'غياب عن شفت مع دوام شفت آخر في نفس اليوم' });
+      continue;
+    }
+    absenceDays++;
+    const excused = recs.every((r) => r.excused);
+    const effect = excused ? p.leaves.excusedAbsence : p.leaves.unexcusedAbsence;
+    const days = EFFECT_DAYS[effect];
+    const state = hourly ? 'HOURLY' : !p.payroll.absenceAffects ? 'OFF' : days ? 'DEDUCTED' : 'PAID';
+    recs.forEach((r, i) => items.push(i === 0
+      ? { kind: 'ABSENCE', sourceType: 'attendance', sourceId: r.id, date: r.date, minutes: 0, days: 1, amount: state === 'DEDUCTED' ? dayValue.mul(days) : zero, state, note: `${excused ? 'غياب مبرر' : 'غياب غير مبرر'}${recs.length > 1 ? ` (${recs.length} شفتات، يوم واحد)` : ''}` }
+      : { kind: 'ABSENCE', sourceType: 'attendance', sourceId: r.id, date: r.date, minutes: 0, days: 0, amount: zero, state: 'SAME_DAY', note: 'شفت آخر في نفس يوم الغياب (يُحسب يوماً واحداً)' }));
+  }
+  const workDays = present.size, reviewDays = review.size;
   for (const r of att) {
-    const day = dateOnlyStr(r.date);
     const worked = Math.max(0, r.workedMinutes - r.overtimeMinutes);
     regularMinutes += worked;
-    if (r.checkIn || r.workedMinutes > 0) workDays++;
-    if (!r.reviewedAt && (r.status === 'NO_RECORD' || (r.checkIn && !r.checkOut))) reviewDays++;
-
-    if (r.status === 'ABSENT' && !onLeave.has(day)) {
-      absenceDays++;
-      const effect = r.excused ? p.leaves.excusedAbsence : p.leaves.unexcusedAbsence;
-      const days = EFFECT_DAYS[effect];
-      const state = hourly ? 'HOURLY' : !p.payroll.absenceAffects ? 'OFF' : days ? 'DEDUCTED' : 'PAID';
-      items.push({ kind: 'ABSENCE', sourceType: 'attendance', sourceId: r.id, date: r.date, minutes: 0, days: 1, amount: state === 'DEDUCTED' ? dayValue.mul(days) : zero, state, note: r.excused ? 'غياب مبرر' : 'غياب غير مبرر' });
-    }
 
     if (r.lateMinutes > 0) {
       lateCount++;

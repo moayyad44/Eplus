@@ -1943,10 +1943,13 @@ model Attendance {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
+  /// One record per shift: the shift's id, or "day" for attendance outside any scheduled shift.
+  slot String @default("day")
+
   user            User             @relation("AttendanceUser", fields: [userId], references: [id])
   shiftAssignment ShiftAssignment? @relation(fields: [shiftAssignmentId], references: [id])
 
-  @@unique([userId, date])
+  @@unique([userId, date, slot])
   @@index([date])
   @@index([shiftAssignmentId])
   @@map("attendance")

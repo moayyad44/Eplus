@@ -26,7 +26,7 @@ const policy = async (patch: Body) => {
 };
 const record = (userId: string, d: number, inT: string | null, outT: string | null, extra: Body = {}) =>
   admin.post('/api/staff/attendance', { userId, date: day(d), checkIn: inT ? at(d, inT) : null, checkOut: outT ? at(d, outT) : null, ...extra });
-const rowOf = (userId: string, d: number) => prisma.attendance.findUniqueOrThrow({ where: { userId_date: { userId, date: new Date(`${day(d)}T00:00:00Z`) } } });
+const rowOf = (userId: string, d: number) => prisma.attendance.findFirstOrThrow({ where: { userId, date: new Date(`${day(d)}T00:00:00Z`) }, orderBy: { checkIn: 'asc' } });
 type Item = { id: string; kind: string; state: string; amount: number; minutes: number; date: string; waived: boolean };
 type Slip = { id: string; userId: string; net: string; items: Item[]; [k: string]: unknown };
 const slipOf = (run: { slips: Slip[] }, userId: string) => run.slips.find((s) => s.userId === userId)!;
@@ -249,5 +249,72 @@ describe('attendance list: shifts over with nothing recorded', () => {
     // the employee sees only his own
     const own = (await clerk.get(`/api/staff/attendance?from=${day(1)}&to=${day(11)}`)).body;
     expect(own.items.length).toBe(0);
+  });
+});
+
+describe('two shifts in one day: one record per shift', () => {
+  const MAY = `${Y}-05`;
+  const dm = (d: number) => `${MAY}-${String(d).padStart(2, '0')}`;
+  const atm = (d: number, hhmm: string) => new Date(`${dm(d)}T${hhmm}:00`).toISOString();
+  const D = (d: number) => new Date(`${dm(d)}T00:00:00Z`);
+  let T: string, N: string, morning: Record<number, string>, evening: Record<number, string>, late: Record<number, string>;
+  const recs = (userId: string, d: number) => prisma.attendance.findMany({ where: { userId, date: D(d) }, include: { shiftAssignment: true }, orderBy: { checkIn: 'asc' } });
+
+  beforeAll(async () => {
+    const role = await prisma.role.findUniqueOrThrow({ where: { key: 'nurse' } });
+    const hash = await bcrypt.hash('Test@12345', 4);
+    [T, N] = (await Promise.all([prisma.user.create({ data: { username: 'two.backtoback', fullName: 'طبيب شفتين متصلين', passwordHash: hash, roleId: role.id } }), prisma.user.create({ data: { username: 'two.split', fullName: 'طبيب شفتين منفصلين', passwordHash: hash, roleId: role.id } })])).map((u) => u.id);
+    const ev = await prisma.shift.create({ data: { name: 'مسائي اختبار', type: 'EVENING', startTime: '16:00', endTime: '00:00' } });
+    morning = {}; evening = {}; late = {};
+    for (const d of [20, 22, 23]) {
+      morning[d] = (await prisma.shiftAssignment.create({ data: { userId: T, shiftId, date: D(d), startTime: '08:00', endTime: '16:00' } })).id;
+      evening[d] = (await prisma.shiftAssignment.create({ data: { userId: T, shiftId: ev.id, date: D(d), startTime: '16:00', endTime: '00:00' } })).id;
+    }
+    for (const d of [21, 24]) {
+      morning[d] = (await prisma.shiftAssignment.create({ data: { userId: N, shiftId, date: D(d), startTime: '08:00', endTime: '12:00' } })).id;
+      late[d] = (await prisma.shiftAssignment.create({ data: { userId: N, shiftId: ev.id, date: D(d), startTime: '20:00', endTime: '23:00' } })).id;
+    }
+    await admin.put(`/api/accounting/payroll/profiles/${T}`, { basic: 600 });
+  });
+
+  it('with several shifts that day the shift must be chosen (unless the arrival time shows which)', async () => {
+    const r = await admin.post('/api/staff/attendance', { userId: T, date: dm(20), status: 'ABSENT' });
+    expect([r.status, JSON.stringify(r.body)]).toEqual([400, expect.stringContaining('اختر الشفت')]);
+  });
+
+  it('back-to-back shifts worked without leaving: split at the shift end, each shift its own record', async () => {
+    const r = await admin.post('/api/staff/attendance', { userId: T, date: dm(20), assignmentId: morning[20], checkIn: atm(20, '08:00'), checkOut: atm(21, '00:00') });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const [a, b] = await recs(T, 20);
+    expect([a.shiftAssignmentId, a.status, a.workedMinutes, a.overtimeMinutes, a.lateMinutes]).toEqual([morning[20], 'PRESENT', 480, 0, 0]);
+    expect([b.shiftAssignmentId, b.status, b.workedMinutes, b.overtimeMinutes, b.lateMinutes, b.checkIn!.toISOString()]).toEqual([evening[20], 'PRESENT', 480, 0, 0, atm(20, '16:00')]);
+    // editing the first again moves the continuation, never duplicates it
+    expect((await admin.post('/api/staff/attendance', { userId: T, date: dm(20), assignmentId: morning[20], checkIn: atm(20, '08:00'), checkOut: atm(21, '00:30'), reason: 'تصحيح وقت المغادرة' })).status).toBe(200);
+    const after = await recs(T, 20);
+    expect(after.map((x) => [x.workedMinutes, x.overtimeMinutes])).toEqual([[480, 0], [510, 30]]);
+    const list = (await admin.get(`/api/staff/attendance?from=${dm(20)}&to=${dm(20)}&userId=${T}`)).body;
+    expect(list.items.map((x: { virtual?: boolean }) => !!x.virtual)).toEqual([false, false]);
+  });
+
+  it('separate shifts: arrival and leave per shift, lateness against its own shift; a shift with nothing is listed alone', async () => {
+    expect((await admin.post('/api/staff/attendance', { userId: N, date: dm(21), assignmentId: morning[21], checkIn: atm(21, '08:00'), checkOut: atm(21, '12:00') })).status).toBe(200);
+    expect((await admin.post('/api/staff/attendance', { userId: N, date: dm(21), assignmentId: late[21], checkIn: atm(21, '20:15'), checkOut: atm(21, '23:00') })).status).toBe(200);
+    const [a, b] = await recs(N, 21);
+    expect([a.status, a.workedMinutes, b.status, b.lateMinutes, b.workedMinutes]).toEqual(['PRESENT', 240, 'LATE', 15, 165]);
+    await admin.post('/api/staff/attendance', { userId: N, date: dm(24), assignmentId: morning[24], checkIn: atm(24, '08:00'), checkOut: atm(24, '12:00') });
+    const list = (await admin.get(`/api/staff/attendance?from=${dm(24)}&to=${dm(24)}&userId=${N}`)).body;
+    expect(list.items.map((x: { virtual?: boolean; shiftAssignment: { id: string } }) => [!!x.virtual, x.shiftAssignment.id]).sort()).toEqual([[false, morning[24]], [true, late[24]]].sort());
+  });
+
+  it('payroll counts days once: two missed shifts = one day; a missed shift with the other worked is not a day off', async () => {
+    for (const s of [morning[22], evening[22], evening[23]]) await prisma.attendance.create({ data: { userId: T, date: D(s === evening[23] ? 23 : 22), slot: s, shiftAssignmentId: s, status: 'ABSENT' } });
+    await admin.post('/api/staff/attendance', { userId: T, date: dm(23), assignmentId: morning[23], checkIn: atm(23, '08:00'), checkOut: atm(23, '16:00') });
+    const run = await admin.post('/api/accounting/payroll/runs', { month: MAY });
+    expect(run.status, JSON.stringify(run.body)).toBe(201);
+    const s = slipOf(run.body, T);
+    expect([s.workDays, n(s.absenceDays), n(s.absenceDeduction)]).toEqual([2, 1, 20]); // days 20 and 23 worked; day 22 absent once
+    const st = (d: number) => s.items.filter((i) => i.kind === 'ABSENCE' && i.date === dm(d)).map((i) => i.state).sort();
+    expect([st(22), st(23)]).toEqual([['DEDUCTED', 'SAME_DAY'], ['PARTIAL']]);
+    await prisma.salaryProfile.updateMany({ where: { userId: T }, data: { isActive: false } });
   });
 });

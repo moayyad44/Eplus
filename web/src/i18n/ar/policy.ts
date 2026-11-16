@@ -56,7 +56,7 @@ export default {
       recalc: 'إعادة الاحتساب من الدوام', recalcHint: 'يعيد قراءة الحضور والإجازات والإضافي حسب الإعدادات الحالية. المبالغ اليدوية والإعفاءات تبقى، ولا يتكرر أي بند.',
       details: 'التفاصيل', type: 'البند', workDays: 'أيام الدوام', absenceDays: 'أيام الغياب', leaveDays: 'أيام الإجازة', lateCount: 'مرات التأخير', lateMinutes: 'دقائق التأخير', earlyMinutes: 'دقائق الانصراف المبكر', overtimeHours: 'ساعات الإضافي المعتمدة', reviewDays: '{{n}} يوم يحتاج مراجعة',
       kind: { ABSENCE: 'غياب', LEAVE: 'إجازة', LATE: 'تأخير', EARLY: 'انصراف مبكر', OVERTIME: 'عمل إضافي', OVERTIME_MANUAL: 'إضافي يدوي' },
-      state: { APPROVED: 'معتمد', DEDUCTED: 'مخصوم', PAID: 'مدفوع', EXEMPT: 'معفى', EXCUSED: 'مبرر مقبول', PENDING: 'بانتظار الاعتماد', REJECTED: 'مرفوض', OFF: 'السياسة متوقفة', BELOW_MIN: 'أقل من الحد الأدنى', NOT_ELIGIBLE: 'غير مستحق', HOURLY: 'موظف بالساعة', WAIVED: 'معفى في الكشف' },
+      state: { APPROVED: 'معتمد', DEDUCTED: 'مخصوم', PAID: 'مدفوع', EXEMPT: 'معفى', EXCUSED: 'مبرر مقبول', PENDING: 'بانتظار الاعتماد', REJECTED: 'مرفوض', OFF: 'السياسة متوقفة', BELOW_MIN: 'أقل من الحد الأدنى', NOT_ELIGIBLE: 'غير مستحق', HOURLY: 'موظف بالساعة', WAIVED: 'معفى في الكشف', PARTIAL: 'داوم شفتاً آخر', SAME_DAY: 'نفس اليوم' },
       leaveType: { ANNUAL: 'سنوية', SICK: 'مرضية', UNPAID: 'غير مدفوعة', EMERGENCY: 'طارئة', OTHER: 'أخرى' },
       waive: 'إعفاء', unwaive: 'إلغاء الإعفاء', waiveReason: 'سبب الإعفاء', minutes: '{{m}} د', openRecord: 'فتح السجل',
       pending: 'تعديل بانتظار الاعتماد ({{u}})', acceptAdj: 'اعتماد التعديل', rejectAdj: 'رفض التعديل', pendingSent: 'تم حفظ التعديل بانتظار اعتماد المدير',

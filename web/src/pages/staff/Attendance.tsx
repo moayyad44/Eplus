@@ -17,7 +17,7 @@ interface Row {
   jobTitle: string | null; state: string; review: 'OK' | 'APPROVED' | 'NEEDS_REVIEW'; pending: string[];
   /** A shift that is over with nothing recorded: listed for review, not saved. */
   virtual?: boolean;
-  user: { id: string; fullName: string; staffType: string }; shiftAssignment: { startTime: string; endTime: string; shift: { name: string } } | null;
+  user: { id: string; fullName: string; staffType: string }; shiftAssignment: { id: string; startTime: string; endTime: string; shift: { name: string } } | null;
 }
 
 const STATE_TONE: Record<string, Tone> = { PRESENT: 'success', COMPLETE: 'success', LATE: 'warning', EARLY_LEAVE: 'warning', ABSENT: 'danger', LEAVE: 'violet', NO_RECORD: 'neutral', NO_CHECKOUT: 'warning' };
@@ -109,8 +109,8 @@ function Records() {
         {list.data && <Pagination {...list.data} onPage={list.setPage} />}
       </Card>
       {rec && <RecordDialog users={users.data ?? []} onClose={() => setRec(false)} />}
-      {fix && <RecordDialog users={users.data ?? []} onClose={() => setFix(null)} editing initial={{ userId: fix.user.id, date: fix.date.slice(0, 10), checkIn: hhmm(fix.checkIn), checkOut: hhmm(fix.checkOut), notes: fix.notes ?? '', status: ['ABSENT', 'LEAVE', 'NO_RECORD'].includes(fix.status) ? fix.status : '', excused: fix.excused, shift: fix.shiftAssignment ? { start: fix.shiftAssignment.startTime, end: fix.shiftAssignment.endTime } : undefined }} />}
-      {create && <RecordDialog users={users.data ?? []} onClose={() => setCreate(null)} initial={{ userId: create.userId, date: create.date.slice(0, 10), shift: create.shiftAssignment ? { start: create.shiftAssignment.startTime, end: create.shiftAssignment.endTime } : undefined }} />}
+      {fix && <RecordDialog users={users.data ?? []} onClose={() => setFix(null)} editing initial={{ userId: fix.user.id, date: fix.date.slice(0, 10), assignmentId: fix.shiftAssignment?.id ?? null, checkIn: hhmm(fix.checkIn), checkOut: hhmm(fix.checkOut), notes: fix.notes ?? '', status: ['ABSENT', 'LEAVE', 'NO_RECORD'].includes(fix.status) ? fix.status : '', excused: fix.excused, shift: fix.shiftAssignment ? { start: fix.shiftAssignment.startTime, end: fix.shiftAssignment.endTime } : undefined }} />}
+      {create && <RecordDialog users={users.data ?? []} onClose={() => setCreate(null)} initial={{ userId: create.userId, date: create.date.slice(0, 10), assignmentId: create.shiftAssignment?.id ?? null, shift: create.shiftAssignment ? { start: create.shiftAssignment.startTime, end: create.shiftAssignment.endTime } : undefined }} />}
       {act && <ActionsDialog row={act} onEdit={() => { setFix(act); setAct(null); }} onClose={() => setAct(null)} />}
     </>
   );
@@ -168,18 +168,36 @@ function ActionsDialog({ row: r, onEdit, onClose }: { row: Row; onEdit: () => vo
 }
 
 /** Manual attendance entry or correction (a correction needs a reason); also used from the schedule to fix an automatic «غائب». */
-export function RecordDialog({ users, onClose, initial, editing }: { users: UserLite[]; onClose: () => void; editing?: boolean; initial?: { userId: string; date: string; checkIn?: string; checkOut?: string; notes?: string; status?: string; excused?: boolean; shift?: { start: string; end: string } } }) {
+export function RecordDialog({ users, onClose, initial, editing }: { users: UserLite[]; onClose: () => void; editing?: boolean; initial?: { userId: string; date: string; assignmentId?: string | null; checkIn?: string; checkOut?: string; notes?: string; status?: string; excused?: boolean; shift?: { start: string; end: string } } }) {
   const { t } = useTranslation();
-  const [v, setV] = useState({ userId: initial?.userId ?? '', date: initial?.date ?? ymd(), status: initial?.status ?? '', checkIn: initial?.checkIn ?? '', checkOut: initial?.checkOut ?? '', notes: initial?.notes ?? '', excused: initial?.excused ?? false, reason: '' });
+  const [v, setV] = useState({ userId: initial?.userId ?? '', date: initial?.date ?? ymd(), status: initial?.status ?? '', checkIn: initial?.checkIn ?? '', checkOut: initial?.checkOut ?? '', notes: initial?.notes ?? '', excused: initial?.excused ?? false, reason: '', assignmentId: '' });
+  // Attendance is per shift: a record opened from a shift keeps it; a new entry picks the employee's shift that day.
+  const fixed = initial?.assignmentId !== undefined;
+  const shifts = useQuery({
+    queryKey: ['schedule', 'day', v.userId, v.date], enabled: !fixed && !!v.userId && !!v.date,
+    queryFn: () => api.get<{ assignments: { id: string; startTime: string; endTime: string; shift: { name: string } }[] }>('/staff/schedule', { from: v.date, to: v.date, userId: v.userId }),
+  });
+  const list = shifts.data?.assignments ?? [];
+  const chosen = fixed ? initial?.assignmentId ?? null : list.length === 1 ? list[0].id : v.assignmentId === 'none' ? null : v.assignmentId || undefined;
+  const sel = list.find((a) => a.id === chosen);
+  const shiftTimes = initial?.shift ?? (sel && { start: sel.startTime, end: sel.endTime });
   const at = (hm: string) => (hm ? new Date(`${v.date}T${hm}:00`).toISOString() : null);
   // Overnight shifts: a leave time earlier than the arrival time belongs to the next day.
   const out = () => { const o = at(v.checkOut); return o && v.checkIn && v.checkOut <= v.checkIn ? new Date(new Date(o).getTime() + 86_400_000).toISOString() : o; };
-  const save = useApiMutation(() => api.post('/staff/attendance', { userId: v.userId, date: v.date, status: v.status || undefined, checkIn: at(v.checkIn), checkOut: out(), excused: v.status === 'ABSENT' ? v.excused : undefined, notes: v.notes || null, reason: v.reason || undefined }), { invalidate: [['attendance'], ['schedule']], onSuccess: onClose });
+  const save = useApiMutation(() => api.post('/staff/attendance', { userId: v.userId, date: v.date, assignmentId: chosen, status: v.status || undefined, checkIn: at(v.checkIn), checkOut: out(), excused: v.status === 'ABSENT' ? v.excused : undefined, notes: v.notes || null, reason: v.reason || undefined }), { invalidate: [['attendance'], ['schedule']], onSuccess: onClose });
   return (
-    <Dialog open onClose={onClose} title={editing ? t('staff.fixRow') : t('staff.record')} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} disabled={editing && v.reason.trim().length < 3} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
+    <Dialog open onClose={onClose} title={editing ? t('staff.fixRow') : t('staff.record')} footer={<><Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} disabled={(editing && v.reason.trim().length < 3) || (!fixed && list.length > 1 && !v.assignmentId)} onClick={() => save.mutate(undefined)}>{t('common.save')}</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t('staff.employee')} required error={save.fieldErrors.userId}><Select value={v.userId} disabled={!!initial} onChange={(e) => setV({ ...v, userId: e.target.value })} placeholder={t('common.select')}>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}</Select></Field>
         <Field label={t('common.date')}><Input type="date" value={v.date} disabled={!!initial} onChange={(e) => setV({ ...v, date: e.target.value })} /></Field>
+        {!fixed && list.length > 1 && (
+          <Field label={t('staff.shift')} required className="sm:col-span-2">
+            <Select value={v.assignmentId} onChange={(e) => setV({ ...v, assignmentId: e.target.value })} placeholder={t('common.select')}>
+              {list.map((a) => <option key={a.id} value={a.id}>{a.shift.name} ({a.startTime}–{a.endTime})</option>)}
+              <option value="none">{t('pol.a.noShift')}</option>
+            </Select>
+          </Field>
+        )}
         <Field label={t('common.status')}>
           <Select value={v.status} onChange={(e) => setV({ ...v, status: e.target.value })}>
             <option value="">{t('enum.AttendanceStatus.PRESENT')}</option>
@@ -189,7 +207,7 @@ export function RecordDialog({ users, onClose, initial, editing }: { users: User
           </Select>
         </Field>
         <div className="flex items-end">{v.status === 'ABSENT' && <Checkbox label={t('pol.a.excused')} checked={v.excused} onChange={(e) => setV({ ...v, excused: e.target.checked })} />}
-          {!v.status && initial?.shift && <Button size="sm" variant="outline" onClick={() => setV({ ...v, checkIn: initial.shift!.start, checkOut: initial.shift!.end })}>{t('pol.a.byShift')} ({initial.shift.start}–{initial.shift.end})</Button>}</div>
+          {!v.status && shiftTimes && <Button size="sm" variant="outline" onClick={() => setV({ ...v, checkIn: shiftTimes.start, checkOut: shiftTimes.end })}>{t('pol.a.byShift')} ({shiftTimes.start}–{shiftTimes.end})</Button>}</div>
         {!v.status && <><Field label={t('staff.checkIn')}><Input type="time" value={v.checkIn} onChange={(e) => setV({ ...v, checkIn: e.target.value })} /></Field><Field label={t('staff.checkOut')}><Input type="time" value={v.checkOut} onChange={(e) => setV({ ...v, checkOut: e.target.value })} /></Field></>}
         <Field label={t('common.notes')} className="sm:col-span-2"><Input value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
         <Field label={t('pol.reason')} required={editing} hint={t('pol.reasonHint')} className="sm:col-span-2"><Input value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>

@@ -86,9 +86,12 @@ export async function runScan(now = new Date()) {
   for (const m of missing) {
     if (!m.userId) continue; // vacant slot
     const onLeave = await prisma.leave.findFirst({ where: { userId: m.userId, status: 'APPROVED', startDate: { lte: yesterday }, endDate: { gte: yesterday } } });
+    // A record that day outside any shift (not linked): left for the manager to review, never marked absent.
+    if (!onLeave && await prisma.attendance.findFirst({ where: { userId: m.userId, date: yesterday, slot: 'day' } })) continue;
+    // One record per shift: a doctor with two shifts gets a record for each.
     await prisma.attendance.upsert({
-      where: { userId_date: { userId: m.userId, date: yesterday } },
-      create: { userId: m.userId, date: yesterday, shiftAssignmentId: m.id, status: onLeave ? 'LEAVE' : autoAbsent ? 'ABSENT' : 'NO_RECORD', notes: 'تسجيل تلقائي' },
+      where: { userId_date_slot: { userId: m.userId, date: yesterday, slot: m.id } },
+      create: { userId: m.userId, date: yesterday, slot: m.id, shiftAssignmentId: m.id, status: onLeave ? 'LEAVE' : autoAbsent ? 'ABSENT' : 'NO_RECORD', notes: 'تسجيل تلقائي' },
       update: {},
     });
   }

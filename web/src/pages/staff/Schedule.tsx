@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CalendarPlus, ChevronLeft, ChevronRight, Printer } from 'lucide-react';
@@ -19,6 +19,8 @@ interface Shift { id: string; name: string; type: string; startTime: string; end
 
 const VACANT = '__vacant__';
 
+const statusTone = (st: string) => (['ABSENT', 'LATE_AND_EARLY'].includes(st) ? 'text-danger-600' : st === 'PRESENT' ? 'text-success-700' : st === 'NO_RECORD' ? 'text-ink-muted' : 'text-warning-700');
+
 export default function Schedule() {
   const { t } = useTranslation();
   const { can } = useAuth();
@@ -27,7 +29,7 @@ export default function Schedule() {
   const [anchor, setAnchor] = useState(new Date());
   const [staffType, setStaffType] = useState('');
   const [assigning, setAssigning] = useState(false);
-  const [fixing, setFixing] = useState<{ userId: string; date: string; checkIn?: string; checkOut?: string; existing?: boolean } | null>(null);
+  const [fixing, setFixing] = useState<{ userId: string; date: string; assignmentId?: string | null; checkIn?: string; checkOut?: string; existing?: boolean; shift?: { start: string; end: string } } | null>(null);
   const days = useMemo(() => {
     if (view === 'week') { const s = startOfWeek(anchor); return Array.from({ length: 7 }, (_, i) => addDays(s, i)); }
     const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -35,7 +37,7 @@ export default function Schedule() {
     return Array.from({ length: n }, (_, i) => addDays(first, i));
   }, [view, anchor]);
   const from = ymd(days[0]), to = ymd(days[days.length - 1]);
-  const q = useQuery({ queryKey: ['schedule', from, to, staffType], queryFn: () => api.get<{ assignments: Assignment[]; leaves: Leave[]; attendance: { userId: string; date: string; status: string }[] }>('/staff/schedule', { from, to, staffType: staffType || undefined }) });
+  const q = useQuery({ queryKey: ['schedule', from, to, staffType], queryFn: () => api.get<{ assignments: Assignment[]; leaves: Leave[]; attendance: { userId: string; date: string; status: string; shiftAssignmentId: string | null }[] }>('/staff/schedule', { from, to, staffType: staffType || undefined }) });
   const staff = useQuery({ queryKey: ['users', 'lookup'], queryFn: () => api.get<UserLite[]>('/users/lookup') });
   const del = useApiMutation((id: string) => api.del(`/staff/schedule/${id}`), { invalidate: [['schedule']], success: t('common.done') });
 
@@ -49,13 +51,18 @@ export default function Schedule() {
     const k = ymd(d);
     const as = q.data?.assignments.filter((a) => (uid === VACANT ? !a.userId : a.userId === uid) && a.date.slice(0, 10) === k) ?? [];
     const onLeave = q.data?.leaves.some((l) => l.userId === uid && l.startDate.slice(0, 10) <= k && l.endDate.slice(0, 10) >= k);
-    const att = q.data?.attendance.find((a) => a.userId === uid && a.date.slice(0, 10) === k);
-    // A shift that is over with nothing recorded (e.g. added to the schedule after its day): shown as «لم يسجل الحضور»,
-    // never as present or absent. A recorded attendance always wins.
+    // Attendance is per shift: each shift shows its own record. A record outside any shift is shown after the shifts.
+    const recs = q.data?.attendance.filter((a) => a.userId === uid && a.date.slice(0, 10) === k) ?? [];
+    const loose = recs.filter((r) => !r.shiftAssignmentId || !as.some((a) => a.id === r.shiftAssignmentId));
     const now = new Date();
-    const ended = as.some((a) => { const end = new Date(`${k}T${a.endTime}:00`); if (a.endTime <= a.startTime) end.setDate(end.getDate() + 1); return end < now; });
-    const noRecord = !att && !onLeave && uid !== VACANT && ended;
-    return { as, onLeave, att, noRecord };
+    // A shift that is over with nothing recorded (e.g. added to the schedule after its day): «لم يسجل الحضور», never
+    // present or absent. A recorded attendance always wins.
+    const shifts = as.map((a) => {
+      const end = new Date(`${k}T${a.endTime}:00`); if (a.endTime <= a.startTime) end.setDate(end.getDate() + 1);
+      const att = recs.find((r) => r.shiftAssignmentId === a.id);
+      return { a, att, noRecord: !att && !onLeave && uid !== VACANT && !loose.length && end < now };
+    });
+    return { as, onLeave, shifts, loose };
   };
   const shift = (dir: 1 | -1) => setAnchor((a) => (view === 'week' ? addDays(a, dir * 7) : new Date(a.getFullYear(), a.getMonth() + dir, 1)));
   const dayNames = t('staff.dayNames', { returnObjects: true }) as string[];
@@ -106,40 +113,42 @@ export default function Schedule() {
                       return (
                         <td key={ymd(d)} className="border-b border-line p-1 align-top">
                           {c.onLeave && <span className="mb-1 block rounded-lg bg-violet-50 px-1.5 py-1 text-center font-semibold text-violet-700">{t('staff.onLeave')}</span>}
-                          {c.as.map((a) => (
+                          {c.shifts.map(({ a, att, noRecord }) => (
+                            <Fragment key={a.id}>
+                              <button
+                                disabled={!can('shifts.manage')}
+                                onClick={async () => (await confirm({ message: `${t('staff.removeShift')}: ${a.user?.fullName ?? t('sx.vacant')} — ${a.shift.name} ${a.date.slice(0, 10)}`, danger: true })) && del.mutate(a.id)}
+                                className="mb-0.5 block w-full rounded-lg px-1.5 py-1 text-center font-semibold text-ink"
+                                style={{ background: `${a.shift.color ?? '#9dd6f4'}33`, borderInlineStart: `3px solid ${a.shift.color ?? '#6cc0ec'}` }}
+                                title={t('staff.removeShift')}
+                              >
+                                {a.shift.name}<span className="block font-normal" dir="ltr">{a.startTime}–{a.endTime}</span>
+                              </button>
+                              {(att || noRecord) && (
+                                <button
+                                  type="button"
+                                  disabled={!can('attendance.manage')}
+                                  onClick={() => setFixing({ userId: u.id, date: ymd(d), assignmentId: a.id, ...(!att && { checkIn: a.startTime, checkOut: a.endTime }), existing: !!att, shift: { start: a.startTime, end: a.endTime } })}
+                                  title={can('attendance.manage') ? t('staff.fixAttendance') : undefined}
+                                  className={clsx('mb-1 block w-full rounded text-center text-[10px] font-semibold enabled:hover:bg-surface-sunken enabled:hover:underline', statusTone(att?.status ?? 'NO_RECORD'))}
+                                >
+                                  {t(`enum.AttendanceStatus.${att?.status ?? 'NO_RECORD'}`)}
+                                </button>
+                              )}
+                            </Fragment>
+                          ))}
+                          {c.loose.map((r, i) => (
                             <button
-                              key={a.id}
-                              disabled={!can('shifts.manage')}
-                              onClick={async () => (await confirm({ message: `${t('staff.removeShift')}: ${a.user?.fullName ?? t('sx.vacant')} — ${a.shift.name} ${a.date.slice(0, 10)}`, danger: true })) && del.mutate(a.id)}
-                              className="mb-1 block w-full rounded-lg px-1.5 py-1 text-center font-semibold text-ink"
-                              style={{ background: `${a.shift.color ?? '#9dd6f4'}33`, borderInlineStart: `3px solid ${a.shift.color ?? '#6cc0ec'}` }}
-                              title={t('staff.removeShift')}
+                              key={i}
+                              type="button"
+                              disabled={!can('attendance.manage')}
+                              onClick={() => setFixing({ userId: u.id, date: ymd(d), assignmentId: null, existing: true })}
+                              title={can('attendance.manage') ? t('staff.fixAttendance') : undefined}
+                              className={clsx('block w-full rounded text-center text-[10px] font-semibold enabled:hover:bg-surface-sunken enabled:hover:underline', statusTone(r.status))}
                             >
-                              {a.shift.name}<span className="block font-normal" dir="ltr">{a.startTime}–{a.endTime}</span>
+                              {t(`enum.AttendanceStatus.${r.status}`)}
                             </button>
                           ))}
-                          {c.att && (
-                            <button
-                              type="button"
-                              disabled={!can('attendance.manage')}
-                              onClick={() => setFixing({ userId: u.id, date: ymd(d), checkIn: c.as[0]?.startTime, checkOut: c.as[0]?.endTime, existing: true })}
-                              title={can('attendance.manage') ? t('staff.fixAttendance') : undefined}
-                              className={clsx('block w-full rounded text-center text-[10px] font-semibold enabled:hover:bg-surface-sunken enabled:hover:underline', ['ABSENT', 'LATE_AND_EARLY'].includes(c.att.status) ? 'text-danger-600' : c.att.status === 'PRESENT' ? 'text-success-700' : c.att.status === 'NO_RECORD' ? 'text-ink-muted' : 'text-warning-700')}
-                            >
-                              {t(`enum.AttendanceStatus.${c.att.status}`)}
-                            </button>
-                          )}
-                          {c.noRecord && (
-                            <button
-                              type="button"
-                              disabled={!can('attendance.manage')}
-                              onClick={() => setFixing({ userId: u.id, date: ymd(d), checkIn: c.as[0]?.startTime, checkOut: c.as[0]?.endTime })}
-                              title={can('attendance.manage') ? t('staff.fixAttendance') : undefined}
-                              className="block w-full rounded text-center text-[10px] font-semibold text-ink-muted enabled:hover:bg-surface-sunken enabled:hover:underline"
-                            >
-                              {t('enum.AttendanceStatus.NO_RECORD')}
-                            </button>
-                          )}
                         </td>
                       );
                     })}

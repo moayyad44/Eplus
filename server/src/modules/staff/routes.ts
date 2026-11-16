@@ -38,7 +38,7 @@ staffRouter.get(
         where: { status: 'APPROVED', startDate: { lte: range.lte }, endDate: { gte: range.gte }, ...(q.userId && { userId: q.userId }), user: userFilter },
         include: { user: userMini },
       }),
-      prisma.attendance.findMany({ where: { date: range, ...(q.userId && { userId: q.userId }) }, select: { userId: true, date: true, status: true } }),
+      prisma.attendance.findMany({ where: { date: range, ...(q.userId && { userId: q.userId }) }, select: { userId: true, date: true, status: true, shiftAssignmentId: true } }),
     ]);
     res.json({ assignments, leaves, attendance });
   }),
@@ -203,23 +203,61 @@ async function syncLeave(tx: Tx, l: { userId: string; startDate: Date; endDate: 
 const reasonStr = z.string().trim().min(3, 'اكتب السبب (3 أحرف على الأقل)').max(300);
 const recordInclude = { user: userMini, shiftAssignment: { select: { id: true, date: true, startTime: true, endTime: true, shift: { select: { name: true } } } } } as const;
 
+/** Records are kept per shift: the slot is the shift's id, or «day» for attendance outside any shift. */
+const DAY = 'day';
+
+/**
+ * Which record an entry belongs to. An explicit shift (or null = no shift) is used as given; otherwise the employee's only
+ * shift that day, or the one the arrival time falls in (from 3 hours before its start to its end). Otherwise the shift
+ * must be chosen.
+ */
+async function resolveSlot(tx: Tx, userId: string, date: Date, assignmentId: string | null | undefined, at?: Date | null) {
+  if (assignmentId === null) return { slot: DAY, assignment: null };
+  if (assignmentId) {
+    const a = await tx.shiftAssignment.findUnique({ where: { id: assignmentId } });
+    // A shift that later changed hands keeps the record of the employee who worked it.
+    const known = a && (a.userId === userId || await tx.attendance.findUnique({ where: { userId_date_slot: { userId, date, slot: a.id } } }));
+    if (!a || !known || a.date.getTime() !== date.getTime()) throw badRequest('الشفت غير موجود لهذا الموظف في هذا اليوم');
+    return { slot: a.id, assignment: a };
+  }
+  const list = await tx.shiftAssignment.findMany({ where: { userId, date }, orderBy: { startTime: 'asc' } });
+  if (list.length > 1) {
+    const fits = at ? list.filter((a) => { const w = shiftWindow(a); return at >= new Date(w.start.getTime() - 3 * 3_600_000) && at <= w.end; }) : [];
+    const pick = fits.sort((x, y) => Math.abs(shiftWindow(x).start.getTime() - at!.getTime()) - Math.abs(shiftWindow(y).start.getTime() - at!.getTime()))[0];
+    if (!pick) throw badRequest('للموظف أكثر من شفت في هذا اليوم؛ اختر الشفت');
+    return { slot: pick.id, assignment: pick };
+  }
+  return list[0] ? { slot: list[0].id, assignment: list[0] } : { slot: DAY, assignment: null };
+}
+
 async function upsertAttendance(
   tx: Tx, ctx: Ctx, userId: string, day: string,
   patch: { checkIn?: Date | null; checkOut?: Date | null; status?: AttendanceStatus; notes?: string | null; assignmentId?: string | null; excused?: boolean },
   edit?: { reason: string },
-) {
+): Promise<Prisma.AttendanceGetPayload<object>> {
   const date = dateOnly(day);
   const policy = await getPolicy(tx);
   await assertOpen(tx, [date], policy);
-  const existing = await tx.attendance.findUnique({ where: { userId_date: { userId, date } } });
-  const linked = patch.assignmentId ?? existing?.shiftAssignmentId;
-  let assignment = linked ? await tx.shiftAssignment.findUnique({ where: { id: linked } }) : null;
-  // The slot may have changed hands since (swap, release): only the employee's own shift counts.
-  if (!assignment || assignment.userId !== userId) assignment = await tx.shiftAssignment.findFirst({ where: { userId, date }, orderBy: { startTime: 'asc' } });
+  const { slot, assignment } = await resolveSlot(tx, userId, date, patch.assignmentId);
+  const existing = await tx.attendance.findUnique({ where: { userId_date_slot: { userId, date, slot } } });
   const checkIn = patch.checkIn !== undefined ? patch.checkIn : existing?.checkIn ?? null;
-  const checkOut = patch.checkOut !== undefined ? patch.checkOut : existing?.checkOut ?? null;
+  let checkOut = patch.checkOut !== undefined ? patch.checkOut : existing?.checkOut ?? null;
   if (checkOut && !checkIn) throw badRequest('لا يمكن تسجيل مغادرة بدون حضور');
   if (checkIn && checkOut && checkOut < checkIn) throw badRequest('وقت المغادرة قبل وقت الحضور');
+  // Continuous presence over back-to-back shifts: this shift ends at its scheduled end, the next shift starts there and
+  // gets its own record (unless the employee already checked in to it separately).
+  let tail: { next: { id: string; date: Date }; at: Date; out: Date } | null = null;
+  if (assignment && checkIn && checkOut) {
+    const w = shiftWindow(assignment);
+    if (checkOut > w.end) {
+      const others = await tx.shiftAssignment.findMany({ where: { userId, id: { not: assignment.id }, date: { gte: addDays(date, -1), lte: addDays(date, 1) } } });
+      const next = others.map((o) => ({ o, s: shiftWindow(o).start })).filter((x) => x.s > w.start && x.s <= w.end && x.s < checkOut!).sort((x, y) => x.s.getTime() - y.s.getTime())[0]?.o;
+      if (next) {
+        const own = await tx.attendance.findUnique({ where: { userId_date_slot: { userId, date: next.date, slot: next.id } } });
+        if (!own?.checkIn || own.checkIn.getTime() === w.end.getTime()) { tail = { next, at: w.end, out: checkOut }; checkOut = w.end; }
+      }
+    }
+  }
   const ev = await evaluateFor(tx, userId, assignment, checkIn, checkOut, policy);
   const status = patch.status && ['ABSENT', 'LEAVE', 'NO_RECORD'].includes(patch.status) ? patch.status : ev.status;
   const data = {
@@ -233,30 +271,35 @@ async function upsertAttendance(
   };
   const row = existing
     ? await tx.attendance.update({ where: { id: existing.id }, data })
-    : await tx.attendance.create({ data: { ...data, userId, date } });
+    : await tx.attendance.create({ data: { ...data, userId, date, slot } });
   await audit(tx, ctx, { action: existing ? 'attendance.update' : 'attendance.create', entityType: 'attendance', entityId: row.id, summary: edit ? `تعديل سجل حضور ${day} — السبب: ${edit.reason}` : undefined, before: existing, after: row });
   if (ev.lateMinutes > 0 && (!existing || !existing.lateMinutes)) {
     const u = await tx.user.findUnique({ where: { id: userId }, select: { fullName: true } });
     await notifyPermission('attendance.manage', {
-      type: 'STAFF_LATE', title: `تأخر موظف: ${u?.fullName}`, body: `تأخير ${ev.lateMinutes} دقيقة`, link: '/staff/attendance', dedupeKey: `late:${userId}:${day}`,
+      type: 'STAFF_LATE', title: `تأخر موظف: ${u?.fullName}`, body: `تأخير ${ev.lateMinutes} دقيقة`, link: '/staff/attendance', dedupeKey: `late:${userId}:${slot}:${day}`,
     }, tx, userId);
   }
+  if (tail) await upsertAttendance(tx, ctx, userId, dateOnlyStr(tail.next.date), { assignmentId: tail.next.id, checkIn: tail.at, checkOut: tail.out, notes: 'دوام متصل بالشفت السابق' }, edit);
   return row;
 }
 
-/** Today's record, or the one still open (an overnight shift, or a shift that starts after midnight). */
+/** The record still open (an overnight shift, or a shift that starts after midnight). */
 async function myOpenRecord(db: Tx | typeof prisma, userId: string, now: Date) {
   const today = dateOnly(now);
-  return db.attendance.findFirst({ where: { userId, checkIn: { not: null }, checkOut: null, date: { gte: addDays(today, -1), lte: addDays(today, 1) } }, orderBy: { date: 'desc' } });
+  return db.attendance.findFirst({ where: { userId, checkIn: { not: null }, checkOut: null, date: { gte: addDays(today, -1), lte: addDays(today, 1) } }, orderBy: [{ date: 'desc' }, { checkIn: 'desc' }] });
 }
 
 staffRouter.get(
   '/attendance/me',
   ah(async (req, res) => {
     const now = new Date();
-    const open = await myOpenRecord(prisma, req.ctx.userId, now);
-    const assignment = open?.shiftAssignmentId ? await prisma.shiftAssignment.findUnique({ where: { id: open.shiftAssignmentId }, include: { shift: { select: { name: true } } } }) : await shiftAt(prisma, req.ctx.userId, now);
-    const record = open ?? (assignment ? await prisma.attendance.findUnique({ where: { userId_date: { userId: req.ctx.userId, date: assignment.date } } }) : null) ?? await prisma.attendance.findUnique({ where: { userId_date: { userId: req.ctx.userId, date: dateOnly(now) } } });
+    const userId = req.ctx.userId;
+    const open = await myOpenRecord(prisma, userId, now);
+    const assignment = open?.shiftAssignmentId ? await prisma.shiftAssignment.findUnique({ where: { id: open.shiftAssignmentId }, include: { shift: { select: { name: true } } } }) : await shiftAt(prisma, userId, now);
+    // The current shift's record (none yet → the check-in button shows); outside any shift, today's latest record.
+    const record = open
+      ?? (assignment ? await prisma.attendance.findUnique({ where: { userId_date_slot: { userId, date: assignment.date, slot: assignment.id } } })
+        : await prisma.attendance.findFirst({ where: { userId, date: dateOnly(now) }, orderBy: { updatedAt: 'desc' } }));
     res.json({ record, assignment, canCheckIn: can(req.ctx, 'attendance.check_in'), canCheckOut: can(req.ctx, 'attendance.check_out') });
   }),
 );
@@ -270,7 +313,7 @@ staffRouter.post(
       if (await myOpenRecord(tx, req.ctx.userId, now)) throw badRequest('أنت مسجّل حضور حالياً؛ سجّل المغادرة أولاً');
       const a = await shiftAt(tx, req.ctx.userId, now);
       const day = a ? dateOnlyStr(a.date) : ymd(now);
-      const existing = await tx.attendance.findUnique({ where: { userId_date: { userId: req.ctx.userId, date: dateOnly(day) } } });
+      const existing = await tx.attendance.findUnique({ where: { userId_date_slot: { userId: req.ctx.userId, date: dateOnly(day), slot: a?.id ?? DAY } } });
       if (existing?.checkIn) throw badRequest(a ? 'تم تسجيل الحضور لهذا الشفت مسبقاً' : 'تم تسجيل الحضور مسبقاً اليوم');
       return upsertAttendance(tx, req.ctx, req.ctx.userId, day, { checkIn: now, assignmentId: a?.id ?? null });
     });
@@ -289,7 +332,7 @@ staffRouter.post(
         const done = await tx.attendance.findFirst({ where: { userId: req.ctx.userId, date: dateOnly(now), checkOut: { not: null } } });
         throw badRequest(done ? 'تم تسجيل المغادرة مسبقاً' : 'لا يوجد تسجيل حضور؛ سجّل الحضور أولاً قبل تسجيل المغادرة');
       }
-      return upsertAttendance(tx, req.ctx, req.ctx.userId, dateOnlyStr(rec.date), { checkOut: now });
+      return upsertAttendance(tx, req.ctx, req.ctx.userId, dateOnlyStr(rec.date), { checkOut: now, assignmentId: rec.slot === DAY ? null : rec.slot });
     });
     res.json(row);
   }),
@@ -301,15 +344,17 @@ staffRouter.post(
   requirePerm('attendance.manage'),
   ah(async (req, res) => {
     const body = parse(
-      z.object({ userId: z.string().uuid(), date: ymdStr, checkIn: optionalDate, checkOut: optionalDate, status: z.nativeEnum(AttendanceStatus).optional(), excused: z.boolean().optional(), notes: nullableStr(300), reason: z.string().trim().max(300).optional() }),
+      z.object({ userId: z.string().uuid(), date: ymdStr, assignmentId: z.string().uuid().nullable().optional(), checkIn: optionalDate, checkOut: optionalDate, status: z.nativeEnum(AttendanceStatus).optional(), excused: z.boolean().optional(), notes: nullableStr(300), reason: z.string().trim().max(300).optional() }),
       req.body,
     );
     const off = ['ABSENT', 'LEAVE', 'NO_RECORD'].includes(body.status ?? '');
     if (!body.checkIn && !off) throw badRequest('أدخل وقت الحضور أو اختر غياب/إجازة');
     const row = await prisma.$transaction(async (tx) => {
-      const existing = await tx.attendance.findUnique({ where: { userId_date: { userId: body.userId, date: dateOnly(body.date) } } });
+      const { slot } = await resolveSlot(tx, body.userId, dateOnly(body.date), body.assignmentId, off ? null : body.checkIn);
+      const existing = await tx.attendance.findUnique({ where: { userId_date_slot: { userId: body.userId, date: dateOnly(body.date), slot } } });
       if (existing && (body.reason ?? '').length < 3) throw badRequest('اكتب سبب تعديل السجل');
       return upsertAttendance(tx, req.ctx, body.userId, body.date, {
+        assignmentId: slot === DAY ? null : slot,
         checkIn: off ? null : body.checkIn ?? null,
         checkOut: off ? null : body.checkOut ?? null,
         status: body.status, excused: body.excused, notes: body.notes,
@@ -445,7 +490,7 @@ const virtualRow = (a: Prisma.ShiftAssignmentGetPayload<{ include: { user: typeo
   shiftAssignment: { id: a.id, date: a.date, startTime: a.startTime, endTime: a.endTime, shift: a.shift },
 });
 
-/** Shifts already over with no attendance record and no approved leave (one per employee and day). Nothing is saved. */
+/** Shifts already over with no attendance record of their own and no approved leave. Nothing is saved. */
 async function missingShifts(userId: string | undefined, from: Date, to: Date) {
   const now = new Date();
   const list = await prisma.shiftAssignment.findMany({
@@ -456,15 +501,16 @@ async function missingShifts(userId: string | undefined, from: Date, to: Date) {
   if (!ended.length) return [];
   const users = [...new Set(ended.map((a) => a.userId!))];
   const [recs, leaves] = await Promise.all([
-    prisma.attendance.findMany({ where: { userId: { in: users }, date: { gte: from, lte: to } }, select: { userId: true, date: true } }),
+    prisma.attendance.findMany({ where: { userId: { in: users }, date: { gte: from, lte: to } }, select: { userId: true, date: true, slot: true, checkIn: true } }),
     prisma.leave.findMany({ where: { userId: { in: users }, status: 'APPROVED', startDate: { lte: to }, endDate: { gte: from } }, select: { userId: true, startDate: true, endDate: true } }),
   ]);
-  const seen = new Set(recs.map((r) => `${r.userId}|${dateOnlyStr(r.date)}`));
+  // Per shift: each of a doctor's shifts that day has its own record. Attendance recorded outside any shift that day
+  // (not linked) is shown itself and the day's shifts are not listed again.
+  const seen = new Set(recs.map((r) => r.slot));
+  const loose = new Set(recs.filter((r) => r.slot === 'day').map((r) => `${r.userId}|${dateOnlyStr(r.date)}`));
   const out: VirtualRow[] = [];
   for (const a of ended) {
-    const key = `${a.userId}|${dateOnlyStr(a.date)}`;
-    if (seen.has(key) || leaves.some((l) => l.userId === a.userId && l.startDate <= a.date && l.endDate >= a.date)) continue;
-    seen.add(key);
+    if (seen.has(a.id) || loose.has(`${a.userId}|${dateOnlyStr(a.date)}`) || leaves.some((l) => l.userId === a.userId && l.startDate <= a.date && l.endDate >= a.date)) continue;
     out.push(virtualRow(a));
   }
   return out;
