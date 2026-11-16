@@ -27,7 +27,7 @@ export default function Schedule() {
   const [anchor, setAnchor] = useState(new Date());
   const [staffType, setStaffType] = useState('');
   const [assigning, setAssigning] = useState(false);
-  const [fixing, setFixing] = useState<{ userId: string; date: string; checkIn?: string; checkOut?: string } | null>(null);
+  const [fixing, setFixing] = useState<{ userId: string; date: string; checkIn?: string; checkOut?: string; existing?: boolean } | null>(null);
   const days = useMemo(() => {
     if (view === 'week') { const s = startOfWeek(anchor); return Array.from({ length: 7 }, (_, i) => addDays(s, i)); }
     const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -50,7 +50,12 @@ export default function Schedule() {
     const as = q.data?.assignments.filter((a) => (uid === VACANT ? !a.userId : a.userId === uid) && a.date.slice(0, 10) === k) ?? [];
     const onLeave = q.data?.leaves.some((l) => l.userId === uid && l.startDate.slice(0, 10) <= k && l.endDate.slice(0, 10) >= k);
     const att = q.data?.attendance.find((a) => a.userId === uid && a.date.slice(0, 10) === k);
-    return { as, onLeave, att };
+    // A shift that is over with nothing recorded (e.g. added to the schedule after its day): shown as «لم يسجل الحضور»,
+    // never as present or absent. A recorded attendance always wins.
+    const now = new Date();
+    const ended = as.some((a) => { const end = new Date(`${k}T${a.endTime}:00`); if (a.endTime <= a.startTime) end.setDate(end.getDate() + 1); return end < now; });
+    const noRecord = !att && !onLeave && uid !== VACANT && ended;
+    return { as, onLeave, att, noRecord };
   };
   const shift = (dir: 1 | -1) => setAnchor((a) => (view === 'week' ? addDays(a, dir * 7) : new Date(a.getFullYear(), a.getMonth() + dir, 1)));
   const dayNames = t('staff.dayNames', { returnObjects: true }) as string[];
@@ -117,11 +122,22 @@ export default function Schedule() {
                             <button
                               type="button"
                               disabled={!can('attendance.manage')}
-                              onClick={() => setFixing({ userId: u.id, date: ymd(d), checkIn: c.as[0]?.startTime, checkOut: c.as[0]?.endTime })}
+                              onClick={() => setFixing({ userId: u.id, date: ymd(d), checkIn: c.as[0]?.startTime, checkOut: c.as[0]?.endTime, existing: true })}
                               title={can('attendance.manage') ? t('staff.fixAttendance') : undefined}
-                              className={clsx('block w-full rounded text-center text-[10px] font-semibold enabled:hover:bg-surface-sunken enabled:hover:underline', ['ABSENT', 'LATE_AND_EARLY'].includes(c.att.status) ? 'text-danger-600' : c.att.status === 'PRESENT' ? 'text-success-700' : 'text-warning-700')}
+                              className={clsx('block w-full rounded text-center text-[10px] font-semibold enabled:hover:bg-surface-sunken enabled:hover:underline', ['ABSENT', 'LATE_AND_EARLY'].includes(c.att.status) ? 'text-danger-600' : c.att.status === 'PRESENT' ? 'text-success-700' : c.att.status === 'NO_RECORD' ? 'text-ink-muted' : 'text-warning-700')}
                             >
                               {t(`enum.AttendanceStatus.${c.att.status}`)}
+                            </button>
+                          )}
+                          {c.noRecord && (
+                            <button
+                              type="button"
+                              disabled={!can('attendance.manage')}
+                              onClick={() => setFixing({ userId: u.id, date: ymd(d), checkIn: c.as[0]?.startTime, checkOut: c.as[0]?.endTime })}
+                              title={can('attendance.manage') ? t('staff.fixAttendance') : undefined}
+                              className="block w-full rounded text-center text-[10px] font-semibold text-ink-muted enabled:hover:bg-surface-sunken enabled:hover:underline"
+                            >
+                              {t('enum.AttendanceStatus.NO_RECORD')}
                             </button>
                           )}
                         </td>
@@ -134,7 +150,7 @@ export default function Schedule() {
           </div>
         )}
       </Card>
-      {fixing && <RecordDialog users={staff.data ?? []} editing initial={fixing} onClose={() => setFixing(null)} />}
+      {fixing && <RecordDialog users={staff.data ?? []} editing={!!fixing.existing} initial={fixing} onClose={() => setFixing(null)} />}
       {assigning && <AssignDialog staff={staff.data ?? []} onClose={() => setAssigning(false)} defaultFrom={from} defaultTo={to} />}
     </div>
   );
