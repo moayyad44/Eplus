@@ -41,6 +41,7 @@ export const PERMISSIONS = {
   'invoices.view': { module: 'billing', description: 'عرض الفواتير' },
   'invoices.create': { module: 'billing', description: 'إنشاء وإصدار الفواتير' },
   'invoices.update': { module: 'billing', description: 'تعديل الفواتير المسودة' },
+  'invoices.without_visit': { module: 'billing', description: 'إنشاء فاتورة بدون زيارة (بيع مباشر أو تصحيح) عند تفعيل «الفاتورة تحتاج زيارة»' },
   'invoices.discount': { module: 'billing', description: 'منح الخصومات' },
   'invoices.price_override': { module: 'billing', description: 'تعديل سعر البند' },
   'invoices.cancel': { module: 'billing', description: 'إلغاء الفواتير' },
@@ -223,7 +224,7 @@ export const DEFAULT_ROLES: { key: string; name: string; description: string; pe
     permissions: [
       'patients.view', 'patients.create', 'patients.update', 'queue.view', 'queue.view_all', 'queue.manage',
       'queue.call', 'queue.reorder', 'appointments.view', 'appointments.manage', 'invoices.view', 'invoices.create',
-      'invoices.update', 'payments.create', 'attachments.upload', 'shifts.view', 'attendance.view', 'attendance.check_in', 'attendance.check_out',
+      'invoices.update', 'invoices.without_visit', 'payments.create', 'attachments.upload', 'shifts.view', 'attendance.view', 'attendance.check_in', 'attendance.check_out',
       'insurance.view', 'insurance.create', 'insurance.update', 'insurance.verify', 'insurance.authorization.manage', 'insurance.claim.create',
     ],
   },

@@ -50,6 +50,9 @@ export interface InvoiceInput {
 export async function buildInvoice(tx: Tx, ctx: Ctx, input: InvoiceInput) {
   const patient = await tx.patient.findFirst({ where: { id: input.patientId, deletedAt: null } });
   if (!patient) throw notFound('المريض غير موجود');
+  if (!input.visitId && (await getSetting('financial', tx)).requireVisit && !can(ctx, 'invoices.without_visit')) {
+    throw badRequest('الفاتورة تحتاج زيارة: افتح زيارة للمريض وأنشئ الفاتورة منها (أو اطلب صلاحية «فاتورة بدون زيارة»)');
+  }
 
   let doctorId = input.doctorId ?? null;
   let payer: 'SELF_PAY' | 'INSURANCE' = input.payerType ?? 'SELF_PAY';

@@ -25,6 +25,8 @@ export const settingSchemas = {
     invoiceDueDays: z.number().int().min(0).max(365).default(30),
     invoiceFooter: z.string().max(500).default('شكراً لثقتكم'),
     thermalReceipt: z.boolean().default(false),
+    /** An invoice must come from a visit; only holders of invoices.without_visit may invoice without one. */
+    requireVisit: z.boolean().default(false),
   }),
   medical: z.object({
     defaultAppointmentMinutes: z.number().int().min(5).max(240).default(15),

@@ -1,6 +1,6 @@
 export default {
   billing: {
-    invoices: 'الفواتير', invoicesSubtitle: 'جميع الفواتير وحالات الدفع', invoiceNumber: 'رقم الفاتورة', newInvoice: 'فاتورة جديدة', editDraft: 'تعديل المسودة',
+    invoices: 'الفواتير', invoicesSubtitle: 'جميع الفواتير وحالات الدفع', invoiceNumber: 'رقم الفاتورة', noVisitOnly: 'بدون زيارة فقط', needsVisit: 'الفاتورة تحتاج زيارة: افتح زيارة للمريض وأنشئ الفاتورة منها. لا تملك صلاحية «فاتورة بدون زيارة».', newInvoice: 'فاتورة جديدة', editDraft: 'تعديل المسودة',
     template: 'نموذج الفاتورة', templateHint: 'جميع النماذج تستخدم نفس الترقيم التسلسلي', visit: 'الزيارة', service: 'المادة / الخدمة', addItem: 'إضافة مادة',
     itemSearch: 'ابحث عن مادة بالاسم أو الرمز', mandatory: 'إجبارية', unitPrice: 'سعر الوحدة', lineTotal: 'المجموع', invoiceDiscount: 'خصم على الفاتورة',
     itemsDiscount: 'خصم البنود', total: 'الإجمالي', saveDraft: 'حفظ كمسودة', issue: 'إصدار الفاتورة', issueAndPay: 'إصدار وتسجيل الدفع', payNow: 'الدفع الآن',

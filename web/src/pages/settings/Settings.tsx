@@ -41,7 +41,7 @@ export default function Settings() {
       <PageHeader title={t('settings.title')} subtitle={t('settings.subtitle')} />
       <Tabs items={keys.map((k) => ({ key: k, label: t(`settings.tabs.${k}`) }))} value={tab} onChange={setTab} className="mb-4 lg:flex-wrap" />
       {tab === 'clinic' && <ClinicTab />}
-      {tab === 'financial' && <KeyValueForm settingKey="financial" fields={[['currency', 'text'], ['currencySymbol', 'text'], ['decimals', 'number'], ['defaultTaxRate', 'number'], ['invoicePrefix', 'text'], ['receiptPrefix', 'text'], ['invoiceDueDays', 'number'], ['invoiceFooter', 'textarea'], ['thermalReceipt', 'checkbox']]} ns="financial" />}
+      {tab === 'financial' && <KeyValueForm settingKey="financial" fields={[['currency', 'text'], ['currencySymbol', 'text'], ['decimals', 'number'], ['defaultTaxRate', 'number'], ['invoicePrefix', 'text'], ['receiptPrefix', 'text'], ['invoiceDueDays', 'number'], ['invoiceFooter', 'textarea'], ['thermalReceipt', 'checkbox'], ['requireVisit', 'checkbox']]} ns="financial" />}
       {tab === 'paymentMethods' && <PaymentMethods />}
       {tab === 'templates' && <Templates />}
       {tab === 'services' && <Services />}

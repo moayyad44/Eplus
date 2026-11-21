@@ -80,7 +80,7 @@ billingRouter.get(
       pageQuery.extend({
         status: z.nativeEnum(InvoiceStatus).optional(), patientId: z.string().uuid().optional(), doctorId: z.string().uuid().optional(),
         visitId: z.string().uuid().optional(), from: z.string().optional(), to: z.string().optional(),
-        payerType: z.enum(['SELF_PAY', 'INSURANCE']).optional(), insuranceCompanyId: z.string().uuid().optional(),
+        payerType: z.enum(['SELF_PAY', 'INSURANCE']).optional(), insuranceCompanyId: z.string().uuid().optional(), noVisit: z.enum(['1']).optional(),
       }),
       req.query,
     );
@@ -89,6 +89,7 @@ billingRouter.get(
       ...(q.patientId && { patientId: q.patientId }),
       ...(q.doctorId && { doctorId: q.doctorId }),
       ...(q.visitId && { visitId: q.visitId }),
+      ...(q.noVisit && { visitId: null }),
       ...(q.payerType && { payerType: q.payerType }),
       ...(q.insuranceCompanyId && { insuranceCompanyId: q.insuranceCompanyId }),
       // Period filter by invoice date (drafts without one by creation date).

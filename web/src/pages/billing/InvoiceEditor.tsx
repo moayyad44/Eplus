@@ -28,6 +28,7 @@ interface Preview {
 export default function InvoiceEditor() {
   const { t } = useTranslation();
   const { can, canAny } = useAuth();
+  const fin = useQuery({ queryKey: ['settings-public'], queryFn: () => api.get<{ financial: { requireVisit?: boolean } }>('/settings/public'), staleTime: 60_000 });
   const nav = useNavigate();
   const qc = useQueryClient();
   const { id } = useParams<{ id: string }>();
@@ -183,6 +184,7 @@ export default function InvoiceEditor() {
   return (
     <div>
       <PageHeader title={id ? t('billing.editDraft') : t('billing.newInvoice')} />
+      {!visitId && !draft.data?.visit?.id && fin.data?.financial.requireVisit && !can('invoices.without_visit') && <p className="mb-4 rounded-xl bg-warning-50 px-4 py-3 text-sm font-semibold text-warning-800">{t('billing.needsVisit')}</p>}
       {suggest.data?.alreadyInvoiced && <p className="mb-4 rounded-xl bg-warning-50 px-4 py-2 text-sm text-warning-700">{t('billing.alreadyInvoiced')}</p>}
       {loaded && (() => {
         const missing = (draftSuggest.data?.items ?? []).filter((i) => svcById.has(i.serviceId)).map((i) => ({ ...i, have: lines.filter((l) => l.serviceId === i.serviceId).reduce((t2, l) => t2 + num(l.quantity), 0) - num(draft.data?.items.filter((x) => x.serviceId === i.serviceId).reduce((t2, x) => t2 + num(x.quantity), 0)) })).filter((i) => i.quantity - i.have > 0);

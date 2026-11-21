@@ -6,18 +6,18 @@ import { useAuth } from '@/lib/auth';
 import { usePagedList } from '@/lib/hooks';
 import { exportCsv } from '@/lib/export';
 import { fmtDate, money, num } from '@/lib/format';
-import { Button, Card, DataTable, DateRangePicker, PageHeader, Pagination, SearchInput, Select, presetRange } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, DataTable, DateRangePicker, PageHeader, Pagination, SearchInput, Select, presetRange } from '@/components/ui';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { useDoctors } from '@/components/shared/VisitQueueForm';
 
-interface Row { id: string; invoiceNumber: string | null; status: string; createdAt: string; issuedAt: string | null; total: number; paidAmount: number; balance: number; patient: { id: string; fullName: string; phone: string; fileNumber: string }; doctor: { fullName: string } | null; template: { name: string } | null }
+interface Row { id: string; invoiceNumber: string | null; status: string; createdAt: string; issuedAt: string | null; total: number; paidAmount: number; balance: number; patient: { id: string; fullName: string; phone: string; fileNumber: string }; doctor: { fullName: string } | null; template: { name: string } | null; visitId: string | null }
 
 export default function Invoices() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const nav = useNavigate();
   const doctors = useDoctors();
-  const list = usePagedList<Row, { status?: string; doctorId?: string; from?: string; to?: string }>('invoices', '/billing/invoices', { sort: 'createdAt', filters: presetRange('month') });
+  const list = usePagedList<Row, { status?: string; doctorId?: string; from?: string; to?: string; noVisit?: string }>('invoices', '/billing/invoices', { sort: 'createdAt', filters: presetRange('month') });
   const sums = (list.data as unknown as { sums?: { total: number; paidAmount: number; balance: number } })?.sums;
   const doExport = async () => {
     const all = await api.get<Paged<Row>>('/billing/invoices', { ...list.filters, q: list.q, pageSize: 200 });
@@ -52,6 +52,7 @@ export default function Invoices() {
             {doctors.data?.map((d) => <option key={d.id} value={d.id}>{d.fullName}</option>)}
           </Select>
           <DateRangePicker value={{ from: list.filters.from!, to: list.filters.to! }} onChange={(r) => list.setFilters(r)} />
+          <Checkbox label={t('billing.noVisitOnly')} checked={!!list.filters.noVisit} onChange={(e) => list.setFilters({ noVisit: e.target.checked ? '1' : undefined })} />
         </div>
         {sums && (
           <div className="mb-4 grid grid-cols-3 gap-2 text-center text-sm">
@@ -69,7 +70,7 @@ export default function Invoices() {
           sort={list.sort}
           onSort={list.setSort}
           columns={[
-            { key: 'invoiceNumber', header: t('billing.invoiceNumber'), sortable: true, cell: (r) => <span className="font-mono text-xs font-semibold">{r.invoiceNumber ?? t('enum.InvoiceStatus.DRAFT')}</span> },
+            { key: 'invoiceNumber', header: t('billing.invoiceNumber'), sortable: true, cell: (r) => <><span className="font-mono text-xs font-semibold">{r.invoiceNumber ?? t('enum.InvoiceStatus.DRAFT')}</span>{!r.visitId && <Badge tone="warning" dot={false} className="ms-1">{t('billing.noVisit')}</Badge>}</> },
             { key: 'issuedAt', header: t('billing.invoiceDate'), sortable: true, cell: (r) => fmtDate(r.issuedAt ?? r.createdAt) },
             { key: 'p', header: t('common.patient'), cell: (r) => <b>{r.patient.fullName}</b> },
             { key: 'doc', header: t('common.doctor'), hideOnMobile: true, cell: (r) => r.doctor?.fullName ?? '—' },
