@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '../src/lib/prisma';
 import { enqueue, loadMapping, processPending } from '../src/modules/accounting/link';
 import { login, type Client } from './helpers';
@@ -6,11 +6,18 @@ import { login, type Client } from './helpers';
 /** A payment method added later has no silent default: its operations wait («متعثرة») until it is mapped, then post. */
 let admin: Client;
 const Y = new Date().getFullYear();
+let saved: unknown;
 
 beforeAll(async () => {
   admin = await login('admin');
   const cur = (await prisma.setting.findUniqueOrThrow({ where: { key: 'accounting' } })).value as Record<string, unknown>;
+  saved = cur;
   if (!cur.startDate) await prisma.setting.update({ where: { key: 'accounting' }, data: { value: { ...cur, startDate: `${Y}-01-01` } } });
+});
+
+// Other test files expect the accounting settings as they found them (e.g. no start date yet).
+afterAll(async () => {
+  await prisma.setting.update({ where: { key: 'accounting' }, data: { value: saved as object } });
 });
 
 describe('strict mapping of payment methods and expense categories', () => {
