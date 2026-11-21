@@ -57,7 +57,12 @@ export default {
         CASH_MAIN: 'الصندوق النقدي (للمصروفات بلا طريقة دفع)', VISA_CLEARING: 'الفيزا قيد التسوية', EPAY_CLEARING: 'الدفع الإلكتروني قيد التسوية', AR_PATIENTS: 'ذمم المرضى',
         AR_INSURANCE: 'ذمم شركات التأمين', PATIENT_CREDITS: 'مبالغ مدفوعة بالزيادة', DISCOUNTS_GIVEN: 'الخصومات والمرتجعات للمرضى', SALES_TAX: 'ضريبة المبيعات (إن وجدت)',
         AP_SUPPLIERS: 'الموردون', INVENTORY: 'المخزون', COGS: 'تكلفة الأصناف المباعة', EXP_MEDICAL_SUPPLIES: 'المستلزمات المستهلكة', EXP_PURCHASES: 'المشتريات (الجرد الدوري)',
-        COUNT_DIFFERENCES: 'فروقات الجرد والإدخالات', BAD_DEBTS: 'الديون المشطوبة (التأمين)', EXP_OTHER: 'مصروف بلا حساب محدد', OPENING_BALANCES: 'حساب الأرصدة الافتتاحية',
+        COUNT_DIFFERENCES: 'فروقات الجرد والإدخالات', BAD_DEBTS: 'الديون المشطوبة (التأمين)', EXP_OTHER: 'مصروفات أخرى', OPENING_BALANCES: 'حساب الأرصدة الافتتاحية',
+        CHEQUES_ON_HAND: 'شيكات برسم التحصيل (بالصندوق)', CHEQUES_UNDER_COLLECTION: 'شيكات مودعة قيد التحصيل', CHEQUES_ISSUED: 'شيكات صادرة مؤجلة الدفع',
+        AR_OTHER: 'ذمم مدينة أخرى (شيكات راجعة وغيرها)', BANK_CHARGES: 'عمولات ومصاريف بنكية', VISA_FEES: 'عمولات الفيزا',
+        SALARIES: 'مصروف الرواتب والأجور', SALARIES_PAYABLE: 'رواتب مستحقة الدفع', EMPLOYEE_ADVANCES: 'سلف الموظفين',
+        DEPRECIATION: 'مصروف الإهلاك', ACCUM_DEPRECIATION: 'مجمع الإهلاك', GAIN_ON_DISPOSAL: 'أرباح بيع الأصول', LOSS_ON_DISPOSAL: 'خسائر بيع واستبعاد الأصول',
+        RETAINED_EARNINGS: 'الأرباح المحتجزة (إقفال السنة)',
       },
     },
     link: {
