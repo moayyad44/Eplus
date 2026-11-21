@@ -34,7 +34,13 @@ async function suggestions() {
     prisma.$queryRaw<{ v: Prisma.Decimal | null }[]>`SELECT SUM(quantity * "purchasePrice") v FROM inventory_items WHERE "deletedAt" IS NULL`,
   ]);
   const v = (x: { v: Prisma.Decimal | null }[]) => Number(D(x[0]?.v).toFixed(3));
+  // With one receivable account per insurance company, each company's account gets its own outstanding amount.
+  const cfg = await getSetting('accounting');
+  const perCompany = await prisma.$queryRaw<{ c: string; v: Prisma.Decimal | null }[]>`SELECT "companyId" c, SUM(GREATEST("insuranceAmount" - "paidAmount" - "transferredAmount" - "writtenOffAmount", 0)) v FROM insurance_claims WHERE "workflowStatus" <> 'CANCELLED' GROUP BY "companyId"`;
+  const byAccount: Record<string, { debit?: number }> = {};
+  for (const r of perCompany) { const acc = cfg.insuranceAccounts[r.c]; if (acc) byAccount[acc] = { debit: Number(D(byAccount[acc]?.debit ?? 0).add(D(r.v)).toFixed(3)) }; }
   return {
+    ...byAccount,
     AR_PATIENTS: { debit: v(ar) }, PATIENT_CREDITS: { credit: v(credits) }, AR_INSURANCE: { debit: v(ins) },
     AP_SUPPLIERS: { credit: Math.max(0, Number(D(po[0]?.v).sub(D(paid[0]?.v)).toFixed(3))) }, INVENTORY: { debit: v(stock) },
   } as Record<string, { debit?: number; credit?: number }>;
@@ -50,7 +56,7 @@ openingRouter.get('/opening/template', requirePerm('accounting.import'), ah(asyn
     { header: 'مدين', key: 'debit', width: 14, money: true }, { header: 'دائن', key: 'credit', width: 14, money: true },
     { header: 'الجهة (اختياري)', key: 'party', width: 20 }, { header: 'ملاحظة', key: 'note', width: 24 },
     { header: 'مقترح من EmergencyPlus (مدين)', key: 'sd', width: 18, money: true }, { header: 'مقترح من EmergencyPlus (دائن)', key: 'sc', width: 18, money: true },
-  ], accounts.map((a) => ({ code: a.code, name: a.name, type: types[a.type], debit: null, credit: null, sd: sug[a.systemKey ?? '']?.debit || null, sc: sug[a.systemKey ?? '']?.credit || null })),
+  ], accounts.map((a) => ({ code: a.code, name: a.name, type: types[a.type], debit: null, credit: null, sd: (sug[a.systemKey ?? ''] ?? sug[a.id])?.debit || null, sc: (sug[a.systemKey ?? ''] ?? sug[a.id])?.credit || null })),
   { title: 'الأرصدة الافتتاحية — EmergencyPlus Accounting (JOD)', totals: ['debit', 'credit'] });
   const help = wb.addWorksheet('تعليمات', { views: [{ rightToLeft: true }] });
   help.getColumn(1).width = 110;

@@ -61,8 +61,56 @@ export const REVENUE_DEFAULT: Record<ServiceCategory, string> = {
 };
 const METHOD_DEFAULT: Record<string, string> = { CASH: 'CASH_MAIN', VISA: 'VISA_CLEARING' };
 
+/** The account behind «ذمم شركات التأمين»: one account for all companies, or a main account with one sub-account per company. */
+async function insuranceBase(db: Db, cfg: { accountMap: Record<string, string> }) {
+  const id = cfg.accountMap.AR_INSURANCE ?? (await db.account.findUnique({ where: { systemKey: 'AR_INSURANCE' }, select: { id: true } }))?.id;
+  return id ? db.account.findUnique({ where: { id } }) : null;
+}
+
+const norm = (s: string) => s.replace(/[\s\u0640]+/g, ' ').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim().toLowerCase();
+
+/**
+ * One receivable account per insurance company, when «ذمم شركات التأمين» is a main account: a company without a valid
+ * sub-account gets the one already carrying its name, or a new one (next number under it). Nothing happens while the
+ * insurance receivable is a single account. Safe to run any time; returns how many companies got an account.
+ */
+export async function ensureInsuranceAccounts(db: Db = prisma) {
+  const cfg = await getSetting('accounting', db);
+  const base = await insuranceBase(db, cfg);
+  if (!base?.isGroup) return 0;
+  const [companies, children] = await Promise.all([
+    db.insuranceCompany.findMany({ select: { id: true, nameAr: true }, orderBy: { code: 'asc' } }),
+    db.account.findMany({ where: { parentId: base.id } }),
+  ]);
+  const map = { ...cfg.insuranceAccounts };
+  const usable = (id?: string) => children.find((a) => a.id === id && !a.isGroup && a.isActive) ?? null;
+  const taken = new Set(Object.values(map));
+  let added = 0;
+  for (const c of companies) {
+    if (map[c.id] && (usable(map[c.id]) || await db.account.count({ where: { id: map[c.id], isGroup: false, isActive: true } }))) continue;
+    let acc = children.find((a) => !a.isGroup && a.isActive && !taken.has(a.id) && (norm(a.name).includes(norm(c.nameAr)) || norm(c.nameAr).includes(norm(a.name))));
+    if (!acc) {
+      const nums = children.map((a) => a.code).filter((x) => x.startsWith(base.code) && /^\d+$/.test(x.slice(base.code.length))).map((x) => Number(x.slice(base.code.length)));
+      let n = (nums.length ? Math.max(...nums) : 0) + 1, code = '';
+      do { code = `${base.code}${String(n++).padStart(2, '0')}`; } while (await db.account.findUnique({ where: { code } }));
+      acc = await db.account.create({ data: { code, name: c.nameAr, type: base.type, nature: base.nature, parentId: base.id, description: 'حساب ذمم شركة تأمين (أُنشئ تلقائياً)' } });
+      children.push(acc);
+    }
+    map[c.id] = acc.id;
+    taken.add(acc.id);
+    added++;
+  }
+  if (added) {
+    const value = { ...cfg, insuranceAccounts: map };
+    await db.setting.update({ where: { key: 'accounting' }, data: { value } });
+    await db.auditLog.create({ data: { userName: 'النظام', action: 'accounting.insurance_accounts', entityType: 'setting', entityId: 'accounting', summary: `ربط ${added} شركة تأمين بحسابات فرعية تحت «${base.name}»` } });
+  }
+  return added;
+}
+
 export async function loadMapping(db: Db = prisma) {
   const cfg = await getSetting('accounting', db);
+  const insBase = await insuranceBase(db, cfg);
   const keyed = await db.account.findMany({ where: { systemKey: { not: null } }, select: { id: true, systemKey: true } });
   const byKey = new Map(keyed.map((a) => [a.systemKey!, a.id]));
   const methods = await db.paymentMethod.findMany({ select: { id: true, code: true, name: true } });
@@ -82,6 +130,12 @@ export async function loadMapping(db: Db = prisma) {
     expense: (categoryId: string) => cfg.expenseAccounts[categoryId] ?? role('EXP_OTHER'),
     revenue: (cat: ServiceCategory) => cfg.revenueAccounts[cat] ?? role(REVENUE_DEFAULT[cat]),
     methodName: (methodId: string | null | undefined) => methods.find((m) => m.id === methodId)?.name ?? '',
+    /** The insurance company's own receivable account (one account for all while «ذمم شركات التأمين» has no sub-accounts). */
+    insurer: (companyId: string | null | undefined) => {
+      if (companyId && cfg.insuranceAccounts[companyId]) return cfg.insuranceAccounts[companyId];
+      if (!insBase?.isGroup || !companyId) return role('AR_INSURANCE');
+      throw new Error(`شركة التأمين ليس لها حساب فرعي تحت «${insBase.name}»؛ حدده في إعدادات النظام المحاسبي`);
+    },
   };
 }
 export type Mapping = Awaited<ReturnType<typeof loadMapping>>;
@@ -133,7 +187,7 @@ async function plan(db: Db, kind: Kind, id: string, m: Mapping): Promise<Plan> {
       lines.push(L(m.role('DISCOUNTS_GIVEN'), inv.discountTotal, 0, { ...patient, description: 'خصم' }));
       lines.push(L(m.role('SALES_TAX'), 0, inv.taxTotal));
       lines.push(L(m.role('AR_PATIENTS'), inv.patientShare, 0, { ...patient, description: 'حصة المريض' }));
-      lines.push(L(m.role('AR_INSURANCE'), inv.insuranceShare, 0, { partyType: 'INSURANCE', partyId: inv.insuranceCompanyId, partyName: inv.insuranceCompany?.nameAr ?? null, description: 'حصة شركة التأمين' }));
+      if (D(inv.insuranceShare).gt(0)) lines.push(L(m.insurer(inv.insuranceCompanyId), inv.insuranceShare, 0, { partyType: 'INSURANCE', partyId: inv.insuranceCompanyId, partyName: inv.insuranceCompany?.nameAr ?? null, description: 'حصة شركة التأمين' }));
       if (perpetual) {
         const sold = await db.inventoryTransaction.findMany({ where: { referenceType: 'invoice', referenceId: inv.id, type: 'SALE' }, include: { item: { select: { purchasePrice: true } } } });
         const cost = sold.reduce((t, s) => t.add(D(s.quantity).abs().mul(s.unitCost ?? s.item.purchasePrice)), D(0));
@@ -206,7 +260,7 @@ async function plan(db: Db, kind: Kind, id: string, m: Mapping): Promise<Plan> {
       const p = await db.insurancePayment.findUnique({ where: { id }, include: { company: { select: { nameAr: true } } } });
       if (!p || p.voidedAt) return { do: 'undo', why: 'دفعة شركة تأمين ملغاة' };
       const party = { partyType: 'INSURANCE', partyId: p.companyId, partyName: p.company.nameAr };
-      return { do: 'post', date: ymd(p.paidAt), type: 'RECEIPT', description: `دفعة من ${p.company.nameAr} — ${p.receiptNumber}`, reference: p.reference ?? p.receiptNumber, lines: [L(m.method(p.methodId), p.amount, 0, { description: m.methodName(p.methodId) }), L(m.role('AR_INSURANCE'), 0, p.amount, party)] };
+      return { do: 'post', date: ymd(p.paidAt), type: 'RECEIPT', description: `دفعة من ${p.company.nameAr} — ${p.receiptNumber}`, reference: p.reference ?? p.receiptNumber, lines: [L(m.method(p.methodId), p.amount, 0, { description: m.methodName(p.methodId) }), L(m.insurer(p.companyId), 0, p.amount, party)] };
     }
     case 'voucher': case 'transfer': case 'cash-count': case 'visa-settlement': case 'cheque-event': case 'advance': case 'payroll': case 'payroll-pay':
     case 'asset': case 'depreciation': case 'asset-disposal': case 'year-close':
@@ -217,9 +271,9 @@ async function plan(db: Db, kind: Kind, id: string, m: Mapping): Promise<Plan> {
       const c = ev.claim;
       const ins = { partyType: 'INSURANCE', partyId: c.companyId, partyName: c.company.nameAr };
       if (ev.type === 'TRANSFER_TO_PATIENT' && D(ev.dTransferred).gt(0))
-        return { do: 'post', date: ymd(ev.createdAt), type: 'ADJUSTMENT', description: `تحويل مرفوض المطالبة ${c.claimNumber} على المريض`, reference: c.invoice.invoiceNumber, lines: [L(m.role('AR_PATIENTS'), ev.dTransferred, 0, { partyType: 'PATIENT', partyId: c.invoice.patientId, partyName: c.invoice.patient.fullName }), L(m.role('AR_INSURANCE'), 0, ev.dTransferred, ins)] };
+        return { do: 'post', date: ymd(ev.createdAt), type: 'ADJUSTMENT', description: `تحويل مرفوض المطالبة ${c.claimNumber} على المريض`, reference: c.invoice.invoiceNumber, lines: [L(m.role('AR_PATIENTS'), ev.dTransferred, 0, { partyType: 'PATIENT', partyId: c.invoice.patientId, partyName: c.invoice.patient.fullName }), L(m.insurer(c.companyId), 0, ev.dTransferred, ins)] };
       if (ev.type === 'WRITE_OFF' && D(ev.dWrittenOff).gt(0))
-        return { do: 'post', date: ymd(ev.createdAt), type: 'ADJUSTMENT', description: `شطب من المطالبة ${c.claimNumber}${ev.reason ? `: ${ev.reason}` : ''}`, reference: c.invoice.invoiceNumber, lines: [L(m.role('BAD_DEBTS'), ev.dWrittenOff, 0), L(m.role('AR_INSURANCE'), 0, ev.dWrittenOff, ins)] };
+        return { do: 'post', date: ymd(ev.createdAt), type: 'ADJUSTMENT', description: `شطب من المطالبة ${c.claimNumber}${ev.reason ? `: ${ev.reason}` : ''}`, reference: c.invoice.invoiceNumber, lines: [L(m.role('BAD_DEBTS'), ev.dWrittenOff, 0), L(m.insurer(c.companyId), 0, ev.dWrittenOff, ins)] };
       return { do: 'skip', note: 'حركة مطالبة بلا أثر مالي' };
     }
   }
@@ -266,6 +320,8 @@ async function runQueue(limit: number) {
   try {
     const cfg = await getSetting('accounting');
     if (!cfg.startDate) return { done, failed }; // not started: the queue waits
+    // New insurance companies get their receivable sub-account before their operations are posted.
+    await prisma.$transaction((tx) => ensureInsuranceAccounts(tx)).catch((e) => console.error('[insurance accounts]', e));
     const events = await prisma.accountingEvent.findMany({ where: { status: 'PENDING' }, orderBy: { queuedAt: 'asc' }, take: limit });
     const m = await loadMapping();
     for (const ev of events) {

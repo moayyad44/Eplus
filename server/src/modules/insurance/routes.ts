@@ -11,6 +11,7 @@ import { nextCounter, pad } from '../../lib/counters';
 import { dateOnly } from '../../lib/dates';
 import { D } from '../../lib/money';
 import type { Ctx } from '../../auth/context';
+import { ensureInsuranceAccounts } from '../accounting/link';
 import { annualUsage, daysToExpiry, effectiveStatus, usableMembership } from './coverage';
 
 export const insuranceRouter = Router();
@@ -85,6 +86,8 @@ insuranceRouter.post(
       await audit(tx, req.ctx, { action: 'insurance.company.create', entityType: 'insurance_company', entityId: created.id, summary: `إضافة شركة التأمين ${created.nameAr}`, after: created });
       return created;
     });
+    // Its receivable sub-account in the books (when the insurance receivable has one per company).
+    await prisma.$transaction((tx) => ensureInsuranceAccounts(tx)).catch((e) => console.error('[insurance accounts]', e));
     res.status(201).json(c);
   }),
 );

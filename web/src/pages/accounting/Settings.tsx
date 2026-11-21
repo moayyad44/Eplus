@@ -7,14 +7,15 @@ import { useApiMutation } from '@/lib/hooks';
 import { useAccounts, type AccountRow } from '@/lib/accounting';
 import { Button, Card, CardHeader, Checkbox, Field, Input, PageHeader, PageLoader, Select, useConfirm } from '@/components/ui';
 
-interface Cfg { requireApproval: boolean; requireReason: boolean; startDate: string | null; inventoryMethod: 'PERPETUAL' | 'PERIODIC'; accountMap: Record<string, string>; methodAccounts: Record<string, string>; expenseAccounts: Record<string, string>; revenueAccounts: Record<string, string> }
+interface Cfg { requireApproval: boolean; requireReason: boolean; startDate: string | null; inventoryMethod: 'PERPETUAL' | 'PERIODIC'; accountMap: Record<string, string>; methodAccounts: Record<string, string>; expenseAccounts: Record<string, string>; revenueAccounts: Record<string, string>; insuranceAccounts: Record<string, string> }
 interface LinkCfg {
   roles: { key: string; accountId: string | null; custom: boolean }[];
   methods: { id: string; name: string; isActive: boolean; accountId: string | null; custom: boolean }[];
   expenses: { id: string; name: string; isActive: boolean; accountId: string | null; custom: boolean }[];
   revenues: { key: string; accountId: string | null; custom: boolean }[];
+  insurers: { id: string; name: string; isActive: boolean; accountId: string | null; custom: boolean }[];
 }
-type MapKey = 'accountMap' | 'methodAccounts' | 'expenseAccounts' | 'revenueAccounts';
+type MapKey = 'accountMap' | 'methodAccounts' | 'expenseAccounts' | 'revenueAccounts' | 'insuranceAccounts';
 
 export default function AccountingSettings() {
   const { t } = useTranslation();
@@ -35,7 +36,7 @@ export default function AccountingSettings() {
       {(types ? leafs.filter((a) => types.includes(a.type)) : leafs).map((a: AccountRow) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
     </Select>
   );
-  const saveAll = () => save.mutate({ requireApproval: v.requireApproval, requireReason: v.requireReason, inventoryMethod: v.inventoryMethod, accountMap: v.accountMap, methodAccounts: v.methodAccounts, expenseAccounts: v.expenseAccounts, revenueAccounts: v.revenueAccounts });
+  const saveAll = () => save.mutate({ requireApproval: v.requireApproval, requireReason: v.requireReason, inventoryMethod: v.inventoryMethod, accountMap: v.accountMap, methodAccounts: v.methodAccounts, expenseAccounts: v.expenseAccounts, revenueAccounts: v.revenueAccounts, insuranceAccounts: v.insuranceAccounts });
   return (
     <div>
       <PageHeader title={t('acc.settings.title')} actions={<Button loading={save.isPending} onClick={saveAll}>{t('common.saveChanges')}</Button>} />
@@ -65,6 +66,11 @@ export default function AccountingSettings() {
               <div className="space-y-2">{link.data.methods.map((m) => <Field key={m.id} label={m.name}>{pick('methodAccounts', m.id, m.accountId, ['ASSET'])}</Field>)}</div>
               <h3 className="mb-2 mt-5 font-bold text-primary-800">{t('acc.settings.revenues')}</h3>
               <div className="space-y-2">{link.data.revenues.map((r) => <Field key={r.key} label={t(`enum.ServiceCategory.${r.key}`)}>{pick('revenueAccounts', r.key, r.accountId, ['REVENUE'])}</Field>)}</div>
+              {link.data.insurers.length > 0 && <>
+                <h3 className="mb-1 mt-5 font-bold text-primary-800">{t('acc.settings.insurers')}</h3>
+                <p className="mb-2 text-xs text-ink-muted">{t('acc.settings.insurersHint')}</p>
+                <div className="space-y-2">{link.data.insurers.map((x) => <Field key={x.id} label={x.name}>{pick('insuranceAccounts', x.id, x.accountId, ['ASSET'])}</Field>)}</div>
+              </>}
             </section>
             <section>
               <h3 className="mb-2 font-bold text-primary-800">{t('acc.settings.expenses')}</h3>

@@ -22,7 +22,7 @@ import { assetsRouter } from './assets';
 import { analyticsRouter } from './analytics';
 import { bankRecRouter } from './bankrec';
 import { importsRouter } from './imports';
-import { REVENUE_DEFAULT, ROLES, loadMapping, processPending, resyncFrom, retryFailed } from './link';
+import { REVENUE_DEFAULT, ROLES, ensureInsuranceAccounts, loadMapping, processPending, resyncFrom, retryFailed } from './link';
 
 /** EmergencyPlus Accounting API. Every route needs `accounting.access` plus its own permission. */
 export const accountingRouter = Router();
@@ -49,7 +49,7 @@ accountingRouter.put('/settings', requirePerm('accounting.settings'), ah(async (
   const current = await getSetting('accounting');
   const value = settingSchemas.accounting.parse({ ...current, ...req.body });
   // Every mapped account must be a real, active sub-account.
-  const mapped = [...Object.values(value.accountMap), ...Object.values(value.methodAccounts), ...Object.values(value.expenseAccounts), ...Object.values(value.revenueAccounts)];
+  const mapped = [...Object.values(value.accountMap), ...Object.values(value.methodAccounts), ...Object.values(value.expenseAccounts), ...Object.values(value.revenueAccounts), ...Object.values(value.insuranceAccounts)];
   if (mapped.length) {
     const found = await prisma.account.findMany({ where: { id: { in: mapped } } });
     for (const id of new Set(mapped)) {
@@ -75,13 +75,15 @@ accountingRouter.put('/settings', requirePerm('accounting.settings'), ah(async (
 
 /** What the mapping screen needs: every role / method / category with the account it uses now. */
 accountingRouter.get('/link/config', requirePerm('accounting.settings'), ah(async (_req, res) => {
-  const [m, methods, cats] = await Promise.all([loadMapping(), prisma.paymentMethod.findMany({ orderBy: { sortOrder: 'asc' } }), prisma.expenseCategory.findMany({ orderBy: { name: 'asc' } })]);
+  await prisma.$transaction((tx) => ensureInsuranceAccounts(tx));
+  const [m, methods, cats, companies] = await Promise.all([loadMapping(), prisma.paymentMethod.findMany({ orderBy: { sortOrder: 'asc' } }), prisma.expenseCategory.findMany({ orderBy: { name: 'asc' } }), prisma.insuranceCompany.findMany({ orderBy: { nameAr: 'asc' }, select: { id: true, nameAr: true, isActive: true } })]);
   const safe = (f: () => string) => { try { return f(); } catch { return null; } };
   res.json({
     roles: ROLES.map((k) => ({ key: k, accountId: safe(() => m.role(k)), custom: !!m.cfg.accountMap[k] })),
     methods: methods.map((x) => ({ id: x.id, code: x.code, name: x.name, isActive: x.isActive, accountId: safe(() => m.method(x.id)), custom: !!m.cfg.methodAccounts[x.id] })),
     expenses: cats.map((x) => ({ id: x.id, name: x.name, isActive: x.isActive, accountId: safe(() => m.expense(x.id)), custom: !!m.cfg.expenseAccounts[x.id] })),
     revenues: (Object.keys(REVENUE_DEFAULT) as (keyof typeof REVENUE_DEFAULT)[]).map((c) => ({ key: c, accountId: safe(() => m.revenue(c)), custom: !!m.cfg.revenueAccounts[c] })),
+    insurers: companies.map((x) => ({ id: x.id, name: x.nameAr, isActive: x.isActive, accountId: safe(() => m.insurer(x.id)), custom: !!m.cfg.insuranceAccounts[x.id] })),
   });
 }));
 

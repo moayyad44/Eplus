@@ -65,6 +65,8 @@ export const settingSchemas = {
     expenseAccounts: z.record(z.string(), z.string().uuid()).default({}),
     /** Revenue account of each service type. */
     revenueAccounts: z.record(z.string(), z.string().uuid()).default({}),
+    /** Receivable sub-account of each insurance company (used when «ذمم شركات التأمين» is a main account with sub-accounts). */
+    insuranceAccounts: z.record(z.string(), z.string().uuid()).default({}),
   }),
   inventory: z.object({
     expiryAlertDays: z.number().int().min(1).max(365).default(60),
