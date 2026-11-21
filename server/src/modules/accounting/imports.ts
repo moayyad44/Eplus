@@ -56,8 +56,21 @@ async function lookups(db: Tx | typeof prisma) {
     db.paymentMethod.findMany(), db.supplier.findMany({ where: { deletedAt: null } }),
   ]);
   const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  // A code as Excel may give it: Arabic digits, spaces, «2101.0».
+  const code = (v: string) => String(v).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\s+/g, '').replace(/\.0+$/, '');
+  const byCode = (v: string) => accounts.find((a) => a.code === code(v));
   return {
-    account: (code: string) => accounts.find((a) => a.code === code.trim()),
+    /** By its code only (the chart of accounts import). */
+    accountByCode: byCode,
+    /** By code, or by its exact name when that name is unique. */
+    account: (v: string) => byCode(v) ?? (() => { const m = accounts.filter((a) => norm(a.name) === norm(String(v))); return m.length === 1 ? m[0] : undefined; })(),
+    /** Why an account cannot take entries (not found / main account, with its sub-accounts to choose from), or null. */
+    accountProblem: (v: string, a: (typeof accounts)[number] | undefined, label = 'الحساب') => {
+      if (!a) return `${label} «${v}» غير موجود في دليل الحسابات؛ اكتب رقم الحساب (مثل 2101) أو اسمه كما هو في الدليل`;
+      if (!a.isGroup) return null;
+      const subs = accounts.filter((x) => x.parentId === a.id && !x.isGroup && x.isActive).slice(0, 5).map((x) => `${x.code} ${x.name}`);
+      return `${label} ${a.code} «${a.name}» حساب رئيسي لا تُسجَّل عليه قيود؛ اختر حساباً فرعياً${subs.length ? ` تحته: ${subs.join('، ')}` : ''}`;
+    },
     treasury: (name: string) => treasuries.find((t) => norm(t.name) === norm(name)),
     category: (name: string) => categories.find((c) => norm(c.name) === norm(name)),
     method: (name: string) => methods.find((m) => norm(m.name) === norm(name) || norm(m.code) === norm(name)),
@@ -85,9 +98,9 @@ const T: Record<string, ImportType> = {
         need(r, 'code', 'name');
         const v = r.values;
         if (v.code && !/^[0-9A-Za-z.-]+$/.test(v.code)) r.errors.push('رقم الحساب: أرقام وأحرف إنجليزية فقط');
-        if (v.code && L.account(v.code)) { r.skip = true; r.warnings.push('الحساب موجود؛ سيُتجاوز'); }
+        if (v.code && L.accountByCode(v.code)) { r.skip = true; r.warnings.push('الحساب موجود؛ سيُتجاوز'); }
         if (seen.has(v.code)) r.errors.push('رقم مكرر في الملف');
-        if (v.parent && !L.account(v.parent) && !seen.has(v.parent)) r.errors.push(`الحساب الأب ${v.parent} غير موجود`);
+        if (v.parent && !L.accountByCode(v.parent) && !seen.has(v.parent)) r.errors.push(`الحساب الأب ${v.parent} غير موجود`);
         const type = v.type ? TYPES[v.type.trim()] ?? (/^(ASSET|LIABILITY|EQUITY|REVENUE|EXPENSE)$/.test(v.type.trim().toUpperCase()) ? v.type.trim().toUpperCase() : undefined) : undefined;
         if (v.type && !type) r.errors.push('النوع غير معروف');
         if (!v.parent && !type) r.errors.push('حدّد النوع للحساب بلا أب');
@@ -125,8 +138,8 @@ const T: Record<string, ImportType> = {
         const v = r.values, dt = dateOf(v.date);
         if (v.date && !dt) r.errors.push('تاريخ غير صالح');
         const a = v.account ? L.account(v.account) : undefined;
-        if (v.account && !a) r.errors.push(`الحساب ${v.account} غير موجود`);
-        else if (a?.isGroup) r.errors.push(`الحساب ${v.account} رئيسي؛ استخدم حساباً فرعياً`);
+        const bad = v.account ? L.accountProblem(v.account, a) : null;
+        if (bad) r.errors.push(bad);
         const dr = v.debit ? num(v.debit) : 0, cr = v.credit ? num(v.credit) : 0;
         if (Number.isNaN(dr) || Number.isNaN(cr) || dr < 0 || cr < 0) r.errors.push('مبلغ غير صالح');
         else if ((dr > 0) === (cr > 0)) r.errors.push('ضع المبلغ في مدين أو دائن (واحد منهما)');
@@ -238,8 +251,10 @@ const T: Record<string, ImportType> = {
         if (v.cost && (Number.isNaN(cost) || cost <= 0)) r.errors.push('تكلفة غير صالحة');
         if (Number.isNaN(salvage) || salvage < 0 || salvage >= cost) r.errors.push('القيمة المتبقية غير صالحة');
         if (v.life && (!Number.isInteger(life) || life < 1 || life > 600)) r.errors.push('العمر بالأشهر غير صالح');
-        if (v.account && (!a || a.isGroup || a.type !== 'ASSET')) r.errors.push('حساب الفئة يجب أن يكون حساب أصول فرعياً');
-        if (v.funding && (!f || f.isGroup)) r.errors.push('الحساب الممول غير موجود أو رئيسي');
+        const badA = v.account ? L.accountProblem(v.account, a || undefined, 'حساب الفئة') : null;
+        if (badA) r.errors.push(badA); else if (a && a.type !== 'ASSET') r.errors.push('حساب الفئة يجب أن يكون من الأصول');
+        const badF = v.funding ? L.accountProblem(v.funding, f || undefined, 'الحساب الممول') : null;
+        if (badF) r.errors.push(badF);
         if (dt && a && !Number.isNaN(cost) && await db.fixedAsset.findFirst({ where: { name: v.name.trim(), purchaseDate: dayOf(dt), cost: r3(cost) } })) { r.skip = true; r.warnings.push('أصل مطابق موجود؛ سيُتجاوز'); }
         r.data = { name: v.name.trim(), accountId: a ? a.id : null, purchaseDate: dt, cost, salvage, usefulLifeMonths: life, fundingAccountId: f ? f.id : null, location: v.location || null };
       }
@@ -298,7 +313,7 @@ function chequeType(dir: 'IN' | 'OUT'): ImportType {
       { key: 'date', header: 'تاريخ الاستلام/الإصدار', required: true, note: 'YYYY-MM-DD' },
       { key: 'due', header: 'تاريخ الاستحقاق', required: true, note: 'YYYY-MM-DD' },
       { key: 'party', header: dir === 'IN' ? 'الساحب / الدافع' : 'المستفيد', required: true, note: '' },
-      { key: 'account', header: 'رقم الحساب المقابل', required: true, note: dir === 'IN' ? 'مثل ذمم المرضى أو إيرادات أخرى' : 'مثل الموردون أو مصروف' },
+      { key: 'account', header: 'رقم الحساب المقابل', required: true, note: dir === 'IN' ? 'رقم الحساب أو اسمه، حساب فرعي (مثل ذمم المرضى أو إيرادات أخرى)' : 'رقم الحساب أو اسمه، حساب فرعي (مثل الموردون أو مصروف)' },
       { key: 'purpose', header: 'البيان', required: true, note: '' },
     ],
     async check(rows, db) {
@@ -310,7 +325,8 @@ function chequeType(dir: 'IN' | 'OUT'): ImportType {
         const t = dir === 'OUT' && v.treasury ? L.treasury(v.treasury) : undefined;
         if ((v.date && !dt) || (v.due && !due)) r.errors.push('تاريخ غير صالح');
         if (Number.isNaN(amount) || amount <= 0) r.errors.push('مبلغ غير صالح');
-        if (v.account && (!a || a.isGroup)) r.errors.push(`الحساب ${v.account} غير موجود أو رئيسي`);
+        const badA = v.account ? L.accountProblem(v.account, a || undefined, 'الحساب المقابل') : null;
+        if (badA) r.errors.push(badA);
         if (dir === 'OUT' && v.treasury && (!t || t.kind !== 'BANK')) r.errors.push(`«${v.treasury}» ليس حساباً بنكياً`);
         const key = `${v.number.trim()}|${v.bank.trim()}`;
         if (seen.has(key)) r.errors.push('شيك مكرر في الملف');

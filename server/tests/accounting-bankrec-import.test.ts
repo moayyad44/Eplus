@@ -98,6 +98,20 @@ describe('Excel import', () => {
     const cq = await prisma.cheque.findFirstOrThrow({ where: { number: '777001' } });
     expect([cq.direction, cq.amount.toNumber()]).toEqual(['IN', 120]);
 
+    // Issued cheques: the counter account by its code in Arabic digits or «.0», or by its name; a main account is named as such
+    const ap = await prisma.account.findUniqueOrThrow({ where: { systemKey: 'AP_SUPPLIERS' } });
+    const apParent = await prisma.account.findUniqueOrThrow({ where: { id: ap.parentId! } });
+    const arabic = ap.code.replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)]);
+    const head = ['رقم الشيك', 'البنك', 'الحساب البنكي المسحوب عليه', 'المبلغ', 'تاريخ الاستلام/الإصدار', 'تاريخ الاستحقاق', 'المستفيد', 'رقم الحساب المقابل', 'البيان'];
+    const row = (n: string, account: string) => [n, 'بنك الاختبار', 'بنك المطابقة', 50, `${Y}-10-15`, `${Y}-12-15`, 'مورد س', account, 'دفعة مورد'];
+    const out = await file(admin, '/api/accounting/imports/cheques-out/preview', csv([head, row('880001', arabic), row('880002', `${ap.code}.0`), row('880003', ap.name), row('880004', apParent.code), row('880005', '99999')]));
+    expect(out.status, JSON.stringify(out.body)).toBe(200);
+    const errs = out.body.rows.map((r: { errors: string[] }) => r.errors.join(' | '));
+    expect(errs.slice(0, 3)).toEqual(['', '', '']);
+    expect(errs[3]).toContain('حساب رئيسي');
+    expect(errs[3]).toContain(ap.code); // its sub-accounts are suggested
+    expect(errs[4]).toContain('غير موجود');
+
     const cat = await prisma.expenseCategory.findFirstOrThrow({ where: { isActive: true } });
     const ex = csv([['التاريخ', 'التصنيف', 'المبلغ', 'الوصف'], [`${Y}-10-13`, cat.name, 12.5, 'فاتورة كهرباء مستوردة']]);
     expect((await file(admin, '/api/accounting/imports/expenses/commit', ex)).body.imported).toBe(1);
