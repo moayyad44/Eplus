@@ -21,7 +21,8 @@ describe('strict mapping of payment methods and expense categories', () => {
     expect(m.method(cash.id)).toBe((m.cfg.methodAccounts[cash.id]));
     expect(m.cfg.mappingPinned).toBe(true);
     expect([cashMain.id, (await loadMapping()).cfg.methodAccounts[cash.id]].length).toBe(2);
-    for (const c of await prisma.expenseCategory.findMany({ where: { createdAt: { lt: new Date() } }, take: 3 })) expect(() => m.expense(c.id)).not.toThrow();
+    // the starting categories (a category added later by another test is rightly «not mapped»)
+    for (const c of await prisma.expenseCategory.findMany({ where: { name: { in: ['إيجار', 'كهرباء', 'مصروفات أخرى'] } } })) expect(() => m.expense(c.id)).not.toThrow();
   });
 
   it('a new method waits with a clear reason; mapping it posts the operation to the chosen account', async () => {
