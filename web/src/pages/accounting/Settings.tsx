@@ -7,7 +7,7 @@ import { useApiMutation } from '@/lib/hooks';
 import { useAccounts, type AccountRow } from '@/lib/accounting';
 import { Button, Card, CardHeader, Checkbox, Field, Input, PageHeader, PageLoader, Select, useConfirm } from '@/components/ui';
 
-interface Cfg { requireApproval: boolean; requireReason: boolean; startDate: string | null; inventoryMethod: 'PERPETUAL' | 'PERIODIC'; accountMap: Record<string, string>; methodAccounts: Record<string, string>; expenseAccounts: Record<string, string>; revenueAccounts: Record<string, string>; insuranceAccounts: Record<string, string> }
+interface Cfg { requireApproval: boolean; requireReason: boolean; startDate: string | null; inventoryMethod: 'PERPETUAL' | 'PERIODIC'; accountMap: Record<string, string | null>; methodAccounts: Record<string, string | null>; expenseAccounts: Record<string, string | null>; revenueAccounts: Record<string, string | null>; insuranceAccounts: Record<string, string | null> }
 interface LinkCfg {
   roles: { key: string; accountId: string | null; custom: boolean }[];
   methods: { id: string; name: string; isActive: boolean; accountId: string | null; custom: boolean }[];
@@ -31,11 +31,13 @@ export default function AccountingSettings() {
   const leafs = accounts.data.filter((a) => !a.isGroup && a.isActive);
   const name = (id: string | null) => { const a = accounts.data!.find((x) => x.id === id); return a ? `${a.code} ${a.name}` : '—'; };
   const pick = (map: MapKey, key: string, current: string | null, types?: string[]) => (
-    <Select value={v[map][key] ?? ''} onChange={(e) => { const m = { ...v[map] }; if (e.target.value) m[key] = e.target.value; else delete m[key]; setV({ ...v, [map]: m }); }} className="!h-9">
-      <option value="">{t('acc.settings.default')}: {name(v[map][key] ? null : current)}</option>
+    <Select value={v[map][key] ?? ''} onChange={(e) => setV({ ...v, [map]: { ...v[map], [key]: e.target.value || null } })} className="!h-9">
+      <option value="">{map === 'methodAccounts' || map === 'expenseAccounts' ? t('acc.settings.unmappedPick') : `${t('acc.settings.default')}: ${name(v[map][key] ? null : current)}`}</option>
       {(types ? leafs.filter((a) => types.includes(a.type)) : leafs).map((a: AccountRow) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
     </Select>
   );
+  // A payment method / expense category without its own account: its operations wait («متعثرة») until it is mapped.
+  const label = (text: string, map: MapKey, key: string, current: string | null) => (v[map][key] || (v[map][key] === undefined && current) ? text : <span className="flex items-center gap-2">{text}<span className="rounded bg-danger-50 px-1.5 text-[11px] font-semibold text-danger-700">{t('acc.settings.unmapped')}</span></span>);
   const saveAll = () => save.mutate({ requireApproval: v.requireApproval, requireReason: v.requireReason, inventoryMethod: v.inventoryMethod, accountMap: v.accountMap, methodAccounts: v.methodAccounts, expenseAccounts: v.expenseAccounts, revenueAccounts: v.revenueAccounts, insuranceAccounts: v.insuranceAccounts });
   return (
     <div>
@@ -60,10 +62,11 @@ export default function AccountingSettings() {
         </Card>
         <Card>
           <CardHeader title={t('acc.settings.mapping')} subtitle={t('acc.settings.mappingHint')} />
+          {(link.data.methods.some((x) => !(x.id in v.methodAccounts ? v.methodAccounts[x.id] : x.accountId)) || link.data.expenses.some((x) => !(x.id in v.expenseAccounts ? v.expenseAccounts[x.id] : x.accountId))) && <p className="mb-3 rounded-xl bg-danger-50 px-3 py-2 text-sm text-danger-800">{t('acc.settings.unmappedHint')}</p>}
           <div className="grid gap-6 lg:grid-cols-2">
             <section>
               <h3 className="mb-2 font-bold text-primary-800">{t('acc.settings.methods')}</h3>
-              <div className="space-y-2">{link.data.methods.map((m) => <Field key={m.id} label={m.name}>{pick('methodAccounts', m.id, m.accountId, ['ASSET'])}</Field>)}</div>
+              <div className="space-y-2">{link.data.methods.map((m) => <Field key={m.id} label={label(m.name, 'methodAccounts', m.id, m.accountId)}>{pick('methodAccounts', m.id, m.accountId, ['ASSET'])}</Field>)}</div>
               <h3 className="mb-2 mt-5 font-bold text-primary-800">{t('acc.settings.revenues')}</h3>
               <div className="space-y-2">{link.data.revenues.map((r) => <Field key={r.key} label={t(`enum.ServiceCategory.${r.key}`)}>{pick('revenueAccounts', r.key, r.accountId, ['REVENUE'])}</Field>)}</div>
               {link.data.insurers.length > 0 && <>
@@ -74,7 +77,7 @@ export default function AccountingSettings() {
             </section>
             <section>
               <h3 className="mb-2 font-bold text-primary-800">{t('acc.settings.expenses')}</h3>
-              <div className="space-y-2">{link.data.expenses.map((x) => <Field key={x.id} label={x.name}>{pick('expenseAccounts', x.id, x.accountId, ['EXPENSE', 'ASSET'])}</Field>)}</div>
+              <div className="space-y-2">{link.data.expenses.map((x) => <Field key={x.id} label={label(x.name, 'expenseAccounts', x.id, x.accountId)}>{pick('expenseAccounts', x.id, x.accountId, ['EXPENSE', 'ASSET'])}</Field>)}</div>
               <h3 className="mb-2 mt-5 font-bold text-primary-800">{t('acc.settings.roles')}</h3>
               <div className="space-y-2">{link.data.roles.map((r) => <Field key={r.key} label={t(`acc.settings.role.${r.key}`)}>{pick('accountMap', r.key, r.accountId)}</Field>)}</div>
             </section>

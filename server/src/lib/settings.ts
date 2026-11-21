@@ -69,6 +69,9 @@ export const settingSchemas = {
     revenueAccounts: z.record(z.string(), z.string().uuid()).default({}),
     /** Receivable sub-account of each insurance company (used when «ذمم شركات التأمين» is a main account with sub-accounts). */
     insuranceAccounts: z.record(z.string(), z.string().uuid()).default({}),
+    /** Payment methods and expense categories that existed when strict mapping began were pinned to the account they
+     *  used; from then on one without its own account is not posted (it waits, «متعثرة», until it is mapped). */
+    mappingPinned: z.boolean().default(false),
   }),
   inventory: z.object({
     expiryAlertDays: z.number().int().min(1).max(365).default(60),

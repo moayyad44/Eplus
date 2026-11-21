@@ -108,9 +108,29 @@ export async function ensureInsuranceAccounts(db: Db = prisma) {
   return added;
 }
 
-export async function loadMapping(db: Db = prisma) {
+/**
+ * Once: every payment method and expense category that exists now keeps the account it has always used (written in the
+ * mapping as if chosen by hand). Methods and categories added later must be mapped before their operations post.
+ */
+export async function pinMappings(db: Db = prisma) {
   const cfg = await getSetting('accounting', db);
+  if (cfg.mappingPinned) return cfg;
+  const keyed = new Map((await db.account.findMany({ where: { systemKey: { not: null } }, select: { id: true, systemKey: true } })).map((a) => [a.systemKey!, a.id]));
+  const role = (k: string) => cfg.accountMap[k] ?? keyed.get(k);
+  const [methods, cats] = await Promise.all([db.paymentMethod.findMany({ select: { id: true, code: true } }), db.expenseCategory.findMany({ select: { id: true } })]);
+  const methodAccounts = { ...cfg.methodAccounts }, expenseAccounts = { ...cfg.expenseAccounts };
+  for (const x of methods) { const a = methodAccounts[x.id] ?? role(METHOD_DEFAULT[x.code] ?? 'EPAY_CLEARING'); if (a) methodAccounts[x.id] = a; }
+  for (const x of cats) { const a = expenseAccounts[x.id] ?? role('EXP_OTHER'); if (a) expenseAccounts[x.id] = a; }
+  const value = { ...cfg, methodAccounts, expenseAccounts, mappingPinned: true };
+  await db.setting.upsert({ where: { key: 'accounting' }, create: { key: 'accounting', value }, update: { value } });
+  await db.auditLog.create({ data: { userName: 'النظام', action: 'accounting.mapping_pinned', entityType: 'setting', entityId: 'accounting', summary: `تثبيت ربط ${methods.length} طريقة دفع و${cats.length} تصنيف مصروف على حساباتها الحالية؛ أي طريقة أو تصنيف جديد يحتاج ربطاً قبل الترحيل` } });
+  return value;
+}
+
+export async function loadMapping(db: Db = prisma) {
+  const cfg = await pinMappings(db);
   const insBase = await insuranceBase(db, cfg);
+  const cats = await db.expenseCategory.findMany({ select: { id: true, name: true } });
   const keyed = await db.account.findMany({ where: { systemKey: { not: null } }, select: { id: true, systemKey: true } });
   const byKey = new Map(keyed.map((a) => [a.systemKey!, a.id]));
   const methods = await db.paymentMethod.findMany({ select: { id: true, code: true, name: true } });
@@ -122,12 +142,16 @@ export async function loadMapping(db: Db = prisma) {
   return {
     cfg,
     role,
+    /** The method's own account. A method without one is not posted (no silent default): map it in the settings. */
     method: (methodId: string | null | undefined) => {
-      if (methodId && cfg.methodAccounts[methodId]) return cfg.methodAccounts[methodId];
-      const code = methods.find((m) => m.id === methodId)?.code;
-      return role(methodId ? METHOD_DEFAULT[code ?? ''] ?? 'EPAY_CLEARING' : 'CASH_MAIN');
+      if (!methodId) return role('CASH_MAIN');
+      if (cfg.methodAccounts[methodId]) return cfg.methodAccounts[methodId];
+      throw new Error(`طريقة الدفع «${methods.find((m) => m.id === methodId)?.name ?? methodId}» غير مربوطة بحساب؛ اربطها من إعدادات النظام المحاسبي`);
     },
-    expense: (categoryId: string) => cfg.expenseAccounts[categoryId] ?? role('EXP_OTHER'),
+    expense: (categoryId: string) => {
+      if (cfg.expenseAccounts[categoryId]) return cfg.expenseAccounts[categoryId];
+      throw new Error(`تصنيف المصروف «${cats.find((c) => c.id === categoryId)?.name ?? categoryId}» غير مربوط بحساب؛ اربطه من إعدادات النظام المحاسبي`);
+    },
     revenue: (cat: ServiceCategory) => cfg.revenueAccounts[cat] ?? role(REVENUE_DEFAULT[cat]),
     methodName: (methodId: string | null | undefined) => methods.find((m) => m.id === methodId)?.name ?? '',
     /** The insurance company's own receivable account (one account for all while «ذمم شركات التأمين» has no sub-accounts). */

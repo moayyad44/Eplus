@@ -22,7 +22,7 @@ import { assetsRouter } from './assets';
 import { analyticsRouter } from './analytics';
 import { bankRecRouter } from './bankrec';
 import { importsRouter } from './imports';
-import { REVENUE_DEFAULT, ROLES, ensureInsuranceAccounts, loadMapping, processPending, resyncFrom, retryFailed } from './link';
+import { REVENUE_DEFAULT, ROLES, ensureInsuranceAccounts, loadMapping, pinMappings, processPending, resyncFrom, retryFailed } from './link';
 
 /** EmergencyPlus Accounting API. Every route needs `accounting.access` plus its own permission. */
 export const accountingRouter = Router();
@@ -44,10 +44,20 @@ const money = z.union([z.number(), z.string()]).optional().nullable();
 
 // ───────────── Settings ─────────────
 
-accountingRouter.get('/settings', ah(async (_req, res) => res.json(await getSetting('accounting'))));
+accountingRouter.get('/settings', ah(async (_req, res) => res.json(await pinMappings())));
 accountingRouter.put('/settings', requirePerm('accounting.settings'), ah(async (req, res) => {
   const current = await getSetting('accounting');
-  const value = settingSchemas.accounting.parse({ ...current, ...req.body });
+  // Mappings are merged, never replaced: a key sent with an account sets it, a key sent empty (null) removes it, the rest stay.
+  const body = { ...(req.body ?? {}) } as Record<string, unknown>;
+  for (const k of ['accountMap', 'methodAccounts', 'expenseAccounts', 'revenueAccounts', 'insuranceAccounts'] as const) {
+    const sent = body[k];
+    if (!sent || typeof sent !== 'object') continue;
+    const merged: Record<string, string> = { ...current[k] };
+    for (const [id, acc] of Object.entries(sent as Record<string, string | null>)) { if (acc) merged[id] = acc; else delete merged[id]; }
+    body[k] = merged;
+  }
+  delete body.mappingPinned;
+  const value = settingSchemas.accounting.parse({ ...current, ...body });
   // Every mapped account must be a real, active sub-account.
   const mapped = [...Object.values(value.accountMap), ...Object.values(value.methodAccounts), ...Object.values(value.expenseAccounts), ...Object.values(value.revenueAccounts), ...Object.values(value.insuranceAccounts)];
   if (mapped.length) {
@@ -68,6 +78,8 @@ accountingRouter.put('/settings', requirePerm('accounting.settings'), ah(async (
   });
   // Starting (or a new start date): queue every operation from that day on.
   if (value.startDate && value.startDate !== current.startDate) { await resyncFrom(value.startDate); void processPending(); }
+  // A mapping just chosen: what was waiting for it («متعثرة») is posted now, to the chosen account.
+  else if ((['accountMap', 'methodAccounts', 'expenseAccounts', 'revenueAccounts', 'insuranceAccounts'] as const).some((k) => JSON.stringify(value[k]) !== JSON.stringify(current[k]))) await retryFailed();
   res.json(value);
 }));
 
