@@ -12,6 +12,7 @@ import { notifyPermission, notifyUsers } from '../../lib/notify';
 import { ageFrom, rangeFromQuery } from '../../lib/dates';
 import { can } from '../../auth/context';
 import { labFileRouter } from './readFile';
+import { enqueue } from '../accounting/link';
 
 export const labRouter = Router();
 labRouter.use(labFileRouter);
@@ -137,6 +138,8 @@ labRouter.post(
         },
       });
       await audit(tx, req.ctx, { action: 'lab_order.status', entityType: 'lab_order', entityId: o.id, summary: `${o.orderNumber}: ${o.status} → ${body.status}`, before: { status: o.status }, after: { status: body.status, reason: body.reason } });
+      // The sample sent (or the order cancelled after it): what the external lab claims goes to the books.
+      if (u.collectedAt) await enqueue(tx, 'lab-order', o.id);
       return u;
     });
     res.json(updated);
@@ -187,6 +190,7 @@ labRouter.put(
         where: { id: o.id },
         data: { status, ...(status === 'COMPLETED' && !o.completedAt && { completedAt: new Date() }), ...(!o.collectedAt && { collectedAt: new Date() }) },
       });
+      if (!o.collectedAt) await enqueue(tx, 'lab-order', o.id);
       await audit(tx, req.ctx, {
         action: wasCompleted ? 'lab_result.amend' : 'lab_result.enter', entityType: 'lab_order', entityId: o.id, summary: `نتائج ${o.orderNumber}`,
         before: { results: o.items.flatMap((i) => i.results.map((r) => ({ item: i.testName, p: r.parameterName, v: r.value }))) },

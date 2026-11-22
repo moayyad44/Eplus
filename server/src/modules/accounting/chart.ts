@@ -36,6 +36,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
   { code: '2104', name: 'المصروفات المستحقة', type: L, parent: '21', key: 'ACCRUED_EXPENSES' },
   { code: '2105', name: 'مبالغ مدفوعة بالزيادة من المرضى', type: L, parent: '21', key: 'PATIENT_CREDITS' },
   { code: '2106', name: 'ضريبة المبيعات المستحقة', type: L, parent: '21', key: 'SALES_TAX' },
+  { code: '2107', name: 'ذمم المختبر الخارجي', type: L, parent: '21', key: 'AP_LAB' },
   { code: '2109', name: 'التزامات أخرى', type: L, parent: '21', key: 'OTHER_LIABILITIES' },
 
   { code: '3', name: 'حقوق الملكية', type: E, group: true },
@@ -69,6 +70,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
   { code: '5113', name: 'تكلفة الأدوية والمستلزمات المباعة', type: X, parent: '5', key: 'COGS' },
   { code: '5114', name: 'ديون مشطوبة', type: X, parent: '5', key: 'BAD_DEBTS' },
   { code: '5115', name: 'فروقات الجرد', type: X, parent: '5', key: 'COUNT_DIFFERENCES' },
+  { code: '5116', name: 'تكلفة تحاليل المختبر الخارجي', type: X, parent: '5', key: 'EXP_LAB_COST' },
   { code: '5199', name: 'مصروفات أخرى', type: X, parent: '5', key: 'EXP_OTHER' },
 ];
 

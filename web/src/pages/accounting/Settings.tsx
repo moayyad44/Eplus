@@ -77,7 +77,7 @@ export default function AccountingSettings() {
             </section>
             <section>
               <h3 className="mb-2 font-bold text-primary-800">{t('acc.settings.expenses')}</h3>
-              <div className="space-y-2">{link.data.expenses.map((x) => <Field key={x.id} label={label(x.name, 'expenseAccounts', x.id, x.accountId)}>{pick('expenseAccounts', x.id, x.accountId, ['EXPENSE', 'ASSET'])}</Field>)}</div>
+              <div className="space-y-2">{link.data.expenses.map((x) => <Field key={x.id} label={label(x.name, 'expenseAccounts', x.id, x.accountId)}>{pick('expenseAccounts', x.id, x.accountId, ['EXPENSE', 'ASSET', 'LIABILITY'])}</Field>)}</div>
               <h3 className="mb-2 mt-5 font-bold text-primary-800">{t('acc.settings.roles')}</h3>
               <div className="space-y-2">{link.data.roles.map((r) => <Field key={r.key} label={t(`acc.settings.role.${r.key}`)}>{pick('accountMap', r.key, r.accountId)}</Field>)}</div>
             </section>

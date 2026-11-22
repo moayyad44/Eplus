@@ -63,6 +63,7 @@ export default {
         SALARIES: 'مصروف الرواتب والأجور', SALARIES_PAYABLE: 'رواتب مستحقة الدفع', EMPLOYEE_ADVANCES: 'سلف الموظفين',
         DEPRECIATION: 'مصروف الإهلاك', ACCUM_DEPRECIATION: 'مجمع الإهلاك', GAIN_ON_DISPOSAL: 'أرباح بيع الأصول', LOSS_ON_DISPOSAL: 'خسائر بيع واستبعاد الأصول',
         RETAINED_EARNINGS: 'الأرباح المحتجزة (إقفال السنة)',
+        EXP_LAB_COST: 'تكلفة تحاليل المختبر الخارجي (عند إرسال العينة)', AP_LAB: 'ذمم المختبر الخارجي (المستحق للمختبر)',
       },
     },
     link: {
@@ -70,7 +71,7 @@ export default {
       notStarted: 'الترحيل التلقائي لم يبدأ: حدّد تاريخ البدء من الإعدادات. العمليات محفوظة بانتظار البدء.', retry: 'إعادة المحاولة', retryAll: 'إعادة محاولة كل المتعثرة', resync: 'إعادة فحص كل العمليات',
       resyncConfirm: 'إعادة فحص كل عمليات EmergencyPlus منذ تاريخ البدء؟ القيود الموجودة تُحدَّث عند الحاجة ولا تتكرر.', resynced: 'فُحصت {{n}} عملية — رُحّل {{d}}، تعثّر {{f}}',
       operation: 'العملية', result: 'النتيجة', queued: 'آخر تحديث', attempts: 'المحاولات', status: { PENDING: 'بالانتظار', DONE: 'مُرحَّلة', FAILED: 'متعثّرة', SKIPPED: 'لا تحتاج قيداً' },
-      kind: { invoice: 'فاتورة', 'invoice-cancel': 'إلغاء فاتورة', payment: 'دفعة / إرجاع', expense: 'مصروف', 'supplier-payment': 'دفعة مورد', po: 'استلام أمر شراء', 'inv-move': 'حركة مخزون', 'ins-payment': 'دفعة شركة تأمين', 'claim-event': 'تحويل / شطب مطالبة' },
+      kind: { invoice: 'فاتورة', 'invoice-cancel': 'إلغاء فاتورة', payment: 'دفعة / إرجاع', expense: 'مصروف', 'supplier-payment': 'دفعة مورد', po: 'استلام أمر شراء', 'inv-move': 'حركة مخزون', 'ins-payment': 'دفعة شركة تأمين', 'claim-event': 'تحويل / شطب مطالبة', 'lab-order': 'تحاليل المختبر الخارجي' },
     },
     opening: {
       title: 'استيراد الأرصدة الافتتاحية من Excel', subtitle: 'لا يُسجَّل شيء قبل المعاينة والتأكيد — الاستيراد مرة ثانية يستبدل القيد الافتتاحي السابق',

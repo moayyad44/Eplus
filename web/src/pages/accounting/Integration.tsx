@@ -11,7 +11,7 @@ import { Badge, Button, Card, DataTable, PageHeader, Pagination, Segmented, Stat
 interface Row { id: string; sourceKey: string; kind: string; sourceId: string; status: string; attempts: number; lastError: string | null; note: string | null; queuedAt: string; processedAt: string | null; entry: { id: string; number: string; status: string } | null }
 const TONE: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = { DONE: 'success', PENDING: 'warning', FAILED: 'danger', SKIPPED: 'neutral' };
 const SOURCE: Record<string, (id: string) => string> = {
-  invoice: (id) => `/billing/invoices/${id}`, 'invoice-cancel': (id) => `/billing/invoices/${id}`, expense: () => '/expenses', 'supplier-payment': () => '/suppliers', po: (id) => `/purchases/${id}`, 'ins-payment': () => '/insurance/payments',
+  invoice: (id) => `/billing/invoices/${id}`, 'invoice-cancel': (id) => `/billing/invoices/${id}`, expense: () => '/expenses', 'supplier-payment': () => '/suppliers', po: (id) => `/purchases/${id}`, 'ins-payment': () => '/insurance/payments', 'lab-order': (id) => `/lab/${id}`,
 };
 
 export default function Integration() {

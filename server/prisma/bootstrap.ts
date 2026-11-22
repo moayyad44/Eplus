@@ -56,6 +56,19 @@ async function main() {
       ids.set(a.code, row.id);
     }
   }
+  // Accounts added to the starting chart by a later release (e.g. the external lab): created once, next to their
+  // sibling accounts, under the next free number when the planned one is taken. Accounts already there are never touched.
+  const keyedNow = new Set((await prisma.account.findMany({ where: { systemKey: { not: null } }, select: { systemKey: true } })).map((a) => a.systemKey));
+  for (const a of CHART_OF_ACCOUNTS.filter((x) => x.key && !keyedNow.has(x.key) && x.parent)) {
+    const sibling = CHART_OF_ACCOUNTS.find((x) => x.parent === a.parent && x.key && x.key !== a.key && keyedNow.has(x.key));
+    const parent = sibling ? (await prisma.account.findFirst({ where: { systemKey: sibling.key } }))?.parentId : (await prisma.account.findUnique({ where: { code: a.parent } }))?.id;
+    if (!parent) continue;
+    const p = await prisma.account.findUniqueOrThrow({ where: { id: parent } });
+    let code = a.code;
+    for (let n = 1; await prisma.account.findUnique({ where: { code } }); n++) code = `${p.code}${String(n).padStart(Math.max(2, a.code.length - p.code.length), '0')}`;
+    await prisma.account.create({ data: { code, name: a.name, type: a.type, nature: a.nature ?? NATURE_OF[a.type], isGroup: !!a.group, isSystem: true, systemKey: a.key, parentId: p.id } });
+  }
+
   if ((await prisma.fiscalYear.count()) === 0) {
     const y = new Date().getFullYear();
     await prisma.fiscalYear.create({

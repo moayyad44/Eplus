@@ -18,7 +18,7 @@ import { trackVisa } from './visa';
  * is closed). Failures are kept with their reason and can be retried.
  */
 
-export type Kind = 'invoice' | 'invoice-cancel' | 'payment' | 'expense' | 'supplier-payment' | 'po' | 'inv-move' | 'ins-payment' | 'claim-event' | DocKind;
+export type Kind = 'invoice' | 'invoice-cancel' | 'payment' | 'expense' | 'supplier-payment' | 'po' | 'inv-move' | 'ins-payment' | 'claim-event' | 'lab-order' | DocKind;
 export type DocKind = 'voucher' | 'transfer' | 'cash-count' | 'visa-settlement' | 'cheque-event' | 'advance' | 'payroll' | 'payroll-pay' | 'asset' | 'depreciation' | 'asset-disposal' | 'year-close';
 
 /** Queue (or re-queue) an operation. Call inside the operation's own transaction. */
@@ -52,7 +52,7 @@ export const ROLES = [
   'CASH_MAIN', 'VISA_CLEARING', 'EPAY_CLEARING', 'AR_PATIENTS', 'AR_INSURANCE', 'PATIENT_CREDITS', 'DISCOUNTS_GIVEN', 'SALES_TAX',
   'AP_SUPPLIERS', 'INVENTORY', 'COGS', 'EXP_MEDICAL_SUPPLIES', 'EXP_PURCHASES', 'COUNT_DIFFERENCES', 'BAD_DEBTS', 'EXP_OTHER', 'OPENING_BALANCES',
   'CHEQUES_ON_HAND', 'CHEQUES_UNDER_COLLECTION', 'CHEQUES_ISSUED', 'AR_OTHER', 'BANK_CHARGES', 'VISA_FEES', 'SALARIES', 'SALARIES_PAYABLE', 'EMPLOYEE_ADVANCES',
-  'DEPRECIATION', 'ACCUM_DEPRECIATION', 'GAIN_ON_DISPOSAL', 'LOSS_ON_DISPOSAL', 'RETAINED_EARNINGS',
+  'DEPRECIATION', 'ACCUM_DEPRECIATION', 'GAIN_ON_DISPOSAL', 'LOSS_ON_DISPOSAL', 'RETAINED_EARNINGS', 'EXP_LAB_COST', 'AP_LAB',
 ] as const;
 /** Roles without an account of their own in the starting chart use this one until mapped. */
 const ROLE_FALLBACK: Record<string, string> = { GAIN_ON_DISPOSAL: 'REV_OTHER', LOSS_ON_DISPOSAL: 'EXP_OTHER' };
@@ -280,6 +280,20 @@ async function plan(db: Db, kind: Kind, id: string, m: Mapping): Promise<Plan> {
         lines: into ? [L(inv, value, 0), L(other, 0, value)] : [L(other, value, 0), L(inv, 0, value)],
       };
     }
+    case 'lab-order': {
+      // What the external lab will claim, owed from the day the sample is sent (collected): lab cost / payable to the lab.
+      const o = await db.labOrder.findUnique({ where: { id }, include: { items: { include: { labTest: { select: { labCost: true } } } }, patient: { select: { fullName: true } } } });
+      if (!o || o.status === 'CANCELLED') return { do: 'undo', why: 'طلب تحاليل ملغى' };
+      if (!o.collectedAt) return { do: 'undo', why: 'لم تُرسل العينة بعد' };
+      const cost = r3(o.items.reduce((t, i) => t.add(D(i.labCost ?? i.labTest.labCost ?? 0)), D(0)));
+      if (cost.eq(0)) return { do: 'skip', note: 'لا كلفة مختبر على تحاليل هذا الطلب' };
+      const unpriced = o.items.filter((i) => i.labCost == null && i.labTest.labCost == null).length;
+      const party = { partyType: 'LAB', partyId: null, partyName: 'المختبر الخارجي' };
+      return {
+        do: 'post', date: ymd(o.collectedAt), type: 'PURCHASE', description: `تحاليل المختبر الخارجي — طلب ${o.orderNumber} (${o.patient.fullName})${unpriced ? ` — ${unpriced} تحليل بلا كلفة` : ''}`, reference: o.orderNumber,
+        lines: [L(m.role('EXP_LAB_COST'), cost, 0, { description: `${o.items.length} تحليل` }), L(m.role('AP_LAB'), 0, cost, party)],
+      };
+    }
     case 'ins-payment': {
       const p = await db.insurancePayment.findUnique({ where: { id }, include: { company: { select: { nameAr: true } } } });
       if (!p || p.voidedAt) return { do: 'undo', why: 'دفعة شركة تأمين ملغاة' };
@@ -394,6 +408,7 @@ export async function resyncFrom(startDate: string) {
     await q('po', await prisma.purchaseOrder.findMany({ where: { status: 'RECEIVED', receivedAt: { gte: from } }, select: { id: true } })),
     await q('inv-move', await prisma.inventoryTransaction.findMany({ where: { createdAt: { gte: from }, type: { in: ['CONSUMPTION', 'ISSUE', 'RETURN', 'RECEIPT', 'ADJUSTMENT', 'STOCK_COUNT'] } }, select: { id: true } })),
     await q('ins-payment', await prisma.insurancePayment.findMany({ where: { paidAt: { gte: from } }, select: { id: true } })),
+    await q('lab-order', await prisma.labOrder.findMany({ where: { collectedAt: { gte: from } }, select: { id: true } })),
     await q('claim-event', await prisma.insuranceClaimEvent.findMany({ where: { createdAt: { gte: from }, type: { in: ['TRANSFER_TO_PATIENT', 'WRITE_OFF'] } }, select: { id: true } })),
   ].reduce((a, b) => a + b, 0);
   // Card payments from the start date on enter the Visa box (followed until they reach the bank).
