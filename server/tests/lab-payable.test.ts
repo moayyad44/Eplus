@@ -49,6 +49,21 @@ describe('external lab payable', () => {
     expect(e!.lines.find((l) => l.accountId === acc.AP_LAB)!.partyName).toBe('المختبر الخارجي');
   });
 
+  it('results approved without pressing «تم سحب العينة»: still owed, dated when the results were entered', async () => {
+    const p = await reception.post('/api/patients', { fullName: 'مريض بدون سحب', phone: '0791234568', gender: 'FEMALE' });
+    const t = await prisma.labTest.findFirstOrThrow({ where: { code: 'L004' } });
+    const o = await doctor.post('/api/lab/orders', { patientId: p.body.id, testIds: [t.id] });
+    const order = await prisma.labOrder.findUniqueOrThrow({ where: { id: o.body.id }, include: { items: true } });
+    expect(order.collectedAt).toBeNull();
+    const r = await admin.put(`/api/lab/orders/${order.id}/results`, { complete: true, items: [{ itemId: order.items[0].id, results: [{ parameterName: 'WBC', value: '7' }] }] });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    await processPending(5000);
+    const e = await linesOf(`lab-order:${order.id}`);
+    expect([net(e, acc.EXP_LAB_COST), net(e, acc.AP_LAB)]).toEqual([Number(t.labCost), -Number(t.labCost)]);
+    const after = await prisma.labOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect([after.status, e!.date.toISOString().slice(0, 10)]).toEqual(['COMPLETED', new Date(after.collectedAt!.getTime() + 3 * 3_600_000).toISOString().slice(0, 10)]);
+  });
+
   it('a cancelled order owes nothing', async () => {
     expect((await admin.post(`/api/lab/orders/${orderId}/status`, { status: 'CANCELLED', reason: 'العينة لم تصل' })).status).toBe(200);
     await processPending(5000);
