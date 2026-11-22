@@ -2874,6 +2874,9 @@ model Cheque {
   notes            String?
   /// The receipt / payment voucher it came with (a voucher may carry several cheques).
   voucherId        String?
+  /// A cheque still outstanding in the previous system, imported without an entry: the account its amount already sits
+  /// in (opening balances). Its later movements (cleared, deposited, cancelled…) post from this account.
+  holdAccountId    String?
   createdById      String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt

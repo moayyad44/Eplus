@@ -16,6 +16,7 @@ import { dateOnly } from '../../lib/dates';
 import { createEntry, dayOf } from './journal';
 import { enqueue, postDoc } from './link';
 import { docNumber } from './common';
+import { loadMapping } from './link';
 import { createAccount } from './accounts';
 import { createTransfer, issueVoucher } from './treasury';
 import { addSheet, readTable, toAmount } from './xlsx';
@@ -271,6 +272,8 @@ const T: Record<string, ImportType> = {
 
   'cheques-in': chequeType('IN'),
   'cheques-out': chequeType('OUT'),
+  'cheques-in-opening': openingChequeType('IN'),
+  'cheques-out-opening': openingChequeType('OUT'),
 
   transfers: {
     title: 'تحويلات بين الصناديق والبنوك', perm: 'accounting.treasury.manage',
@@ -341,6 +344,65 @@ function chequeType(dir: 'IN' | 'OUT'): ImportType {
     },
     async save(tx, ctx, rows) {
       for (const r of rows) await issueVoucher(tx, ctx, r.data as never);
+      return rows.length;
+    },
+  };
+}
+
+/**
+ * Cheques still outstanding in the previous system: recorded in the cheque register WITHOUT an entry (their amount is
+ * already in the opening balances). Same columns as the cheques import, so the same sheet can be used; here the account
+ * column is the account the cheque's amount sits in (e.g. «شيكات مؤجلة الدفع / بنك …»). Later movements (cleared,
+ * deposited, collected, cancelled) post from that account.
+ */
+function openingChequeType(dir: 'IN' | 'OUT'): ImportType {
+  const base = chequeType(dir);
+  return {
+    title: dir === 'IN' ? 'شيكات واردة قائمة من النظام السابق (بدون قيد)' : 'شيكات صادرة قائمة من النظام السابق (بدون قيد)', perm: 'accounting.cheques.manage',
+    columns: [
+      ...base.columns.map((c) => (c.key === 'account'
+        ? { ...c, note: dir === 'IN' ? 'الحساب الذي فيه رصيد الشيك الآن (رقمه أو اسمه)، مثل شيكات برسم التحصيل' : 'الحساب الذي فيه رصيد الشيك الآن (رقمه أو اسمه)، مثل شيكات مؤجلة الدفع / البنك' }
+        : c)),
+      { key: 'cancel', header: 'الحساب عند الإلغاء', note: 'اختياري: الحساب الذي يعود إليه المبلغ إذا أُلغي الشيك (مثل حساب المورد). الافتراضي: حساب الأرصدة الافتتاحية' },
+    ],
+    async check(rows, db) {
+      const L = await lookups(db);
+      const seen = new Set<string>();
+      for (const r of rows) {
+        need(r, ...this.columns.filter((c) => c.required).map((c) => c.key));
+        const v = r.values, dt = dateOf(v.date), due = dateOf(v.due), amount = num(v.amount);
+        const hold = v.account ? L.account(v.account) : undefined, cancel = v.cancel ? L.account(v.cancel) : undefined;
+        const t = dir === 'OUT' && v.treasury ? L.treasury(v.treasury) : undefined;
+        if ((v.date && !dt) || (v.due && !due)) r.errors.push('تاريخ غير صالح');
+        if (Number.isNaN(amount) || amount <= 0) r.errors.push('مبلغ غير صالح');
+        const badH = v.account ? L.accountProblem(v.account, hold, 'حساب رصيد الشيك') : null;
+        if (badH) r.errors.push(badH);
+        else if (hold && hold.type !== (dir === 'IN' ? 'ASSET' : 'LIABILITY')) r.errors.push(`حساب رصيد الشيك ${hold.code} «${hold.name}» يجب أن يكون من ${dir === 'IN' ? 'الأصول' : 'الخصوم'}`);
+        const badC = v.cancel ? L.accountProblem(v.cancel, cancel, 'الحساب عند الإلغاء') : null;
+        if (badC) r.errors.push(badC);
+        if (dir === 'OUT' && v.treasury && (!t || t.kind !== 'BANK')) r.errors.push(`«${v.treasury}» ليس حساباً بنكياً`);
+        const key = `${v.number.trim()}|${v.bank.trim()}`;
+        if (seen.has(key)) r.errors.push('شيك مكرر في الملف');
+        seen.add(key);
+        if (v.number && await db.cheque.findFirst({ where: { direction: dir, number: v.number.trim(), bankName: v.bank.trim() } })) { r.skip = true; r.warnings.push('الشيك موجود؛ سيُتجاوز'); }
+        r.data = { number: v.number.trim(), bankName: v.bank.trim(), party: v.party.trim(), purpose: v.purpose.trim(), amount, issueDate: dt, dueDate: due, treasuryId: t?.id ?? null, holdAccountId: hold?.id ?? null, cancelAccountId: cancel?.id ?? null };
+      }
+    },
+    async save(tx, ctx, rows) {
+      const m = await loadMapping(tx);
+      for (const r of rows) {
+        const d = r.data as { number: string; bankName: string; party: string; purpose: string; amount: number; issueDate: string; dueDate: string; treasuryId: string | null; holdAccountId: string; cancelAccountId: string | null };
+        const status = dir === 'IN' ? 'RECEIVED' : 'ISSUED';
+        const ch = await tx.cheque.create({
+          data: {
+            ref: await docNumber(tx, 'CHQ'), direction: dir, number: d.number, bankName: d.bankName, drawer: d.party, counterparty: d.party, issueDate: dayOf(d.issueDate), dueDate: dayOf(d.dueDate),
+            amount: r3(d.amount), reason: d.purpose, treasuryId: d.treasuryId, holdAccountId: d.holdAccountId, counterAccountId: d.cancelAccountId ?? m.role('OPENING_BALANCES'),
+            status, notes: 'شيك قائم من النظام السابق — مستورد بدون قيد (رصيده ضمن الأرصدة الافتتاحية)', createdById: ctx.userId,
+          },
+        });
+        // The opening event carries no entry: the amount is already in the account (opening balances).
+        await tx.chequeEvent.create({ data: { chequeId: ch.id, toStatus: status, date: dayOf(d.issueDate), note: 'رصيد قائم من النظام السابق (بدون قيد)', userId: ctx.userId } });
+      }
       return rows.length;
     },
   };

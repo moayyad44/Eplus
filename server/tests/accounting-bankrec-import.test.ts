@@ -112,6 +112,23 @@ describe('Excel import', () => {
     expect(errs[3]).toContain(ap.code); // its sub-accounts are suggested
     expect(errs[4]).toContain('غير موجود');
 
+    // Cheques still outstanding in the previous system: same sheet, no entry; cleared later from the account they sit in
+    const holdParent = await prisma.account.findUniqueOrThrow({ where: { systemKey: 'CHEQUES_ISSUED' } });
+    const hold = await prisma.account.create({ data: { code: '210299', name: 'شيكات مؤجلة الدفع / بنك الاختبار', type: 'LIABILITY', nature: 'CREDIT', parentId: holdParent.parentId } });
+    const before = await prisma.journalEntry.count();
+    const op = await file(admin, '/api/accounting/imports/cheques-out-opening/commit', csv([head, row('990001', hold.code), row('990002', 'شيكات مؤجلة الدفع / بنك الاختبار')]));
+    expect([op.status, op.body.imported], JSON.stringify(op.body)).toEqual([200, 2]);
+    expect(await prisma.journalEntry.count()).toBe(before); // nothing posted: already in the opening balances
+    const oc = await prisma.cheque.findFirstOrThrow({ where: { number: '990001' } });
+    expect([oc.status, oc.holdAccountId, oc.voucherId]).toEqual(['ISSUED', hold.id, null]);
+    const wrongSide = await file(admin, '/api/accounting/imports/cheques-out-opening/preview', csv([head, row('990003', ap.code === hold.code ? '1' : (await prisma.account.findUniqueOrThrow({ where: { systemKey: 'CASH_MAIN' } })).code)]));
+    expect(wrongSide.body.rows[0].errors.join(' ')).toContain('من الخصوم');
+    const cl = await admin.post(`/api/accounting/cheques/${oc.id}/status`, { to: 'CLEARED', date: `${Y}-12-15` });
+    expect(cl.status, JSON.stringify(cl.body)).toBe(200);
+    const ev = await prisma.chequeEvent.findFirstOrThrow({ where: { chequeId: oc.id, toStatus: 'CLEARED' } });
+    const ce = await prisma.journalEntry.findUniqueOrThrow({ where: { sourceKey: `cheque-event:${ev.id}` }, include: { lines: true } });
+    expect(ce.lines.map((l) => [l.accountId, Number(l.debit), Number(l.credit)])).toEqual([[hold.id, 50, 0], [bank.accountId, 0, 50]]);
+
     const cat = await prisma.expenseCategory.findFirstOrThrow({ where: { isActive: true } });
     const ex = csv([['التاريخ', 'التصنيف', 'المبلغ', 'الوصف'], [`${Y}-10-13`, cat.name, 12.5, 'فاتورة كهرباء مستوردة']]);
     expect((await file(admin, '/api/accounting/imports/expenses/commit', ex)).body.imported).toBe(1);

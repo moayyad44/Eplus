@@ -62,8 +62,10 @@ export async function planDoc(db: Db, kind: DocKind, id: string, m: Mapping): Pr
       let lines: LineInput[] = [];
       let title = '';
       if (c.direction === 'IN') {
-        const where = from === 'UNDER_COLLECTION' || from === 'DEPOSITED' ? m.role('CHEQUES_UNDER_COLLECTION') : from === 'COLLECTED' ? await tAcc(c.treasuryId) : m.role('CHEQUES_ON_HAND');
-        if (to === 'UNDER_COLLECTION' || to === 'DEPOSITED') { if (from === 'UNDER_COLLECTION' || from === 'DEPOSITED') return { do: 'skip', note: 'لا أثر' }; title = 'إيداع للتحصيل'; lines = [L(m.role('CHEQUES_UNDER_COLLECTION'), amt, 0), L(m.role('CHEQUES_ON_HAND'), 0, amt)]; }
+        // A cheque imported from the previous system sits in its own account until it moves on (no entry when imported).
+        const onHand = c.holdAccountId ?? m.role('CHEQUES_ON_HAND');
+        const where = from === 'UNDER_COLLECTION' || from === 'DEPOSITED' ? m.role('CHEQUES_UNDER_COLLECTION') : from === 'COLLECTED' ? await tAcc(c.treasuryId) : onHand;
+        if (to === 'UNDER_COLLECTION' || to === 'DEPOSITED') { if (from === 'UNDER_COLLECTION' || from === 'DEPOSITED') return { do: 'skip', note: 'لا أثر' }; title = 'إيداع للتحصيل'; lines = [L(m.role('CHEQUES_UNDER_COLLECTION'), amt, 0), L(onHand, 0, amt)]; }
         else if (to === 'COLLECTED') { title = 'تحصيل'; lines = [L(await tAcc(ev.treasuryId ?? c.treasuryId), amt, 0), L(where, 0, amt)]; }
         else if (to === 'BOUNCED') { title = 'ارتجاع'; lines = [L(m.role('AR_OTHER'), amt, 0, party), L(where, 0, amt)]; if (D(ev.fee).gt(0)) lines.push(L(m.role('BANK_CHARGES'), ev.fee, 0, { description: 'رسوم شيك مرتجع' }), L(await tAcc(ev.treasuryId ?? c.treasuryId), 0, ev.fee)); }
         else if (['CANCELLED', 'RETURNED_TO_OWNER', 'REPLACED'].includes(to)) {
@@ -72,8 +74,9 @@ export async function planDoc(db: Db, kind: DocKind, id: string, m: Mapping): Pr
           lines = [L(to === 'REPLACED' ? m.role('AR_OTHER') : c.counterAccountId, amt, 0, party), L(where, 0, amt)];
         } else return { do: 'skip', note: 'تغيير حالة بلا أثر مالي' };
       } else {
-        if (to === 'CLEARED') { title = 'صرف من البنك'; lines = [L(m.role('CHEQUES_ISSUED'), amt, 0), L(await tAcc(c.treasuryId), 0, amt)]; }
-        else if (['CANCELLED', 'STOPPED', 'BOUNCED', 'REPLACED'].includes(to)) { title = to === 'STOPPED' ? 'إيقاف' : to === 'REPLACED' ? 'استبدال' : 'إلغاء'; lines = [L(m.role('CHEQUES_ISSUED'), amt, 0), L(c.counterAccountId, 0, amt, party)]; }
+        const issued = c.holdAccountId ?? m.role('CHEQUES_ISSUED');
+        if (to === 'CLEARED') { title = 'صرف من البنك'; lines = [L(issued, amt, 0), L(await tAcc(c.treasuryId), 0, amt)]; }
+        else if (['CANCELLED', 'STOPPED', 'BOUNCED', 'REPLACED'].includes(to)) { title = to === 'STOPPED' ? 'إيقاف' : to === 'REPLACED' ? 'استبدال' : 'إلغاء'; lines = [L(issued, amt, 0), L(c.counterAccountId, 0, amt, party)]; }
         else return { do: 'skip', note: 'تغيير حالة بلا أثر مالي' };
       }
       return { do: 'post', date, type: 'CHEQUE', description: desc(title), reference: c.ref, lines };
