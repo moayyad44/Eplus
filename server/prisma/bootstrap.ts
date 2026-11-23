@@ -19,6 +19,17 @@ import { CHART_OF_ACCOUNTS, NATURE_OF } from '../src/modules/accounting/chart';
 const prisma = new PrismaClient();
 
 async function main() {
+  // The app stores every time in UTC and its SQL compares dates and times as UTC. A database server running in local
+  // time (e.g. Docker with TZ=Asia/Amman) shifted those comparisons by its offset — an account statement counted the
+  // first day of the period twice, reports moved the first hours of a day to the day before. Every new connection to
+  // this database works in UTC (stored data is unchanged; screens still show local time). Re-applied on each start,
+  // so a restored database gets it too.
+  try {
+    const [{ db }] = await prisma.$queryRaw<{ db: string }[]>`SELECT current_database() AS db`;
+    await prisma.$executeRawUnsafe(`ALTER DATABASE "${db.replace(/"/g, '""')}" SET timezone TO 'UTC'`);
+  } catch (e) {
+    console.warn('Could not set the database time zone to UTC:', (e as Error).message);
+  }
   // Permissions catalog (sync). Remember which keys are new in this release.
   const known = new Set((await prisma.permission.findMany({ select: { key: true } })).map((p) => p.key));
   const firstRun = known.size === 0;
